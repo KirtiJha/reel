@@ -130,10 +130,20 @@ export async function writeStoryboard(
 
 export function buildConcatManifest(frames: CapturedFrame[], tailMs: number, endMs?: number): string {
   const lines = ["ffconcat version 1.0"];
+  const first = frames[0]!;
   const last = frames[frames.length - 1]!;
   // Hold the final frame until the true end of the recording (driver clock),
   // never less than the minimum tail.
   const lastDur = endMs ? Math.max(tailMs, endMs - last.t) : tailMs;
+  // Anchor the timeline at t=0. The first screenshot never lands at exactly 0
+  // (and under load can be seconds late), so without this lead-in the whole
+  // sequence shifts earlier by `first.t`: the render pass maps frame index to
+  // recording time as `i / fps`, so captions, zoom keys and storyboard beats
+  // would all desync — and anything past the shortened end would be dropped.
+  if (first.t > 0) {
+    lines.push(`file '${first.file}'`);
+    lines.push(`duration ${(first.t / 1000).toFixed(4)}`);
+  }
   for (let i = 0; i < frames.length; i++) {
     const cur = frames[i]!;
     const next = frames[i + 1];
