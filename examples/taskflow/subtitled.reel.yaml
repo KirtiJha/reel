@@ -1,0 +1,26 @@
+name: TaskFlow — subtitled
+url: http://localhost:4321
+viewport: { width: 1000, height: 720, scale: 2 }
+theme: dark
+run:
+  cmd: node server.mjs
+  cwd: .
+  readyOn: http://localhost:4321
+  env: { PORT: "4321" }
+deterministic: { disableAnimations: true, freezeClock: "2026-01-01T09:00:00Z" }
+polish: { zoom: auto, cursor: smooth, captions: true, frame: browser, background: "linear-gradient(135deg, #2b3a67, #1a1f36)" }
+steps:
+  - caption: "Meet TaskFlow — capture work in a snap"
+  - beat: hero
+  - type: { selector: "#task-input", text: "Ship the Reel demo" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the Reel demo
+  - caption: "Click a task to complete it"
+  - click: text=Ship the Reel demo
+  - caption: "Demos as code — always current"
+  - beat: outro
+output:
+  preset: share
+  mp4: out/subtitled.mp4
+  subtitles: true          # → out/subtitled.srt + .vtt
+  languages: ["es"]        # → out/subtitled.es.srt + .vtt

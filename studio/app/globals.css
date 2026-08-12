@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-ink font-sans antialiased;
+  background: radial-gradient(1200px 700px at 80% -12%, #16203c 0%, #0b0d12 55%);
+}
+
+::selection {
+  background: rgba(124, 243, 196, 0.25);
+}
+
+/* Slim, on-brand scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2b3145 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2b3145;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-gradient-to-b from-panel to-bg2 p-5;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line2 bg-elev px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-0 bg-brand text-[#0a0d13] shadow-glow hover:brightness-105;
+  }
+  .btn-ghost {
+    @apply border-line2 bg-transparent;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-[13px];
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-bg2 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/20;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-muted;
+  }
+  .pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-xs font-semibold;
+  }
+  .tag {
+    @apply rounded-md border border-line bg-panel2 px-2 py-0.5 text-[11px] uppercase tracking-wider text-muted;
+  }
+}

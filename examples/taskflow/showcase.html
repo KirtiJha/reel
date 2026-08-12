@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TaskFlow — showcase</title>
+    <style>
+      :root {
+        --bg: #0b0d12;
+        --card: #151823;
+        --accent: #6d8bff;
+        --accent-2: #7cf3c4;
+        --text: #e8ebf3;
+        --muted: #9aa3b8;
+        --line: #242938;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: var(--text);
+        background: radial-gradient(1200px 800px at 70% -10%, #1b2440 0%, var(--bg) 55%);
+      }
+      section { padding: 64px 40px; }
+      .hero { min-height: 92vh; display: grid; place-items: center; }
+      .app {
+        width: 440px; max-width: 92vw; background: var(--card);
+        border: 1px solid var(--line); border-radius: 20px; padding: 28px 28px 24px;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+      }
+      .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+      .dot { width: 12px; height: 12px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+      h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); font-size: 14px; margin: 2px 0 20px; }
+      .row { display: flex; gap: 10px; }
+      input {
+        flex: 1; padding: 13px 15px; border-radius: 12px; border: 1px solid var(--line);
+        background: #0e111a; color: var(--text); font-size: 15px; outline: none;
+      }
+      input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109,139,255,0.2); }
+      button {
+        padding: 13px 20px; border-radius: 12px; border: 0; cursor: pointer;
+        font-size: 15px; font-weight: 600; color: #0b0d12;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+      .count { color: var(--muted); font-size: 13px; margin: 18px 2px 8px; }
+      ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+      li {
+        display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+        border-radius: 12px; cursor: pointer; background: #0e111a; border: 1px solid var(--line);
+      }
+      li .check { width: 20px; height: 20px; border-radius: 6px; flex: none; border: 2px solid var(--muted); }
+      li.done .check { background: var(--accent-2); border-color: var(--accent-2); }
+      li.done .label { color: var(--muted); text-decoration: line-through; }
+      .empty { color: var(--muted); font-size: 14px; padding: 10px 2px; }
+
+      .panel { max-width: 940px; margin: 0 auto; }
+      .panel h2 { font-size: 30px; letter-spacing: -0.02em; margin: 0 0 6px; }
+      .panel p.lede { color: var(--muted); margin: 0 0 28px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .tile {
+        background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px;
+      }
+      .tile h3 { margin: 0 0 6px; font-size: 17px; }
+      .tile p { margin: 0; color: var(--muted); font-size: 14px; }
+      .tile .pill {
+        display: inline-block; margin-bottom: 12px; padding: 4px 10px; border-radius: 999px;
+        font-size: 12px; font-weight: 600; color: #0b0d12;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+    </style>
+  </head>
+  <body>
+    <section class="hero">
+      <main class="app">
+        <div class="brand"><span class="dot"></span><h1>TaskFlow</h1></div>
+        <p class="sub">The demo app for Reel.</p>
+        <div class="row">
+          <input id="task-input" placeholder="What needs doing?" aria-label="New task" />
+          <button id="add" aria-label="Add">Add</button>
+        </div>
+        <p class="count" id="count">0 tasks</p>
+        <ul id="list"><li class="empty" id="empty">Nothing yet — add your first task.</li></ul>
+      </main>
+    </section>
+
+    <section id="pricing" class="panel">
+      <h2>Built for teams, free forever</h2>
+      <p class="lede">One spec renders every format your team needs to share.</p>
+      <div class="grid">
+        <div class="tile">
+          <span class="pill">as-code</span>
+          <h3>Reviewable</h3>
+          <p>A demo is a small file that diffs cleanly in a pull request.</p>
+        </div>
+        <div class="tile">
+          <span class="pill">open source</span>
+          <h3>MIT licensed</h3>
+          <p>Everything runs locally and in CI. No service, no subscription.</p>
+        </div>
+        <div class="tile">
+          <span class="pill">CI native</span>
+          <h3>Never stale</h3>
+          <p>If a step can't complete, the build fails before the docs lie.</p>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const input = document.getElementById("task-input");
+      const list = document.getElementById("list");
+      const count = document.getElementById("count");
+      const empty = document.getElementById("empty");
+      let tasks = [];
+      function render() {
+        list.innerHTML = "";
+        if (tasks.length === 0) { list.appendChild(empty); }
+        tasks.forEach((t, i) => {
+          const li = document.createElement("li");
+          li.className = t.done ? "done" : "";
+          li.innerHTML = '<span class="check"></span><span class="label"></span>';
+          li.querySelector(".label").textContent = t.text;
+          li.addEventListener("click", () => { tasks[i].done = !tasks[i].done; render(); });
+          list.appendChild(li);
+        });
+        const open = tasks.filter((t) => !t.done).length;
+        count.textContent = tasks.length === 0 ? "0 tasks" : open + " of " + tasks.length + " open";
+      }
+      function add() {
+        const text = input.value.trim();
+        if (!text) return;
+        tasks.push({ text, done: false });
+        input.value = "";
+        render();
+      }
+      document.getElementById("add").addEventListener("click", add);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+    </script>
+  </body>
+</html>

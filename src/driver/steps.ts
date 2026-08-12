@@ -1,0 +1,452 @@
+import type { Page } from "playwright-core";
+import type { Step, Spec } from "../spec/schema.js";
+import {
+  clearSpotlight,
+  hideCard,
+  measureText,
+  moveCursorTo,
+  pulseCursor,
+  setCaption,
+  showCard,
+  smoothScroll,
+  spotlight,
+  toPlaywrightSelector,
+} from "../overlay/overlay.js";
+import type { CaptionCue } from "../polish/captions.js";
+import type { ZoomKey } from "../polish/zoom.js";
+import { panScroll, scrollTargetFor } from "../capture/pan.js";
+import type { ScreenshotCapture } from "../capture/screenshot.js";
+import type { Scene } from "../encode/html.js";
+import { log, ReelError } from "../util/log.js";
+
+export type Mode = "record" | "check";
+
+export interface StepContext {
+  page: Page;
+  spec: Spec;
+  mode: Mode;
+  fps: number;
+  /** ms since recording started; used to timestamp beats/captions. */
+  now(): number;
+  beats: { label: string; t: number }[];
+  /** Auto-zoom camera targets, captured as the demo runs. */
+  zoom: ZoomKey[];
+  /** Caption timeline — composited in post so zoom never clips it. */
+  captions: CaptionCue[];
+  /** The running capture, when recording — lets steps synthesize their own frames. */
+  capture?: ScreenshotCapture | null;
+  /** Click-through scenes for the interactive HTML build. */
+  scenes: Scene[];
+  /** When the last title card appeared — a card resets the narration context. */
+  cardAt?: number;
+}
+
+/** Record a scene for the interactive build, tagged with the caption on screen. */
+function snap(
+  ctx: StepContext,
+  label: string,
+  extra: { hotspot?: Scene["hotspot"]; chapter?: string; caption?: string } = {},
+): void {
+  if (ctx.mode !== "record") return;
+  ctx.scenes.push({
+    t: ctx.now(),
+    label,
+    caption: extra.caption ?? activeCaptionText(ctx),
+    chapter: extra.chapter,
+    hotspot: extra.hotspot,
+  });
+}
+
+/**
+ * The narration for a scene: the most recent caption, even if it has already
+ * timed out on screen. In a video an expired caption should disappear; in a
+ * click-through each scene is a page the viewer reads, so it keeps the last
+ * thing you said until you say something else.
+ */
+function activeCaptionText(ctx: StepContext): string | undefined {
+  const now = ctx.now();
+  for (let i = ctx.captions.length - 1; i >= 0; i--) {
+    const c = ctx.captions[i]!;
+    if (c.t > now) continue;
+    // A title card ends the previous section; don't carry its narration past it.
+    if (ctx.cardAt !== undefined && ctx.cardAt > c.t) return undefined;
+    return c.text;
+  }
+  return undefined;
+}
+
+/** Camera directions, not chapter names — they shouldn't reach the chapter rail. */
+const CAMERA_BEATS = /^(hero|outro|intro|wide|done|beat|end)$/i;
+
+/** Element box → hotspot rect, in viewport CSS px. */
+function toHotspot(box: { x: number; y: number; width: number; height: number }): Scene["hotspot"] {
+  return { x: box.x, y: box.y, w: box.width, h: box.height };
+}
+
+/** Hold timings (ms) tuned so a demo reads comfortably on camera. */
+const HOLD = {
+  afterClick: 450,
+  afterType: 350,
+  caption: 950,
+  beat: 1300,
+  afterGoto: 500,
+  afterCard: 320,
+  afterScroll: 260,
+  camera: 520,
+};
+
+export async function runStep(step: Step, ctx: StepContext, i: number): Promise<void> {
+  const { page, mode } = ctx;
+  const label = describe(step);
+  log.step(`${String(i + 1).padStart(2, "0")}  ${label}`);
+
+  // In check mode we assert the flow works as fast as possible: real actions
+  // and state waits run, but cosmetic motion/holds are skipped.
+  const cinematic = mode === "record";
+
+  if ("goto" in step) {
+    const target = resolveUrl(ctx.spec.url, step.goto);
+    await page.goto(target, { waitUntil: "domcontentloaded" });
+    await settle(page);
+    zoomOut(ctx); // new page → establishing wide shot
+    if (cinematic) await page.waitForTimeout(HOLD.afterGoto);
+    return;
+  }
+
+  if ("click" in step) {
+    const box = await pointAt(ctx, step.click, cinematic);
+    // Snap before the click: the interactive build shows the state you act on,
+    // with the target as its hotspot, and advances to the result.
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+    await locate(page, step.click).click();
+    if (cinematic) await page.waitForTimeout(HOLD.afterClick);
+    return;
+  }
+
+  if ("dblclick" in step) {
+    const box = await pointAt(ctx, step.dblclick, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+    await locate(page, step.dblclick).dblclick();
+    if (cinematic) await page.waitForTimeout(HOLD.afterClick);
+    return;
+  }
+
+  if ("hover" in step) {
+    const box = await pointAt(ctx, step.hover, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+    await locate(page, step.hover).hover();
+    return;
+  }
+
+  if ("type" in step) {
+    const { selector, text, delay } = step.type;
+    const box = await pointAt(ctx, selector, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+    const loc = locate(page, selector);
+    await loc.click();
+    await loc.pressSequentially(text, { delay: cinematic ? delay : 0 });
+    if (cinematic) await page.waitForTimeout(HOLD.afterType);
+    return;
+  }
+
+  if ("fill" in step) {
+    await locate(page, step.fill.selector).fill(step.fill.text);
+    return;
+  }
+
+  if ("press" in step) {
+    if (step.press.selector) await locate(page, step.press.selector).press(step.press.key);
+    else await page.keyboard.press(step.press.key);
+    return;
+  }
+
+  if ("scrollTo" in step) {
+    await locate(page, step.scrollTo).scrollIntoViewIfNeeded();
+    if (cinematic) await page.waitForTimeout(300);
+    return;
+  }
+
+  if ("scroll" in step) {
+    const { to, ms } = step.scroll;
+    const targetY =
+      typeof to === "number" ? to : await scrollTargetFor(page, toPlaywrightSelector(to));
+    if (!cinematic) {
+      await page.evaluate((y) => window.scrollTo(0, y), targetY);
+      return;
+    }
+    zoomOut(ctx); // a tight crop during a scroll is disorienting
+    const fromY = await page.evaluate(() => window.scrollY);
+    // Prefer a synthesized pan: capturing a live scroll races Chromium's
+    // rasterizer and bakes blank bands into the frames (see capture/pan.ts).
+    const panned = ctx.capture
+      ? await panScroll(page, ctx.capture, {
+          fromY,
+          toY: targetY,
+          ms,
+          fps: ctx.fps,
+          viewport: ctx.spec.viewport,
+        })
+      : 0;
+    if (panned === 0) await smoothScroll(page, targetY, ms);
+    await page.waitForTimeout(HOLD.afterScroll);
+    snap(ctx, label);
+    return;
+  }
+
+  if ("waitFor" in step) {
+    await locate(page, step.waitFor).waitFor({ state: "visible" });
+    return;
+  }
+
+  if ("waitForUrl" in step) {
+    await page.waitForURL(step.waitForUrl.includes("*") ? step.waitForUrl : `**${step.waitForUrl}**`);
+    return;
+  }
+
+  if ("waitForNetworkIdle" in step) {
+    await page.waitForLoadState("networkidle");
+    return;
+  }
+
+  if ("expect" in step) {
+    await assertExpectation(page, step.expect);
+    return;
+  }
+
+  if ("caption" in step) {
+    const cue = typeof step.caption === "string"
+      ? { text: step.caption, ms: undefined as number | undefined, position: "bottom" as const }
+      : step.caption;
+    if (cinematic) {
+      // Measure with the browser's own text engine so the renderer can wrap at
+      // real word boundaries instead of guessing an average glyph width.
+      const measure = await measureText(page, cue.text);
+      ctx.captions.push({ t: ctx.now(), text: cue.text, ms: cue.ms, position: cue.position, measure });
+      // When auto-zoom is on, captions are composited in post (so a zoomed
+      // crop can't clip them). Otherwise draw them into the page.
+      const inPage = ctx.spec.polish.zoom !== "auto";
+      if (inPage) await setCaption(page, cue.text);
+      await page.waitForTimeout(cue.ms ?? HOLD.caption);
+      if (inPage && cue.ms) await setCaption(page, "");
+    }
+    return;
+  }
+
+  if ("beat" in step) {
+    const beatLabel = typeof step.beat === "string" ? step.beat : label;
+    ctx.beats.push({ label: beatLabel, t: ctx.now() });
+    // Hero/outro beats read best as wide establishing/closing shots.
+    const wide = /hero|outro|intro|wide/i.test(beatLabel);
+    if (wide) zoomOut(ctx);
+    if (cinematic) {
+      await page.waitForTimeout(HOLD.beat);
+      // A descriptively-named beat is a chapter boundary; "hero"/"outro" are
+      // camera directions, and a card right before has already named the scene.
+      const lastChapter = [...ctx.scenes].reverse().find((s) => s.chapter)?.chapter;
+      const isChapter = !CAMERA_BEATS.test(beatLabel) && lastChapter !== beatLabel;
+      snap(ctx, beatLabel, { chapter: isChapter ? beatLabel : undefined });
+    }
+    return;
+  }
+
+  if ("card" in step) {
+    const c = typeof step.card === "string" ? { title: step.card, subtitle: undefined, ms: 1800 } : step.card;
+    // A title card is a natural chapter boundary — worth a storyboard frame.
+    ctx.beats.push({ label: c.title, t: ctx.now() });
+    if (cinematic) {
+      zoomOut(ctx); // never crop into a full-screen card
+      await showCard(page, c.title, c.subtitle);
+      await page.waitForTimeout(Math.min(500, c.ms)); // let it settle before the snap
+      ctx.cardAt = ctx.now();
+      snap(ctx, c.title, { chapter: c.title, caption: c.subtitle });
+      await page.waitForTimeout(Math.max(0, c.ms - 500));
+      await hideCard(page);
+      await page.waitForTimeout(HOLD.afterCard);
+    }
+    return;
+  }
+
+  if ("callout" in step) {
+    const { selector, text, ms } = step.callout;
+    // Waiting for visibility first means a callout also asserts the element
+    // exists — so it works as a check-mode step, not just decoration.
+    const loc = locate(page, selector);
+    await loc.waitFor({ state: "visible" });
+    if (cinematic) {
+      const box = await loc.boundingBox();
+      if (box) {
+        // Pull the camera wide: the dim and the ring are the emphasis here, and
+        // a tight crop would fight them (and clip the label). Author an
+        // explicit `zoom:` step before the callout if you want both.
+        zoomOut(ctx);
+        await spotlight(page, { x: box.x, y: box.y, w: box.width, h: box.height }, text);
+        await page.waitForTimeout(Math.min(450, ms));
+        snap(ctx, label, { hotspot: toHotspot(box), caption: text });
+        await page.waitForTimeout(Math.max(0, ms - 450));
+        await clearSpotlight(page);
+        await page.waitForTimeout(300); // let the dim fade out before moving on
+      }
+    }
+    return;
+  }
+
+  if ("zoom" in step) {
+    if (step.zoom === "out") {
+      zoomOut(ctx);
+      if (cinematic) await page.waitForTimeout(HOLD.camera);
+      return;
+    }
+    const { to, level, ms } = step.zoom;
+    if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
+      if (!to) {
+        ctx.zoom.push({ t: ctx.now(), rect: null, ms });
+      } else {
+        const box = await locate(page, to).boundingBox();
+        if (box) {
+          ctx.zoom.push({
+            t: ctx.now(),
+            rect: { x: box.x, y: box.y, w: box.width, h: box.height },
+            level,
+            ms,
+          });
+        }
+      }
+    }
+    if (cinematic) await page.waitForTimeout(ms ?? HOLD.camera);
+    return;
+  }
+
+  if ("hold" in step) {
+    if (cinematic) await page.waitForTimeout(step.hold);
+    return;
+  }
+
+  throw new ReelError(`Unknown step: ${JSON.stringify(step)}`);
+}
+
+/**
+ * Assert what the app actually rendered. `waitFor` only proves an element
+ * appears; this checks text and counts, which is what makes `reel check` a
+ * genuine smoke test rather than a selector-existence probe.
+ */
+async function assertExpectation(
+  page: Page,
+  e: { selector: string; text?: string; count?: number; visible: boolean },
+): Promise<void> {
+  const loc = page.locator(toPlaywrightSelector(e.selector));
+
+  if (e.count !== undefined) {
+    const actual = await pollFor(async () => {
+      const n = await loc.count();
+      return n === e.count ? n : null;
+    });
+    if (actual === null) {
+      throw new ReelError(
+        `expect failed: "${e.selector}" matched ${await loc.count()} element(s), expected ${e.count}.`,
+      );
+    }
+  }
+
+  if (e.text !== undefined) {
+    const found = await pollFor(async () => {
+      const txt = (await loc.first().textContent().catch(() => null)) ?? "";
+      return txt.includes(e.text!) ? txt : null;
+    });
+    if (found === null) {
+      const actual = (await loc.first().textContent().catch(() => null)) ?? "(no match)";
+      throw new ReelError(
+        `expect failed: "${e.selector}" does not contain "${e.text}".`,
+        `Actual text: ${actual.trim().slice(0, 120)}`,
+      );
+    }
+    return;
+  }
+
+  if (e.count === undefined) {
+    // Bare expectation: presence (or absence) of the element.
+    try {
+      await loc.first().waitFor({ state: e.visible ? "visible" : "hidden" });
+    } catch {
+      throw new ReelError(
+        `expect failed: "${e.selector}" is not ${e.visible ? "visible" : "hidden"}.`,
+      );
+    }
+  }
+}
+
+/** Retry a check until it returns non-null, or the budget runs out. */
+async function pollFor<T>(fn: () => Promise<T | null>, timeoutMs = 5_000): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = await fn().catch(() => null);
+    if (v !== null) return v;
+    if (Date.now() >= deadline) return null;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+/**
+ * Move the synthetic cursor to a target and pulse, before the real action — and
+ * record the element box as an auto-zoom camera target so the view eases toward
+ * whatever is being interacted with.
+ */
+async function pointAt(
+  ctx: StepContext,
+  selector: string,
+  cinematic: boolean,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  if (!cinematic) return null;
+  const box = await locate(ctx.page, selector).boundingBox();
+  if (!box) return null;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+
+  if (ctx.spec.polish.zoom === "auto") {
+    ctx.zoom.push({ t: ctx.now(), rect: { x: box.x, y: box.y, w: box.width, h: box.height } });
+  }
+  if (ctx.spec.polish.cursor !== "none") {
+    await moveCursorTo(ctx.page, cx, cy, { fps: ctx.fps });
+    await pulseCursor(ctx.page, cx, cy);
+    await ctx.page.waitForTimeout(90);
+  }
+  return box;
+}
+
+/** Record a zoom-out (full-frame) camera target. */
+function zoomOut(ctx: StepContext): void {
+  if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
+    ctx.zoom.push({ t: ctx.now(), rect: null });
+  }
+}
+
+function locate(page: Page, selector: string) {
+  return page.locator(toPlaywrightSelector(selector)).first();
+}
+
+/** Best-effort settle after navigation without hanging on chatty apps. */
+async function settle(page: Page): Promise<void> {
+  await Promise.race([
+    page.waitForLoadState("networkidle").catch(() => {}),
+    page.waitForTimeout(2500),
+  ]);
+}
+
+function resolveUrl(base: string, path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
+  return new URL(path, base).toString();
+}
+
+function describe(step: Step): string {
+  const key = Object.keys(step)[0]!;
+  const val = (step as Record<string, unknown>)[key];
+  if (typeof val === "string") return `${key} ${val}`;
+  if (typeof val === "number") return `${key} ${val}`;
+  if (typeof val === "object" && val) {
+    const v = val as Record<string, unknown>;
+    if ("selector" in v) return `${key} ${v.selector}${"text" in v ? ` "${v.text}"` : ""}`;
+    if ("title" in v) return `${key} “${v.title}”`;
+    if ("text" in v) return `${key} “${v.text}”`;
+    if ("to" in v) return `${key} ${v.to}`;
+  }
+  return key;
+}

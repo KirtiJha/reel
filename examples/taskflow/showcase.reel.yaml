@@ -1,0 +1,66 @@
+# Showcases Reel's scene grammar: title cards, spotlight callouts, cinematic
+# scrolling, explicit camera moves, and assertions — all in one spec.
+name: TaskFlow — the full scene grammar
+url: http://localhost:4321/showcase.html
+viewport: { width: 1000, height: 720, scale: 2 }
+theme: dark
+
+run:
+  cmd: node server.mjs
+  cwd: .
+  readyOn: http://localhost:4321
+  env: { PORT: "4321" }
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+  locale: en-US # pin formatting so CI renders what you recorded
+  timezone: UTC
+
+polish:
+  zoom: auto
+  cursor: smooth
+  captions: true
+  frame: browser
+  background: "linear-gradient(135deg, #2b3a67, #1a1f36)"
+  accent: "#7cf3c4" # ripple, spotlight ring, and card rule
+
+steps:
+  # --- Open on a title card, not mid-app ---
+  - card: { title: "TaskFlow", subtitle: "Capture work in a snap", ms: 1700 }
+  - beat: hero
+
+  # --- Act 1: the core interaction ---
+  - caption: { text: "Type a task and add it — that's the whole flow", ms: 1900 }
+  - type: { selector: "#task-input", text: "Ship the new scene grammar" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the new scene grammar
+  - expect: { selector: "#list li", count: 1 } # a real assertion, not just "it appeared"
+  - callout:
+      selector: "#count"
+      text: "The counter tracks what's still open"
+      ms: 1600
+
+  # --- Act 2: travel down the page ---
+  - caption:
+      text: "Reel scrolls, frames, and narrates the story for you, so a long page still reads as one continuous take"
+      ms: 2400
+  - scroll: { to: "#pricing", ms: 1100 }
+  - callout:
+      selector: "#pricing .tile:nth-child(2)"
+      text: "MIT licensed — runs locally and in CI"
+      ms: 1600
+  - zoom: { to: "#pricing h2", level: 1.7, ms: 700 }
+  - hold: 700
+  - zoom: out
+
+  # --- Close on a card ---
+  - card: { title: "One spec. Every format.", subtitle: "GIF · MP4 · WebM · storyboard", ms: 1700 }
+  - beat: outro
+
+output:
+  preset: share
+  mp4: out/showcase.mp4
+  gif: out/showcase.gif
+  storyboard: out/showcase-storyboard
+  html: out/showcase.html # self-contained interactive click-through

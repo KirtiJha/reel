@@ -1,0 +1,186 @@
+import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chromium, type Browser } from "playwright-core";
+import type { LoadedSpec } from "../spec/load.js";
+import { resolveOutput } from "../spec/load.js";
+import type { Step } from "../spec/schema.js";
+import { applyDeterminism } from "../driver/determinism.js";
+import { startApp, type RunningApp } from "../driver/app.js";
+import { runStep, type StepContext } from "../driver/steps.js";
+import { collectInteractive, formatSnapshot, type Snapshot } from "../ai/agent-tools.js";
+import { applyMocks } from "../mock/mock.js";
+import { chat, loadLlmConfig, type LlmConfig } from "../ai/llm.js";
+import { stepSelector, withStepSelector, describeStep } from "./selectors.js";
+import { log, ReelError } from "../util/log.js";
+
+export interface Fix {
+  index: number; // 1-based step number
+  before: string;
+  after: string;
+  label: string;
+}
+export interface HealResult {
+  fixes: Fix[];
+  unresolved: { index: number; label: string; reason: string }[];
+  healthy: boolean; // true if nothing is broken (with or without repairs)
+}
+
+/**
+ * Self-healing drift repair. Re-runs the spec headlessly; when a selector-based
+ * step breaks (the UI drifted), an LLM re-resolves the equivalent element on the
+ * current page, the repair is verified by actually running it, and the flow
+ * continues — so one run repairs every broken step. With `write`, the fixes are
+ * applied back to the spec file. Turns "your demo broke" into "your demo fixed
+ * itself."
+ */
+export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promise<HealResult> {
+  const cfg = loadLlmConfig(); // requires a configured LiteLLM proxy
+  const { spec } = loaded;
+  log.info(`Repair model: ${cfg.model} · via ${cfg.apiBase}`);
+
+  let app: RunningApp | null = null;
+  let browser: Browser | null = null;
+  const workDir = await mkdtemp(join(tmpdir(), "reel-heal-"));
+
+  const fixes: Fix[] = [];
+  const unresolved: HealResult["unresolved"] = [];
+
+  try {
+    if (spec.run) {
+      const cwd = spec.run.cwd ? resolveOutput(loaded, spec.run.cwd) : loaded.dir;
+      app = await startApp({ ...spec.run, cwd });
+    }
+
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({
+      viewport: { width: spec.viewport.width, height: spec.viewport.height },
+      deviceScaleFactor: spec.viewport.scale,
+      colorScheme: spec.theme,
+      storageState: spec.storageState ? resolveOutput(loaded, spec.storageState) : undefined,
+    });
+    await applyDeterminism(context, spec.deterministic);
+    if (spec.mock) await applyMocks(context, spec.mock, loaded);
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch(() => {});
+
+    const ctx: StepContext = {
+      page,
+      spec,
+      mode: "check",
+      fps: spec.output.fps ?? 30,
+      now: () => 0,
+      beats: [],
+      zoom: [],
+      captions: [],
+      scenes: [],
+    };
+
+    log.phase(`Healing “${spec.name}” (${spec.steps.length} steps)`);
+    for (let i = 0; i < spec.steps.length; i++) {
+      const step = spec.steps[i]!;
+      try {
+        await runStep(step, ctx, i);
+        continue; // step still works
+      } catch (err) {
+        const sel = stepSelector(step);
+        if (!sel) {
+          unresolved.push({ index: i + 1, label: describeStep(step), reason: "not a selector-based step" });
+          log.error(`Step ${i + 1} broke and can't be auto-repaired: ${describeStep(step)}`);
+          continue;
+        }
+        log.warn(`Step ${i + 1} broke — repairing: ${describeStep(step)}`);
+        const snapshot = await collectInteractive(page);
+        const newSel = await resolveSelector(cfg, step, sel, snapshot);
+        if (!newSel) {
+          unresolved.push({ index: i + 1, label: describeStep(step), reason: "no matching element on the current page" });
+          log.error(`Could not find a replacement for step ${i + 1}.`);
+          continue;
+        }
+        try {
+          await runStep(withStepSelector(step, newSel), ctx, i); // verify the repair works
+        } catch (e) {
+          unresolved.push({ index: i + 1, label: describeStep(step), reason: `candidate "${newSel}" didn't work` });
+          log.error(`Proposed fix for step ${i + 1} failed to run: ${(e as Error).message.split("\n")[0]}`);
+          continue;
+        }
+        fixes.push({ index: i + 1, before: sel, after: newSel, label: describeStep(step) });
+        log.ok(`Repaired step ${i + 1}: ${sel}  →  ${newSel}`);
+      }
+    }
+
+    if (opts.write && fixes.length) await applyFixes(loaded.path, fixes);
+
+    return { fixes, unresolved, healthy: unresolved.length === 0 };
+  } finally {
+    await browser?.close().catch(() => {});
+    await app?.stop().catch(() => {});
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Ask the model which current element the broken step should now target. */
+async function resolveSelector(
+  cfg: LlmConfig,
+  step: Step,
+  brokenSelector: string,
+  snapshot: Snapshot,
+): Promise<string | null> {
+  const system =
+    "You maintain automated UI demo scripts. A demo step stopped working because the app's UI changed. " +
+    "Given the interactive elements currently on the page, pick the single element the step should now target. " +
+    "Respond with ONLY the element ref (like e4). If no element plausibly matches the step's original intent, respond with NONE.";
+  const user =
+    `Broken step: ${describeStep(step)}\n` +
+    `Original selector: ${brokenSelector}\n\n` +
+    `${formatSnapshot(snapshot)}\n\n` +
+    `Which ref should this step target now? Answer with just the ref, or NONE.`;
+
+  const res = await chat(cfg, [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ]);
+  const text = (res.message.content ?? "").trim();
+  const m = /\be(\d+)\b/i.exec(text);
+  if (!m) return null; // NONE or unparseable
+  const ref = `e${m[1]}`;
+  return snapshot.elements.find((e) => e.ref === ref)?.selector ?? null;
+}
+
+/** Apply repaired selectors back to the spec file, preserving formatting. */
+async function applyFixes(specPath: string, fixes: Fix[]): Promise<void> {
+  let raw = await readFile(specPath, "utf8");
+  const applied = new Map<string, string>(); // before → after already written
+  let count = 0;
+  for (const fix of fixes) {
+    const prior = applied.get(fix.before);
+    if (prior !== undefined) {
+      if (prior !== fix.after) {
+        log.warn(`Selector "${fix.before}" maps to different fixes (${prior} vs ${fix.after}); step ${fix.index} may need manual review.`);
+      }
+      continue;
+    }
+    // Replace the old selector whether it's bare or wrapped in quotes, and
+    // always emit a YAML-safe double-quoted value (e.g. "#add" — a bare #add
+    // would be parsed as a comment).
+    const re = new RegExp(`(["']?)${escapeRegExp(fix.before)}\\1`, "g");
+    if (re.test(raw)) {
+      raw = raw.replace(new RegExp(`(["']?)${escapeRegExp(fix.before)}\\1`, "g"), yamlDoubleQuote(fix.after));
+      applied.set(fix.before, fix.after);
+      count++;
+    } else {
+      log.warn(`Could not locate "${fix.before}" in the spec to rewrite — apply step ${fix.index} manually.`);
+    }
+  }
+  await writeFile(specPath, raw, "utf8");
+  log.ok(`Applied ${count} fix(es) to ${specPath}`);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function yamlDoubleQuote(s: string): string {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}

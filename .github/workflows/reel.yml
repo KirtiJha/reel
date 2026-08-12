@@ -1,0 +1,48 @@
+# Reel — keep your demo media honest.
+#
+# On PRs: fail the build if any demo step can't complete (drift detection).
+# On push to main: regenerate the media and commit it back, so README GIFs are
+# always current. Copy this into your own repo's .github/workflows/.
+name: reel
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # PRs: verify the demo still works, but don't commit anything.
+      - name: Drift check
+        if: github.event_name == 'pull_request'
+        run: npx reel check examples/taskflow/demo.reel.yaml
+
+      # main: regenerate and commit refreshed media.
+      - name: Regenerate demo
+        if: github.event_name == 'push'
+        run: npx reel record examples/taskflow/demo.reel.yaml
+
+      - name: Commit refreshed media
+        if: github.event_name == 'push'
+        run: |
+          if [ -n "$(git status --porcelain examples/taskflow/out)" ]; then
+            git config user.name "reel-bot"
+            git config user.email "bot@users.noreply.github.com"
+            git add examples/taskflow/out
+            git commit -m "chore: regenerate demo media [skip ci]"
+            git push
+          else
+            echo "Demo media already up to date."
+          fi

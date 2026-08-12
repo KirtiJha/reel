@@ -1,0 +1,48 @@
+name: TaskFlow — add and complete a task
+url: http://localhost:4321
+viewport: { width: 1000, height: 720, scale: 2 }
+theme: dark
+
+# Boot the example app and wait for it before recording.
+run:
+  cmd: node server.mjs
+  cwd: .
+  readyOn: http://localhost:4321
+  env:
+    PORT: "4321"
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  zoom: auto
+  cursor: smooth
+  captions: true
+  frame: browser                 # macOS-style window with URL pill
+  background: "linear-gradient(135deg, #2b3a67, #1a1f36)"
+  # padding: 60                   # (auto default when a frame is set)
+
+steps:
+  - caption: "Meet TaskFlow — capture work in a snap"
+  - beat: hero
+  - type: { selector: "#task-input", text: "Ship the Reel demo" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the Reel demo
+  - type: { selector: "#task-input", text: "Write the README" }
+  - click: role=button[name=Add]
+  - waitFor: text=Write the README
+  - caption: "Click a task to complete it"
+  - click: text=Ship the Reel demo
+  - beat: done
+  - caption: "That's it — demos-as-code with Reel"
+  - beat: outro
+
+output:
+  # preset picks sensible defaults for resolution, fps, and GIF compression.
+  # Options: share (default) · readme · social · hq · docs — override any field.
+  preset: share
+  mp4: out/taskflow.mp4        # crisp video — share on social, docs, embeds
+  gif: out/taskflow.gif        # lightweight loop — READMEs, chat
+  webm: out/taskflow.webm      # smaller modern video
+  storyboard: out/storyboard   # one PNG per beat
