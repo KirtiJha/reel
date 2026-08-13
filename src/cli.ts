@@ -23,7 +23,8 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
 import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
-import { exportSchema, SCHEMA_FILE, SCHEMA_URL } from "./commands/schema.js";
+import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
+import { capture } from "./commands/capture.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -195,6 +196,20 @@ program
   .description("Scaffold a starter demo.reel.yaml.")
   .action(async (dir: string, opts: { url: string; name: string }) => {
     await withErrors(() => initSpec(dir, opts));
+  });
+
+program
+  .command("capture")
+  .requiredOption("--url <url>", "URL of the running app")
+  .option("-o, --out <file>", "spec output path", "demo.reel.yaml")
+  .option("--name <name>", "demo name", "Captured demo")
+  .option("--force", "overwrite the output file if it exists", false)
+  .description("Author by doing — drive your app in a browser and get a spec back.")
+  .action(async (opts: { url: string; out: string; name: string; force: boolean }) => {
+    await withErrors(async () => {
+      const res = await capture(opts);
+      emit("capture", true, { result: { spec: res.file, steps: res.steps } });
+    }, "capture");
   });
 
 program

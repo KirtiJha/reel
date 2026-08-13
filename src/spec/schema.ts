@@ -501,6 +501,14 @@ export const stepSchema = z.union([
   z.object({ branch: branchSchema }).strict(),
 ]);
 export type Step = z.infer<typeof stepSchema>;
+/**
+ * A step as a person writes it, before defaults are filled in.
+ *
+ * What `reel capture` and `reel author` produce: they emit YAML, so requiring
+ * the defaulted shape would mean inventing values for keys the draft has every
+ * reason to leave out.
+ */
+export type StepInput = z.input<typeof stepSchema>;
 
 /** Narrow a step to a branch without repeating the shape check everywhere. */
 export function isBranch(step: Step): step is { branch: BranchConfig } {

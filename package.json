@@ -42,7 +42,8 @@
     "test:branch": "tsx scripts/branch-selftest.ts",
     "ui": "tsx src/cli.ts ui",
     "studio:install": "npm --prefix studio install",
-    "schema": "tsx scripts/gen-schema.ts"
+    "schema": "tsx scripts/gen-schema.ts",
+    "test:capture": "tsx scripts/capture-selftest.ts"
   },
   "keywords": [
     "demo",
