@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { cpus } from "node:os";
 import type { CapturedFrame } from "../capture/frames.js";
 import { ffmpeg } from "../encode/ffmpeg.js";
-import { buildConcatManifest, type EncodeTargets, type EncodeOptions } from "../encode/encode.js";
+import { BITEXACT, buildConcatManifest, type EncodeTargets, type EncodeOptions } from "../encode/encode.js";
 import {
   resolveTimeline,
   sampleRect,
@@ -147,6 +147,7 @@ export async function renderWithZoom(
         "-y", ...seqInput,
         "-vf", "format=yuv420p",
         "-c:v", "libx264", "-preset", "veryslow", "-crf", "18", "-movflags", "+faststart",
+        ...BITEXACT,
         abspath(targets.mp4),
       ],
       framesDir,
@@ -157,7 +158,7 @@ export async function renderWithZoom(
   if (targets.webm) {
     await ensureDir(targets.webm);
     await ffmpeg(
-      ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", abspath(targets.webm)],
+      ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT, abspath(targets.webm)],
       framesDir,
     );
     log.ok(`webm → ${targets.webm}`);

@@ -28,6 +28,12 @@ export interface PanOptions {
   ms: number;
   fps: number;
   viewport: { width: number; height: number; scale: number };
+  /**
+   * Timeline position for the first synthesized frame. Supplied on a
+   * deterministic recording, where the driver's virtual clock — not elapsed
+   * wall-clock — owns the timeline.
+   */
+  startT?: number;
 }
 
 /**
@@ -70,7 +76,7 @@ export async function panScroll(
   const scale = fullH / Math.max(1, await pageHeight(page));
   const maxTop = fullH - winH;
   const count = Math.max(2, Math.round((opts.ms / 1000) * opts.fps));
-  const startT = capture.elapsed();
+  const startT = opts.startT ?? capture.elapsed();
   const step = opts.ms / (count - 1);
 
   capture.pause();

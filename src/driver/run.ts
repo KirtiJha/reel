@@ -6,6 +6,8 @@ import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
 import { resolveOutputProfile } from "../spec/schema.js";
 import { applyDeterminism } from "./determinism.js";
+import { Timeline } from "./timeline.js";
+import { Recorder } from "./recorder.js";
 import { installOverlay } from "../overlay/overlay.js";
 import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
@@ -62,8 +64,15 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // In CI drift mode, fail fast: a gone selector shouldn't cost 30s.
     if (mode === "check") page.setDefaultTimeout(8_000);
 
+    // A virtual timeline makes the output a function of the spec rather than of
+    // machine speed; see driver/timeline.ts.
+    const deterministic = spec.deterministic.timeline;
+    const timeline = new Timeline(spec.polish.speed);
+
     const capture =
-      mode === "record" ? new ScreenshotCapture(page, framesDir, { fps: profile.fps }) : null;
+      mode === "record"
+        ? new ScreenshotCapture(page, framesDir, { fps: profile.fps, deterministic })
+        : null;
 
     // Navigate to the base URL first so the overlay has a document to attach to.
     await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch(() => {});
@@ -72,6 +81,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         cursor: spec.polish.cursor !== "none",
         captions: spec.polish.captions,
         accent: spec.polish.accent,
+        animate: !deterministic,
       });
       // Web fonts swap in a beat after first paint; starting capture before
       // they're ready bakes a flash of fallback text into the opening frames.
@@ -79,23 +89,32 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     }
 
     await capture?.start();
-    const startWall = Date.now();
     const beats: { label: string; t: number }[] = [];
     const zoom: ZoomKey[] = [];
     const captions: CaptionCue[] = [];
     const scenes: Scene[] = [];
+    const rec = new Recorder(page, capture, timeline, {
+      fps: profile.fps,
+      deterministic,
+      cinematic: mode === "record",
+      animationsDisabled: spec.deterministic.disableAnimations,
+    });
     const ctx: StepContext = {
       page,
       spec,
       mode,
       fps: profile.fps,
-      now: () => Date.now() - startWall,
+      now: () => timeline.now(),
       beats,
       zoom,
       captions,
       capture,
+      rec,
       scenes,
     };
+    // The opening frame: without it the timeline starts at the first thing that
+    // moves, and the lead-in has to be reconstructed at encode time.
+    await rec.frame();
 
     // Re-install overlay on every navigation (new document wipes it).
     if (mode === "record") {
@@ -117,11 +136,11 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     // A closing scene so the interactive build ends on the finished state.
     if (mode === "record") {
-      scenes.push({ t: Date.now() - startWall, label: "Done" });
+      scenes.push({ t: timeline.now(), label: "Done" });
     }
 
-    const durationMs = Date.now() - startWall;
-    const frames = (await capture?.stop()) ?? [];
+    const durationMs = timeline.now();
+    const frames = (await capture?.stop(deterministic ? durationMs : undefined)) ?? [];
 
     if (mode === "check") {
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);

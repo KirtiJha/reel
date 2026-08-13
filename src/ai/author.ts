@@ -35,7 +35,11 @@ export async function authorSpec(story: string, opts: AuthorOptions): Promise<vo
       deviceScaleFactor: 2,
     });
     // Keep the app steady while the agent explores (same controls used at record).
-    await applyDeterminism(context, { disableAnimations: true, reducedMotion: false });
+    await applyDeterminism(context, {
+      disableAnimations: true,
+      reducedMotion: false,
+      timeline: true,
+    });
     const page = await context.newPage();
     await page.goto(opts.url, { waitUntil: "domcontentloaded" });
 

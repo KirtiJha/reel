@@ -8,6 +8,8 @@ import type { Step } from "../spec/schema.js";
 import { applyDeterminism } from "../driver/determinism.js";
 import { startApp, type RunningApp } from "../driver/app.js";
 import { runStep, type StepContext } from "../driver/steps.js";
+import { Timeline } from "../driver/timeline.js";
+import { Recorder } from "../driver/recorder.js";
 import { collectInteractive, formatSnapshot, type Snapshot } from "../ai/agent-tools.js";
 import { applyMocks } from "../mock/mock.js";
 import { chat, loadLlmConfig, type LlmConfig } from "../ai/llm.js";
@@ -65,16 +67,24 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
     page.setDefaultTimeout(8_000);
     await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch(() => {});
 
+    const timeline = new Timeline(spec.polish.speed);
     const ctx: StepContext = {
       page,
       spec,
       mode: "check",
       fps: spec.output.fps ?? 30,
-      now: () => 0,
+      now: () => timeline.now(),
       beats: [],
       zoom: [],
       captions: [],
       scenes: [],
+      // Healing replays the flow without filming it, so nothing cosmetic runs.
+      rec: new Recorder(page, null, timeline, {
+        fps: spec.output.fps ?? 30,
+        deterministic: true,
+        cinematic: false,
+        animationsDisabled: spec.deterministic.disableAnimations,
+      }),
     };
 
     log.phase(`Healing “${spec.name}” (${spec.steps.length} steps)`);

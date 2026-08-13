@@ -20,6 +20,15 @@ export interface OverlayOptions {
   captions: boolean;
   /** Brand accent for the ripple, spotlight ring, and card rule. */
   accent: string;
+  /**
+   * Let the overlay animate itself with CSS transitions / WAAPI.
+   *
+   * False on a deterministic recording: a transition's progress at capture time
+   * depends on wall-clock, so a frame grabbed mid-fade differs run to run. With
+   * this off every overlay state change is instantaneous and the driver
+   * synthesizes the motion it wants, frame by frame, at exact positions.
+   */
+  animate?: boolean;
 }
 
 /** Word advance widths for a caption, measured at a 100px reference size. */
@@ -38,6 +47,16 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
 
       const root = document.createElement("div");
       root.id = "__reel_overlay__";
+      if (o.animate === false) {
+        // A stylesheet `!important` rule beats the inline transitions set
+        // below, so every overlay state change lands instantly.
+        const kill = document.createElement("style");
+        kill.id = "__reel_no_overlay_anim__";
+        kill.textContent =
+          `#__reel_overlay__, #__reel_overlay__ * ` +
+          `{ transition: none !important; animation: none !important; }`;
+        (document.head || document.documentElement).appendChild(kill);
+      }
       Object.assign(root.style, {
         position: "fixed",
         inset: "0",
@@ -212,10 +231,22 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
 
       (window as any).__reel__ = {
         state,
-        setCursor(x: number, y: number) {
+        setCursor(x: number, y: number, scale = 1) {
           state.x = x;
           state.y = y;
-          cursor.style.transform = `translate(${x}px, ${y}px)`;
+          cursor.style.transform =
+            scale === 1
+              ? `translate(${x}px, ${y}px)`
+              : `translate(${x}px, ${y}px) scale(${scale})`;
+        },
+        /**
+         * The click ripple as an explicit function of progress (0→1) rather
+         * than a CSS transition, so a deterministic recording can step it.
+         */
+        rippleAt(x: number, y: number, p: number) {
+          ripple.style.transition = "none";
+          ripple.style.transform = `translate(${x}px, ${y}px) scale(${1 + 3 * p})`;
+          ripple.style.opacity = p >= 1 ? "0" : String(0.9 * (1 - p));
         },
         /**
          * Ease the cursor along a gentle arc with a slight overshoot, animated
@@ -396,6 +427,58 @@ export async function moveCursorTo(
 
 export async function pulseCursor(page: Page, x: number, y: number): Promise<void> {
   await page.evaluate(([px, py]) => (window as any).__reel__?.pulse(px, py), [x, y]);
+}
+
+/** Place the cursor at an exact position (deterministic recording). */
+export async function setCursorAt(
+  page: Page,
+  x: number,
+  y: number,
+  scale = 1,
+): Promise<void> {
+  await page
+    .evaluate(
+      ([px, py, s]) => (window as any).__reel__?.setCursor(px, py, s),
+      [x, y, scale] as [number, number, number],
+    )
+    .catch(() => {});
+}
+
+/** Draw the click ripple at an exact progress (deterministic recording). */
+export async function rippleAt(
+  page: Page,
+  x: number,
+  y: number,
+  p: number,
+): Promise<void> {
+  await page
+    .evaluate(
+      ([px, py, pr]) => (window as any).__reel__?.rippleAt(px, py, pr),
+      [x, y, p] as [number, number, number],
+    )
+    .catch(() => {});
+}
+
+/**
+ * The cursor's eased arc from `from` to `to` at progress `p`, mirroring the
+ * page-side `glide()` so a synthesized move looks identical to an animated one.
+ */
+export function cursorPathAt(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  p: number,
+): { x: number; y: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const bow = Math.min(54, dist * 0.16);
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const c1 = 1.1;
+  const c3 = c1 + 1;
+  const e = 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+  const arc = Math.sin(Math.PI * p) * bow;
+  return { x: from.x + dx * e + nx * arc, y: from.y + dy * e + ny * arc };
 }
 
 export async function setCaption(page: Page, text: string): Promise<void> {

@@ -4,14 +4,13 @@ import {
   clearSpotlight,
   hideCard,
   measureText,
-  moveCursorTo,
-  pulseCursor,
   setCaption,
   showCard,
   smoothScroll,
   spotlight,
   toPlaywrightSelector,
 } from "../overlay/overlay.js";
+import type { Recorder } from "./recorder.js";
 import type { CaptionCue } from "../polish/captions.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
@@ -35,6 +34,8 @@ export interface StepContext {
   captions: CaptionCue[];
   /** The running capture, when recording — lets steps synthesize their own frames. */
   capture?: ScreenshotCapture | null;
+  /** Owns the demo clock and every operation that consumes demo time. */
+  rec: Recorder;
   /** Click-through scenes for the interactive HTML build. */
   scenes: Scene[];
   /** When the last title card appeared — a card resets the narration context. */
@@ -109,7 +110,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     await page.goto(target, { waitUntil: "domcontentloaded" });
     await settle(page);
     zoomOut(ctx); // new page → establishing wide shot
-    if (cinematic) await page.waitForTimeout(HOLD.afterGoto);
+    await ctx.rec.hold(HOLD.afterGoto);
     return;
   }
 
@@ -119,7 +120,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // with the target as its hotspot, and advances to the result.
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     await locate(page, step.click).click();
-    if (cinematic) await page.waitForTimeout(HOLD.afterClick);
+    await ctx.rec.hold(HOLD.afterClick);
     return;
   }
 
@@ -127,7 +128,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const box = await pointAt(ctx, step.dblclick, cinematic);
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     await locate(page, step.dblclick).dblclick();
-    if (cinematic) await page.waitForTimeout(HOLD.afterClick);
+    await ctx.rec.hold(HOLD.afterClick);
     return;
   }
 
@@ -144,8 +145,8 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     const loc = locate(page, selector);
     await loc.click();
-    await loc.pressSequentially(text, { delay: cinematic ? delay : 0 });
-    if (cinematic) await page.waitForTimeout(HOLD.afterType);
+    await ctx.rec.typeInto(loc, text, delay);
+    await ctx.rec.hold(HOLD.afterType);
     return;
   }
 
@@ -162,7 +163,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("scrollTo" in step) {
     await locate(page, step.scrollTo).scrollIntoViewIfNeeded();
-    if (cinematic) await page.waitForTimeout(300);
+    await ctx.rec.hold(300);
     return;
   }
 
@@ -178,17 +179,20 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const fromY = await page.evaluate(() => window.scrollY);
     // Prefer a synthesized pan: capturing a live scroll races Chromium's
     // rasterizer and bakes blank bands into the frames (see capture/pan.ts).
+    const scaledMs = ctx.rec.timeline.scale(ms);
     const panned = ctx.capture
       ? await panScroll(page, ctx.capture, {
           fromY,
           toY: targetY,
-          ms,
+          ms: scaledMs,
           fps: ctx.fps,
           viewport: ctx.spec.viewport,
+          startT: ctx.rec.now(),
         })
       : 0;
-    if (panned === 0) await smoothScroll(page, targetY, ms);
-    await page.waitForTimeout(HOLD.afterScroll);
+    if (panned === 0) await smoothScroll(page, targetY, scaledMs);
+    ctx.rec.timeline.advanceScaled(scaledMs);
+    await ctx.rec.hold(HOLD.afterScroll);
     snap(ctx, label);
     return;
   }
@@ -226,7 +230,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       // crop can't clip them). Otherwise draw them into the page.
       const inPage = ctx.spec.polish.zoom !== "auto";
       if (inPage) await setCaption(page, cue.text);
-      await page.waitForTimeout(cue.ms ?? HOLD.caption);
+      await ctx.rec.hold(cue.ms ?? HOLD.caption);
       if (inPage && cue.ms) await setCaption(page, "");
     }
     return;
@@ -239,7 +243,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const wide = /hero|outro|intro|wide/i.test(beatLabel);
     if (wide) zoomOut(ctx);
     if (cinematic) {
-      await page.waitForTimeout(HOLD.beat);
+      await ctx.rec.hold(HOLD.beat);
       // A descriptively-named beat is a chapter boundary; "hero"/"outro" are
       // camera directions, and a card right before has already named the scene.
       const lastChapter = [...ctx.scenes].reverse().find((s) => s.chapter)?.chapter;
@@ -256,12 +260,12 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     if (cinematic) {
       zoomOut(ctx); // never crop into a full-screen card
       await showCard(page, c.title, c.subtitle);
-      await page.waitForTimeout(Math.min(500, c.ms)); // let it settle before the snap
+      await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap
       ctx.cardAt = ctx.now();
       snap(ctx, c.title, { chapter: c.title, caption: c.subtitle });
-      await page.waitForTimeout(Math.max(0, c.ms - 500));
+      await ctx.rec.hold(Math.max(0, c.ms - 500));
       await hideCard(page);
-      await page.waitForTimeout(HOLD.afterCard);
+      await ctx.rec.hold(HOLD.afterCard);
     }
     return;
   }
@@ -280,11 +284,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
         // explicit `zoom:` step before the callout if you want both.
         zoomOut(ctx);
         await spotlight(page, { x: box.x, y: box.y, w: box.width, h: box.height }, text);
-        await page.waitForTimeout(Math.min(450, ms));
+        await ctx.rec.hold(Math.min(450, ms));
         snap(ctx, label, { hotspot: toHotspot(box), caption: text });
-        await page.waitForTimeout(Math.max(0, ms - 450));
+        await ctx.rec.hold(Math.max(0, ms - 450));
         await clearSpotlight(page);
-        await page.waitForTimeout(300); // let the dim fade out before moving on
+        await ctx.rec.hold(300); // let the dim fade out before moving on
       }
     }
     return;
@@ -293,7 +297,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   if ("zoom" in step) {
     if (step.zoom === "out") {
       zoomOut(ctx);
-      if (cinematic) await page.waitForTimeout(HOLD.camera);
+      await ctx.rec.hold(HOLD.camera);
       return;
     }
     const { to, level, ms } = step.zoom;
@@ -312,12 +316,12 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
         }
       }
     }
-    if (cinematic) await page.waitForTimeout(ms ?? HOLD.camera);
+    await ctx.rec.hold(ms ?? HOLD.camera);
     return;
   }
 
   if ("hold" in step) {
-    if (cinematic) await page.waitForTimeout(step.hold);
+    await ctx.rec.hold(step.hold);
     return;
   }
 
@@ -405,9 +409,8 @@ async function pointAt(
     ctx.zoom.push({ t: ctx.now(), rect: { x: box.x, y: box.y, w: box.width, h: box.height } });
   }
   if (ctx.spec.polish.cursor !== "none") {
-    await moveCursorTo(ctx.page, cx, cy, { fps: ctx.fps });
-    await pulseCursor(ctx.page, cx, cy);
-    await ctx.page.waitForTimeout(90);
+    await ctx.rec.glideCursor(cx, cy);
+    await ctx.rec.pulse(cx, cy);
   }
   return box;
 }

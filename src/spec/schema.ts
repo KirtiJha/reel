@@ -47,6 +47,15 @@ export const deterministicSchema = z.object({
   locale: z.string().optional(),
   /** Pin the browser timezone (e.g. "UTC", "America/New_York"). */
   timezone: z.string().optional(),
+  /**
+   * Drive the recording off a virtual clock instead of wall-clock time, so the
+   * same spec against the same app renders byte-identical media on any machine.
+   * Without it, output length swings with CPU load and CI rewrites the media on
+   * every push whether or not the demo changed.
+   *
+   * Turn it off only to film an app's own animation as it really happens.
+   */
+  timeline: z.boolean().default(true),
 });
 export type Deterministic = z.infer<typeof deterministicSchema>;
 
@@ -78,6 +87,13 @@ export const polishSchema = z.object({
    * the title-card rule. One knob so a repo's demos look like one product.
    */
   accent: cssColor.default("#6d8bff"),
+  /**
+   * Playback rate for every authored duration — holds, captions, typing, camera
+   * moves. 2 renders the same demo in half the time; 0.5 slows it down. Real
+   * waiting (selectors, network) is unaffected: this paces the demo, it doesn't
+   * rush the app.
+   */
+  speed: z.number().positive().max(10).default(1),
 });
 export type Polish = z.infer<typeof polishSchema>;
 

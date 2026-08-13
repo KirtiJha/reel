@@ -57,7 +57,7 @@ export async function encode(
         "-f", "concat", "-safe", "0", "-i", "frames.concat",
         "-vf", `fps=${opts.fps},${scale},format=yuv420p`,
         "-c:v", "libx264", "-preset", "veryslow", "-crf", "18",
-        "-movflags", "+faststart",
+        "-movflags", "+faststart", ...BITEXACT,
         abspath(framesDir, targets.mp4),
       ],
       framesDir,
@@ -72,7 +72,7 @@ export async function encode(
         "-y",
         "-f", "concat", "-safe", "0", "-i", "frames.concat",
         "-vf", `fps=${opts.fps},${scale}`,
-        "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1",
+        "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT,
         abspath(framesDir, targets.webm),
       ],
       framesDir,
@@ -168,6 +168,14 @@ function nearestFrame(frames: CapturedFrame[], t: number): CapturedFrame | undef
   }
   return best;
 }
+
+/**
+ * Strip everything ffmpeg would otherwise stamp into the container that isn't
+ * the video: creation time, encoder version, and (for Matroska/WebM) a random
+ * segment UID. Without this the same frames encode to different bytes on every
+ * run, so committed demo media churns in CI even when the demo is unchanged.
+ */
+export const BITEXACT = ["-fflags", "+bitexact", "-flags:v", "+bitexact", "-map_metadata", "-1"];
 
 /** Even-dimension-safe scale filter, optionally capping width. */
 function scaleFilter(maxWidth?: number): string {
