@@ -15,6 +15,9 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
+import { emit, useJson } from "./util/report.js";
+import { StepFailure } from "./driver/run.js";
+import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 
 const program = new Command();
@@ -38,8 +41,10 @@ program
   .description("Open-source demos-as-code for web apps.")
   .version("0.1.0")
   .option("-v, --verbose", "verbose logging", false)
+  .option("--json", "print a machine-readable result on stdout (logs stay on stderr)", false)
   .hook("preAction", (thisCmd) => {
     if (thisCmd.opts().verbose) setVerbose(true);
+    useJson(Boolean(thisCmd.opts().json));
   });
 
 program
@@ -51,6 +56,7 @@ program
       const loaded = await loadSpec(specPath);
       const variants = expandMatrix(loaded);
       const outputs: string[] = [];
+      const rendered: Record<string, unknown>[] = [];
       for (const v of variants) {
         if (variants.length > 1) log.phase(`Variant: ${v.label}`);
         const res = await record(v.loaded, "record");
@@ -58,10 +64,20 @@ program
           `${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`,
         );
         outputs.push(...res.outputs);
+        rendered.push({
+          variant: v.label,
+          frames: res.frames,
+          beats: res.beats,
+          durationMs: res.durationMs,
+          outputs: res.outputs,
+        });
       }
       log.phase("Done");
       for (const o of outputs) log.info(o);
-    });
+      emit("record", true, {
+        result: { spec: loaded.path, name: loaded.spec.name, variants: rendered, outputs },
+      });
+    }, "record");
   });
 
 program
@@ -78,7 +94,15 @@ program
         if (variants.length > 1) log.phase(`Variant: ${v.label}`);
         await check(v.loaded);
       }
-    });
+      emit("check", true, {
+        result: {
+          spec: loaded.path,
+          name: loaded.spec.name,
+          steps: loaded.spec.steps.length,
+          variants: variants.map((v) => v.label),
+        },
+      });
+    }, "check");
   });
 
 program
@@ -100,7 +124,10 @@ program
         log.info("Re-run with --write to apply these fixes to the spec.");
       }
       if (!res.healthy) process.exitCode = 1; // genuine breakage a human must resolve
-    });
+      emit("heal", res.healthy, {
+        result: { spec: loaded.path, fixes: res.fixes, unresolved: res.unresolved, written: opts.write },
+      });
+    }, "heal");
   });
 
 program
@@ -158,7 +185,7 @@ program
 
 program.parseAsync(process.argv);
 
-async function withErrors(fn: () => void | Promise<void>): Promise<void> {
+async function withErrors(fn: () => void | Promise<void>, command = "reel"): Promise<void> {
   try {
     await fn();
   } catch (err) {
@@ -169,6 +196,27 @@ async function withErrors(fn: () => void | Promise<void>): Promise<void> {
       log.error((err as Error).message);
       if (process.env.REEL_DEBUG) console.error(err);
     }
+    // A failed step already wrote its diagnostics; naming them here is what
+    // lets a CI job surface them without knowing where Reel puts things.
+    const failure = err instanceof StepFailure ? err : null;
+    emit(command, false, {
+      error: {
+        // Same reasoning as the failure report: colour codes are for a terminal,
+        // not for whatever parses this.
+        message: stripAnsi((err as Error).message),
+        hint: err instanceof ReelError ? err.hint : undefined,
+        step: failure?.step,
+        artifacts: failure?.artifacts
+          ? {
+              dir: failure.artifacts.dir,
+              screenshot: failure.artifacts.screenshot,
+              clip: failure.artifacts.clip,
+              html: failure.artifacts.html,
+              report: failure.artifacts.report,
+            }
+          : undefined,
+      },
+    });
     process.exitCode = 1;
   }
 }
