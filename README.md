@@ -5,10 +5,18 @@
 <p align="center"><em>Lights, camera, code.</em></p>
 
 <p align="center">
-  <strong>Open-source demos-as-code for web apps.</strong><br/>
+  <strong>Open-source demos-as-code for web apps and CLIs.</strong><br/>
   Describe it or script it — Reel drives your <em>real</em> app and renders a
-  polished, always-current demo, and fails your build when the flow breaks.
+  polished, always-current demo: GIF, MP4, storyboard, and a self-contained
+  interactive click-through. It fails your build when the flow breaks.
   Use it from the <strong>CLI</strong> or the <strong>Studio UI</strong>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/KirtiJha/reel/actions/workflows/reel.yml"><img alt="CI" src="https://github.com/KirtiJha/reel/actions/workflows/reel.yml/badge.svg" /></a>
+  <a href="LICENSE"><img alt="MIT licensed" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+  <img alt="Node 20+" src="https://img.shields.io/badge/node-%E2%89%A520-5a9?logo=node.js&logoColor=white" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" />
 </p>
 
 <p align="center">
@@ -18,13 +26,18 @@
 
 ---
 
-What [VHS](https://github.com/charmbracelet/vhs) is to terminal demos, Reel is to
-**web apps** — with two things VHS doesn't have:
+[VHS](https://github.com/charmbracelet/vhs) films terminal demos beautifully.
+Reel films **web apps and command-line tools from one spec grammar** — and adds
+four things a screen recorder can't:
 
-1. **AI-native authoring** — describe the demo, an agent drives your app and
-   writes a reproducible spec _(v0.3)_.
-2. **CI-native drift detection** — your demo is a test. If a step can't complete,
-   the build fails; on merge, the README media auto-updates.
+1. **CI-native drift detection.** Your demo is a test. If a step can't complete,
+   the build fails; on merge, the media updates itself.
+2. **Byte-identical output.** The same spec renders the same bytes on any
+   machine, so committed demo media changes only when the demo does.
+3. **An interactive click-through.** The same spec builds a self-contained
+   product tour with hotspots, deep links and branches the viewer chooses.
+4. **AI-native authoring.** Describe the demo in English; an agent drives your
+   app and writes a spec you own.
 
 100% MIT, no SaaS, no hosting. A CLI + a GitHub Action. Everything runs locally
 and in CI.
