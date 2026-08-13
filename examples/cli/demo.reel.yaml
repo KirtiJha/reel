@@ -1,0 +1,49 @@
+# A terminal demo.
+#
+# There is no app and no page to drive — Reel renders the terminal itself, as a
+# layer in the same document it uses for web demos. So everything else still
+# applies: captions, title cards, device frames, the deterministic timeline,
+# encoding to GIF/MP4, storyboards.
+#
+# Commands really run. `expectOutput` and `expectCode` make `reel check` a smoke
+# test of your CLI, not a scripted illusion of one.
+name: reel — demos-as-code, from the CLI
+
+terminal:
+  cols: 84
+  rows: 20
+  cwd: . # relative to this spec file
+  prompt: "~/reel $ "
+  title: "zsh — reel"
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  frame: window
+  background: "linear-gradient(135deg, #22304f, #12151f)"
+  accent: "#7cf3c4"
+  captions: true
+
+steps:
+  - card: { title: "Reel", subtitle: "Demos as code — for the terminal too", ms: 1600 }
+
+  - caption: "Every step runs a real command"
+  - run: ls ..
+  - expectOutput: taskflow
+  - beat: listed
+
+  - caption: "Colour and progress replay just as they printed"
+  - run: node -e "console.log('[32m✓[0m built in [1m1.2s[0m')"
+  - expectOutput: built in
+  - beat: colours
+
+  - caption: "Exit codes are assertions — so this is a smoke test"
+  - run: { cmd: node -e "process.exit(0)", expectCode: 0 }
+  - beat: outro
+
+output:
+  preset: readme
+  gif: out/cli.gif
+  mp4: out/cli.mp4
+  storyboard: out/storyboard

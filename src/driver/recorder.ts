@@ -50,6 +50,11 @@ export class Recorder {
     return this.opts.deterministic;
   }
 
+  /** False in `check` mode, where actions run but nothing is filmed. */
+  get cinematic(): boolean {
+    return this.opts.cinematic;
+  }
+
   /** A real wait that costs no demo time — for letting the app catch up. */
   async settle(ms: number): Promise<void> {
     await this.page.waitForTimeout(ms).catch(() => {});
@@ -81,6 +86,19 @@ export class Recorder {
     );
     await this.capture?.frameAt(this.timeline.now());
     this.timeline.advanceScaled(d);
+  }
+
+  /**
+   * Capture the current state and advance the clock without waiting.
+   *
+   * For content that has already been produced and is only being replayed —
+   * terminal output, typed characters — where a real wait would slow the
+   * recording down without changing a single pixel.
+   */
+  async frameFor(ms: number): Promise<void> {
+    if (!this.opts.cinematic) return;
+    await this.capture?.frameAt(this.timeline.now());
+    this.timeline.advanceScaled(this.timeline.scale(ms));
   }
 
   /**

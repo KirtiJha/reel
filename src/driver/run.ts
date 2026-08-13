@@ -8,6 +8,7 @@ import { resolveOutputProfile, type Step } from "../spec/schema.js";
 import { applyDeterminism } from "./determinism.js";
 import { Timeline } from "./timeline.js";
 import { Recorder } from "./recorder.js";
+import { TerminalController } from "../terminal/controller.js";
 import { installOverlay } from "../overlay/overlay.js";
 import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
@@ -101,6 +102,21 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       cinematic: mode === "record",
       animationsDisabled: spec.deterministic.disableAnimations,
     });
+    // The terminal is a layer in this same page, so a spec can show a command
+    // and the browser it affects, and every downstream stage is unchanged.
+    const term = spec.terminal
+      ? new TerminalController(
+          page,
+          spec.terminal,
+          rec,
+          spec.terminal.cwd ? resolveOutput(loaded, spec.terminal.cwd) : loaded.dir,
+        )
+      : null;
+    if (term && mode === "record") {
+      await term.install();
+      await term.show("terminal"); // a terminal spec opens on the terminal
+    }
+
     const ctx: StepContext = {
       page,
       spec,
@@ -112,6 +128,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       captions,
       capture,
       rec,
+      term,
       scenes,
     };
     // The opening frame: without it the timeline starts at the first thing that
@@ -126,7 +143,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             cursor: spec.polish.cursor !== "none",
             captions: spec.polish.captions,
             accent: spec.polish.accent,
+            animate: !deterministic,
           }).catch(() => {});
+          // A new document wipes the terminal layer along with the overlay.
+          term?.install().catch(() => {});
         }
       });
     }

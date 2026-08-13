@@ -206,6 +206,39 @@ export function resolveOutputProfile(o: Output): OutputProfile {
   };
 }
 
+/* ---------------------------- Terminal ---------------------------- */
+
+/**
+ * Terminal demos. The terminal renders as a layer in the same page as the app,
+ * so one spec can show a command and the browser it affects, and every existing
+ * feature — zoom, captions, cards, device frames, encoding, the interactive
+ * build — works on it unchanged.
+ */
+export const terminalSchema = z.object({
+  cols: z.number().int().positive().max(300).default(90),
+  rows: z.number().int().positive().max(120).default(24),
+  /** Working directory for commands; relative to the spec file. */
+  cwd: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  /** The prompt drawn before each typed command. */
+  prompt: z.string().default("$ "),
+  title: z.string().default("zsh — reel"),
+  background: cssColor.default("#0b0d12"),
+  foreground: cssColor.default("#c9d1d9"),
+  fontSize: z.number().int().positive().default(15),
+  fontFamily: z.string().optional(),
+  /** Per-character delay while the command is typed on camera (ms). */
+  typing: z.number().int().nonnegative().default(55),
+  /** Longest a single command may take before it's killed (ms). */
+  timeout: z.number().int().positive().default(120_000),
+  /**
+   * Longest the captured output may take to stream back on camera (ms).
+   * Output is replayed, not filmed live, so a slow command still reads fast.
+   */
+  replayMs: z.number().int().nonnegative().default(2200),
+});
+export type TerminalConfig = z.infer<typeof terminalSchema>;
+
 /* ----------------------------- Steps ----------------------------- */
 
 const selector = z.string().min(1);
@@ -325,6 +358,34 @@ export const stepSchema = z.union([
   }).strict(),
   /** Explicit pause — discouraged, but sometimes you want a deliberate hold. */
   z.object({ hold: durationMs }).strict(),
+
+  /* --- Terminal steps (require a `terminal:` block) --- */
+
+  /**
+   * Type a command at the prompt, run it, and replay its output. The command
+   * really runs — so like `expect`, this makes `reel check` a genuine smoke
+   * test of the CLI, not a scripted illusion of one.
+   */
+  z.object({
+    run: z.union([
+      z.string(),
+      z.object({
+        cmd: z.string(),
+        /** Text piped to stdin, for commands that prompt. */
+        input: z.string().optional(),
+        /** Fail the run unless the command exits with this code. */
+        expectCode: z.number().int().optional(),
+        /** Override the replay budget for this command (ms). */
+        replayMs: durationMs.optional(),
+      }),
+    ]),
+  }).strict(),
+  /** Assert the terminal screen contains this text. */
+  z.object({ expectOutput: z.string() }).strict(),
+  /** Clear the terminal screen. */
+  z.object({ clear: z.boolean() }).strict(),
+  /** Switch between the terminal and the app underneath it. */
+  z.object({ show: z.enum(["terminal", "app"]) }).strict(),
 ]);
 export type Step = z.infer<typeof stepSchema>;
 
@@ -385,7 +446,7 @@ export const matrixSchema = z.object({
 });
 export type Matrix = z.infer<typeof matrixSchema>;
 
-export const specSchema = z.object({
+const specObject = z.object({
   version: z.literal(SPEC_VERSION).default(SPEC_VERSION),
   name: z.string().default("Untitled demo"),
   url: z.string().default("http://localhost:3000"),
@@ -409,12 +470,32 @@ export const specSchema = z.object({
   retries: z.number().int().nonnegative().max(5).default(0),
   /** Render this one spec at several viewports and/or themes. */
   matrix: matrixSchema.optional(),
+  /** Enable terminal steps, and configure how the terminal looks and behaves. */
+  terminal: terminalSchema.optional(),
   steps: z.array(stepSchema).min(1),
   output: outputSchema,
 });
 
+/**
+ * A terminal-only demo has no app to load, so `url` must not fall back to a dev
+ * server that isn't running — the navigation would stall before recording.
+ */
+export const specSchema = z.preprocess((v) => {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const raw = v as Record<string, unknown>;
+    if (raw.terminal !== undefined && raw.url === undefined) {
+      return { ...raw, url: "about:blank" };
+    }
+  }
+  return v;
+}, specObject);
+
 /** The parsed, defaulted spec. */
 export type Spec = z.infer<typeof specSchema>;
 
-/** The raw shape users write (before defaults are applied). */
-export type SpecInput = z.input<typeof specSchema>;
+/**
+ * The raw shape users write (before defaults are applied). Taken from the inner
+ * object: the preprocess wrapper accepts `unknown` by construction, which would
+ * erase the type for callers that build a spec programmatically.
+ */
+export type SpecInput = z.input<typeof specObject>;

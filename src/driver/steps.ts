@@ -11,6 +11,7 @@ import {
   toPlaywrightSelector,
 } from "../overlay/overlay.js";
 import type { Recorder } from "./recorder.js";
+import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
@@ -36,6 +37,8 @@ export interface StepContext {
   capture?: ScreenshotCapture | null;
   /** Owns the demo clock and every operation that consumes demo time. */
   rec: Recorder;
+  /** Present when the spec declares a `terminal:` block. */
+  term?: TerminalController | null;
   /** Click-through scenes for the interactive HTML build. */
   scenes: Scene[];
   /** When the last title card appeared — a card resets the narration context. */
@@ -325,7 +328,47 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     return;
   }
 
+  if ("run" in step) {
+    const term = requireTerminal(ctx, "run");
+    const r = typeof step.run === "string" ? { cmd: step.run } : step.run;
+    await term.run(r);
+    snap(ctx, label);
+    return;
+  }
+
+  if ("expectOutput" in step) {
+    await requireTerminal(ctx, "expectOutput").expectOutput(step.expectOutput);
+    return;
+  }
+
+  if ("clear" in step) {
+    if (step.clear) await requireTerminal(ctx, "clear").clear();
+    return;
+  }
+
+  if ("show" in step) {
+    const term = requireTerminal(ctx, "show");
+    await term.show(step.show);
+    // Switching surfaces is a scene change: pull the camera wide, and give the
+    // viewer a moment to register that they're looking at something else.
+    zoomOut(ctx);
+    await ctx.rec.hold(HOLD.afterGoto);
+    snap(ctx, label);
+    return;
+  }
+
   throw new ReelError(`Unknown step: ${JSON.stringify(step)}`);
+}
+
+/** Terminal steps are meaningless without a terminal; say so precisely. */
+function requireTerminal(ctx: StepContext, step: string): TerminalController {
+  if (!ctx.term) {
+    throw new ReelError(
+      `\`${step}\` needs a \`terminal:\` block in the spec.`,
+      "Add `terminal: { cols: 90, rows: 24 }` to enable terminal steps.",
+    );
+  }
+  return ctx.term;
 }
 
 /**
@@ -446,6 +489,7 @@ function describe(step: Step): string {
   if (typeof val === "number") return `${key} ${val}`;
   if (typeof val === "object" && val) {
     const v = val as Record<string, unknown>;
+    if ("cmd" in v) return `${key} ${v.cmd}`;
     if ("selector" in v) return `${key} ${v.selector}${"text" in v ? ` "${v.text}"` : ""}`;
     if ("title" in v) return `${key} “${v.title}”`;
     if ("text" in v) return `${key} “${v.text}”`;
