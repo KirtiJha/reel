@@ -42,33 +42,43 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
+      # Fail here, where the message names the missing thing, rather than three
+      # minutes later inside Playwright.
+      - name: Preflight
+        run: npm run reel -- doctor
+
       - name: Unit tests
         run: npm test
 
       # Drift detection: does the demo still run against the app at all?
       - name: Drift check
-        run: npx reel check examples/taskflow/demo.reel.yaml
+        run: npm run reel -- check examples/taskflow/demo.reel.yaml
 
       # Regenerate the README media. Deterministic, so this is a no-op unless
       # the demo genuinely changed.
       - name: Regenerate demo media
-        run: npx reel record examples/taskflow/showcase.reel.yaml
+        run: npm run reel -- record examples/taskflow/showcase.reel.yaml
 
       # The interactive build ships its own router, autoplay and host API;
       # only a real browser can prove the file people open actually works.
       - name: Interactive build self-test
         run: npm run test:player
 
+      # Capture writes specs; the only test that matters is whether the driver
+      # can replay what it wrote.
+      - name: Capture self-test
+        run: npm run test:capture
+
       # Terminal demos run real commands, so this is also a CLI smoke test.
       - name: Terminal demo check
-        run: npx reel check examples/cli/demo.reel.yaml
+        run: npm run reel -- check examples/cli/demo.reel.yaml
 
       # Branching: every path is a flow that can break, including the ones the
       # video never shows.
       - name: Branching demo
         run: |
-          npx reel check examples/taskflow/branching.reel.yaml
-          npx reel record examples/taskflow/branching.reel.yaml
+          npm run reel -- check examples/taskflow/branching.reel.yaml
+          npm run reel -- record examples/taskflow/branching.reel.yaml
           npm run test:branch
 
       - name: Detect media change

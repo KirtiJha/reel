@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { glob } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { Ajv, type ErrorObject } from "ajv";
 import { generate, readSource, serialize, SCHEMA_OUT } from "../scripts/gen-schema.js";
@@ -95,8 +95,12 @@ describe("every shipped spec validates against it", () => {
     const ajv = new Ajv({ strict: false, allErrors: true });
     const validate = ajv.compile(await committed());
 
-    const specs: string[] = [];
-    for await (const f of glob("examples/**/*.reel.yaml")) specs.push(f);
+    // `readdir` rather than `glob`: glob landed in Node 22 and Reel supports 20,
+    // which CI runs — a test that only passes on the newest Node tests nothing
+    // about the versions people actually have.
+    const specs = (await readdir("examples", { recursive: true }))
+      .filter((f) => f.endsWith(".reel.yaml"))
+      .map((f) => join("examples", f));
     assert.ok(specs.length >= 3, `expected to find the example specs, found ${specs.length}`);
 
     for (const file of specs) {
