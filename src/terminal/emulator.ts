@@ -15,6 +15,8 @@
  * Pure and synchronous: bytes in, grid out. Which is what makes it testable.
  */
 
+import { DEFAULT_PALETTE } from "./themes.js";
+
 export interface Style {
   fg?: string;
   bg?: string;
@@ -38,17 +40,15 @@ export interface Span {
 
 const EMPTY: Style = {};
 
-/** The xterm 16-colour palette, as rendered by most modern terminals. */
-const BASE_COLORS = [
-  "#1e2029", "#f0616e", "#7ee787", "#f0c674",
-  "#79b8ff", "#d2a8ff", "#56d4dd", "#c9d1d9",
-  "#5a6172", "#ff8a94", "#a2f2a9", "#ffe08a",
-  "#a5d6ff", "#e2c5ff", "#8ff0f5", "#ffffff",
-];
-
-/** xterm 256-colour cube → hex. */
-function color256(n: number): string {
-  if (n < 16) return BASE_COLORS[n]!;
+/**
+ * xterm 256-colour cube → hex.
+ *
+ * Only the first sixteen entries are themeable: the cube and the greyscale ramp
+ * above them are defined by the spec as fixed RGB values, and every terminal
+ * renders them identically regardless of colour scheme.
+ */
+function color256(n: number, palette: readonly string[]): string {
+  if (n < 16) return palette[n]!;
   if (n < 232) {
     const i = n - 16;
     const steps = [0, 95, 135, 175, 215, 255];
@@ -79,6 +79,8 @@ export class TerminalEmulator {
   constructor(
     readonly cols: number,
     readonly rows: number,
+    /** The 16 ANSI colours. Defaults to Reel's own scheme. */
+    private readonly palette: readonly string[] = DEFAULT_PALETTE,
   ) {
     this.reset();
   }
@@ -303,17 +305,17 @@ export class TerminalEmulator {
         case v === 23: this.style = { ...this.style, italic: false }; break;
         case v === 24: this.style = { ...this.style, underline: false }; break;
         case v === 27: this.style = { ...this.style, inverse: false }; break;
-        case v >= 30 && v <= 37: this.style = { ...this.style, fg: BASE_COLORS[v - 30] }; break;
+        case v >= 30 && v <= 37: this.style = { ...this.style, fg: this.palette[v - 30] }; break;
         case v === 39: this.style = { ...this.style, fg: undefined }; break;
-        case v >= 40 && v <= 47: this.style = { ...this.style, bg: BASE_COLORS[v - 40] }; break;
+        case v >= 40 && v <= 47: this.style = { ...this.style, bg: this.palette[v - 40] }; break;
         case v === 49: this.style = { ...this.style, bg: undefined }; break;
-        case v >= 90 && v <= 97: this.style = { ...this.style, fg: BASE_COLORS[v - 90 + 8] }; break;
-        case v >= 100 && v <= 107: this.style = { ...this.style, bg: BASE_COLORS[v - 100 + 8] }; break;
+        case v >= 90 && v <= 97: this.style = { ...this.style, fg: this.palette[v - 90 + 8] }; break;
+        case v >= 100 && v <= 107: this.style = { ...this.style, bg: this.palette[v - 100 + 8] }; break;
         case v === 38 || v === 48: {
           // Extended colour: 5;n (256) or 2;r;g;b (truecolour).
           const key = v === 38 ? "fg" : "bg";
           if (nums[i + 1] === 5) {
-            this.style = { ...this.style, [key]: color256(nums[i + 2] ?? 0) };
+            this.style = { ...this.style, [key]: color256(nums[i + 2] ?? 0, this.palette) };
             i += 2;
           } else if (nums[i + 1] === 2) {
             this.style = {

@@ -46,14 +46,20 @@ export async function installTerminal(page: Page, layout: TerminalLayout): Promi
       overflow: "hidden",
     } as CSSStyleDeclaration);
 
+    // The title bar tints toward the theme's *foreground*, not toward white.
+    // Hardcoded white alphas were invisible the moment a light scheme arrived —
+    // white text at 45% opacity on a white background is nothing at all.
+    const tint = (pct: number) =>
+      `color-mix(in srgb, ${l.theme.foreground} ${pct}%, transparent)`;
+
     const bar = document.createElement("div");
     Object.assign(bar.style, {
       flex: "0 0 auto",
       padding: "10px 14px",
       font: `500 12px/1 ${l.theme.fontFamily}`,
-      color: "rgba(255,255,255,.45)",
-      background: "rgba(255,255,255,.04)",
-      borderBottom: "1px solid rgba(255,255,255,.07)",
+      color: tint(55),
+      background: tint(5),
+      borderBottom: `1px solid ${tint(10)}`,
       textAlign: "center",
       letterSpacing: ".02em",
     } as CSSStyleDeclaration);

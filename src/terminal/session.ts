@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -86,4 +86,32 @@ export async function runCommand(cmd: string, opts: RunOptions): Promise<Command
       resolve({ output, code: code ?? 0, timedOut });
     });
   });
+}
+
+/**
+ * Fail before recording if a program the demo depends on isn't installed.
+ *
+ * Without this a missing binary surfaces as `command not found` replayed into
+ * the middle of the film — or worse, as a passing `reel check` that recorded a
+ * demo of an error. Checking up front names what's absent while the message can
+ * still be acted on, and reports every missing program at once rather than one
+ * per re-run.
+ */
+export function checkRequirements(programs: readonly string[]): void {
+  if (programs.length === 0) return;
+  const missing = programs.filter((p) => !onPath(p));
+  if (missing.length === 0) return;
+  const one = missing.length === 1;
+  throw new ReelError(
+    `Missing ${one ? "a program" : "programs"} this demo needs: ${missing.join(", ")}`,
+    `Install ${one ? "it" : "them"}, or drop the ${one ? "name" : "names"} from \`terminal.require\` if the demo no longer uses ${one ? "it" : "them"}.`,
+  );
+}
+
+function onPath(program: string): boolean {
+  // `command -v` is the POSIX spelling and handles shell builtins and functions
+  // as well as files on PATH; Windows has no equivalent, so fall back to `where`.
+  const probe =
+    process.platform === "win32" ? `where ${program}` : `command -v ${program}`;
+  return spawnSync(probe, { shell: true, stdio: "ignore" }).status === 0;
 }

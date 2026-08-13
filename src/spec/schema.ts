@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_THEME, THEME_NAMES, TERMINAL_THEMES } from "../terminal/themes.js";
 
 /**
  * The Reel demo spec — the heart of the tool.
@@ -230,29 +231,56 @@ export function resolveOutputProfile(o: Output): OutputProfile {
  * feature — zoom, captions, cards, device frames, encoding, the interactive
  * build — works on it unchanged.
  */
-export const terminalSchema = z.object({
-  cols: z.number().int().positive().max(300).default(90),
-  rows: z.number().int().positive().max(120).default(24),
-  /** Working directory for commands; relative to the spec file. */
-  cwd: z.string().optional(),
-  env: z.record(z.string()).optional(),
-  /** The prompt drawn before each typed command. */
-  prompt: z.string().default("$ "),
-  title: z.string().default("zsh — reel"),
-  background: cssColor.default("#0b0d12"),
-  foreground: cssColor.default("#c9d1d9"),
-  fontSize: z.number().int().positive().default(15),
-  fontFamily: z.string().optional(),
-  /** Per-character delay while the command is typed on camera (ms). */
-  typing: z.number().int().nonnegative().default(55),
-  /** Longest a single command may take before it's killed (ms). */
-  timeout: z.number().int().positive().default(120_000),
-  /**
-   * Longest the captured output may take to stream back on camera (ms).
-   * Output is replayed, not filmed live, so a slow command still reads fast.
-   */
-  replayMs: z.number().int().nonnegative().default(2200),
-});
+export const terminalSchema = z
+  .object({
+    cols: z.number().int().positive().max(300).default(90),
+    rows: z.number().int().positive().max(120).default(24),
+    /** Working directory for commands; relative to the spec file. */
+    cwd: z.string().optional(),
+    env: z.record(z.string()).optional(),
+    /** The prompt drawn before each typed command. */
+    prompt: z.string().default("$ "),
+    title: z.string().default("zsh — reel"),
+    /**
+     * Named colour scheme. Supplies the 16 ANSI colours plus a matching
+     * background and foreground; set either of those explicitly to override it.
+     */
+    theme: z.enum(THEME_NAMES).default(DEFAULT_THEME),
+    background: cssColor.optional(),
+    foreground: cssColor.optional(),
+    /** Replace the theme's 16 ANSI colours outright: 8 normal, then 8 bright. */
+    palette: z.array(cssColor).length(16).optional(),
+    fontSize: z.number().int().positive().default(15),
+    fontFamily: z.string().optional(),
+    /**
+     * Programs the demo needs on PATH.
+     *
+     * Checked once before anything runs, so a missing dependency fails with the
+     * name of what's absent rather than partway through with whatever error the
+     * shell happened to produce.
+     */
+    require: z.array(z.string().min(1)).default([]),
+    /** Per-character delay while the command is typed on camera (ms). */
+    typing: z.number().int().nonnegative().default(55),
+    /** Longest a single command may take before it's killed (ms). */
+    timeout: z.number().int().positive().default(120_000),
+    /**
+     * Longest the captured output may take to stream back on camera (ms).
+     * Output is replayed, not filmed live, so a slow command still reads fast.
+     */
+    replayMs: z.number().int().nonnegative().default(2200),
+  })
+  // Resolve the theme here so everything downstream receives concrete colours
+  // and never has to know that named schemes exist.
+  .transform((cfg) => {
+    const theme = TERMINAL_THEMES[cfg.theme];
+    return {
+      ...cfg,
+      background: cfg.background ?? theme.background,
+      foreground: cfg.foreground ?? theme.foreground,
+      palette: (cfg.palette ?? theme.palette) as readonly string[],
+    };
+  });
 export type TerminalConfig = z.infer<typeof terminalSchema>;
 
 /* ----------------------------- Steps ----------------------------- */
@@ -398,6 +426,18 @@ const baseStepSchema = z.union([
         expectCode: z.number().int().optional(),
         /** Override the replay budget for this command (ms). */
         replayMs: durationMs.optional(),
+        /**
+         * Run the command off camera.
+         *
+         * For the setup a demo needs but nobody wants to watch — seeding a
+         * fixture, creating a scratch directory, installing something. The
+         * command still runs and `expectCode` still applies, so it stays part of
+         * what `reel check` verifies; it simply never reaches the screen.
+         *
+         * Note that each command runs in its own shell, so `cd` in a hidden step
+         * does not carry into later ones. Set `terminal.cwd` for that.
+         */
+        hidden: z.boolean().default(false),
       }),
     ]),
   }).strict(),

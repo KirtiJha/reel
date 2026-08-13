@@ -3,7 +3,7 @@ import type { TerminalConfig } from "../spec/schema.js";
 import type { Recorder } from "../driver/recorder.js";
 import { TerminalEmulator } from "./emulator.js";
 import { findTextRegion, fitToContent, type GridRegion } from "./grid.js";
-import { runCommand } from "./session.js";
+import { checkRequirements, runCommand } from "./session.js";
 import {
   DEFAULT_TERMINAL_FONT,
   installTerminal,
@@ -38,7 +38,17 @@ export class TerminalController {
     private readonly rec: Recorder,
     private readonly cwd: string,
   ) {
-    this.emu = new TerminalEmulator(cfg.cols, cfg.rows);
+    this.emu = new TerminalEmulator(cfg.cols, cfg.rows, cfg.palette);
+  }
+
+  /**
+   * Verify the demo's declared dependencies before anything is filmed.
+   *
+   * Runs in `check` as well as `record`: a drift check that silently recorded
+   * "command not found" would be worse than one that failed.
+   */
+  checkRequirements(): void {
+    checkRequirements(this.cfg.require);
   }
 
   /** Install the terminal layer (also called again after a navigation). */
@@ -112,8 +122,18 @@ export class TerminalController {
     input?: string;
     expectCode?: number;
     replayMs?: number;
+    hidden?: boolean;
   }): Promise<void> {
     const { cmd } = opts;
+
+    // Off-camera setup: run it, assert on it, show none of it. `lastRegion` and
+    // `lastPrinted` are deliberately left alone — they describe the last thing
+    // the viewer actually saw, which a hidden command hasn't changed.
+    if (opts.hidden) {
+      log.debug(`terminal (hidden): ${cmd}`);
+      await this.execute(cmd, opts);
+      return;
+    }
 
     // Note where this command starts so the camera can frame it afterwards.
     // Rows are viewport-relative and the screen scrolls, so the start row is
@@ -134,6 +154,27 @@ export class TerminalController {
     await this.rec.frameFor(140);
 
     // 2) Run it for real.
+    const result = await this.execute(cmd, opts);
+
+    // 3) Replay the output.
+    await this.replay(result.output, opts.replayMs ?? this.cfg.replayMs);
+
+    const shifted = this.emu.scrollCount() - scrollsBefore;
+    const row0 = Math.max(0, startRow - shifted);
+    const row1 = Math.max(row0, this.emu.cursor().y);
+    this.lastRegion = { row0, row1 };
+    this.lastPrinted = result.output.length > 0;
+  }
+
+  /**
+   * Run a command and apply its assertions. Shared by filmed and hidden runs so
+   * that `expectCode`, the timeout and the error messages behave identically
+   * whether or not the command appears on camera.
+   */
+  private async execute(
+    cmd: string,
+    opts: { input?: string; expectCode?: number },
+  ): Promise<{ output: string; code: number }> {
     const result = await runCommand(cmd, {
       cwd: this.cwd,
       env: this.cfg.env,
@@ -155,15 +196,7 @@ export class TerminalController {
         result.output.slice(-400),
       );
     }
-
-    // 3) Replay the output.
-    await this.replay(result.output, opts.replayMs ?? this.cfg.replayMs);
-
-    const shifted = this.emu.scrollCount() - scrollsBefore;
-    const row0 = Math.max(0, startRow - shifted);
-    const row1 = Math.max(row0, this.emu.cursor().y);
-    this.lastRegion = { row0, row1 };
-    this.lastPrinted = result.output.length > 0;
+    return result;
   }
 
   /**

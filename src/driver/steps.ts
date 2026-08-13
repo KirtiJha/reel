@@ -342,10 +342,14 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("run" in step) {
     const term = requireTerminal(ctx, "run");
-    const r = typeof step.run === "string" ? { cmd: step.run } : step.run;
+    const r = typeof step.run === "string" ? { cmd: step.run, hidden: false } : step.run;
     await term.run(r);
-    await autoZoomOutput(ctx, term);
-    snap(ctx, label);
+    // A hidden command produced no frames, so there is nothing to point the
+    // camera at and nothing new for a storyboard beat to capture.
+    if (!r.hidden) {
+      await autoZoomOutput(ctx, term);
+      snap(ctx, label);
+    }
     return;
   }
 

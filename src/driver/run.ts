@@ -114,6 +114,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           spec.terminal.cwd ? resolveOutput(loaded, spec.terminal.cwd) : loaded.dir,
         )
       : null;
+    // Before anything is filmed, and in `check` too — a drift check that
+    // recorded "command not found" as if it were the demo would be worse than
+    // one that failed outright.
+    term?.checkRequirements();
     if (term && mode === "record") {
       await term.install();
       await term.show("terminal"); // a terminal spec opens on the terminal

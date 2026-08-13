@@ -15,6 +15,15 @@ terminal:
   cwd: . # relative to this spec file
   prompt: "~/reel $ "
   title: "zsh — reel"
+  # Programs this demo needs. Checked once before anything is filmed, in `check`
+  # as well as `record`, so a missing dependency fails by name instead of being
+  # recorded as "command not found" in the middle of the video.
+  require: [node]
+  # A named colour scheme supplies the 16 ANSI colours plus a matching
+  # background and foreground. `reel themes` lists them; setting `background` or
+  # `foreground` here still overrides the scheme's own. Studio exposes this as a
+  # dropdown under Output & polish.
+  #   theme: dracula
 
 deterministic:
   disableAnimations: true
@@ -31,6 +40,14 @@ polish:
 
 steps:
   - card: { title: "Reel", subtitle: "Demos as code — for the terminal too", ms: 1600 }
+
+  # Setup a demo needs but nobody wants to watch — seeding a fixture, making a
+  # scratch directory — runs off camera. It still runs, and `expectCode` still
+  # applies, so it stays part of what `reel check` verifies:
+  #   - run: { cmd: "mkdir -p scratch", hidden: true }
+  # In Studio, hover any run step in the Steps tab and click "hide".
+  # Each command gets its own shell, so `cd` in a hidden step does not carry
+  # into later ones; set `terminal.cwd` for that.
 
   - caption: "Every step runs a real command"
   - run: ls ..

@@ -355,8 +355,11 @@ terminal:
   cols: 84
   rows: 20
   prompt: "~/app $ "
+  theme: dracula                # colour scheme; `reel themes` lists them
+  require: [node, git]          # fail up front if these aren't installed
 
 steps:
+  - run: { cmd: "mkdir -p tmp", hidden: true }   # setup, off camera
   - run: npm run build          # types it, runs it for real, replays the output
   - expectOutput: "built in"    # a real assertion, checked by `reel check`
   - run: { cmd: npm test, expectCode: 0 }
@@ -369,8 +372,25 @@ is captured to completion and then *replayed* on camera at a bounded pace —
 which is why a 60-second install becomes two seconds of film, and why the result
 is byte-identical every run.
 
+**`theme`** supplies the 16 ANSI colours plus a matching background and
+foreground — `reel themes` prints each one as a swatch. Set `background`,
+`foreground` or `palette` to override any part of it.
+
+**`require`** is checked once before anything is filmed, in `check` as well as
+`record`, so a missing dependency fails by name instead of being recorded as
+`command not found` halfway through the video.
+
+**`hidden`** runs a command off camera. It still runs and `expectCode` still
+applies, so it remains part of what `reel check` verifies — it simply never
+reaches the screen. Each command gets its own shell, so `cd` in a hidden step
+doesn't carry into later ones; set `terminal.cwd` for that.
+
 Colour comes from `FORCE_COLOR`, which covers build tools, package managers, git
-and bespoke CLIs. Full-screen TUIs need a real pty and aren't supported.
+and bespoke CLIs. Tools that check `isatty` directly — common in Go, Rust and
+Python — will still print unstyled, because output goes through a pipe rather
+than a pty. That is the same choice that makes the recording deterministic and
+`expectOutput` meaningful. Full-screen TUIs need a real pty and aren't
+supported.
 
 See [`examples/cli/demo.reel.yaml`](examples/cli/demo.reel.yaml).
 
@@ -433,6 +453,7 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel check <spec>` | Re-run headlessly; **exit 1 if any step can't complete** (CI drift). |
 | `reel heal <spec> [--write]` | Re-run; when a step breaks (UI drift), an agent re-resolves it, verifies the fix, and repairs the spec. |
 | `reel ui` | Launch **Reel Studio**, the local web UI. |
+| `reel themes` | List the colour schemes available to terminal demos. |
 | `reel author <story> --url <url>` | AI authoring — an agent drives your app and emits a spec you own. |
 
 ## Why it's reliable (and the plan's three hard problems)

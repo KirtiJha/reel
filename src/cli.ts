@@ -15,8 +15,23 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
+import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 
 const program = new Command();
+
+/** Truecolour background escape, for printing a theme's palette as swatches. */
+const RESET = "\x1b[0m";
+function bgHex(hex: string): string {
+  const [r, g, b] = rgbOf(hex);
+  return `\x1b[48;2;${r};${g};${b}m`;
+}
+function fgHex(hex: string): string {
+  const [r, g, b] = rgbOf(hex);
+  return `\x1b[38;2;${r};${g};${b}m`;
+}
+function rgbOf(hex: string): number[] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
 
 program
   .name("reel")
@@ -96,6 +111,26 @@ program
   .description("Scaffold a starter demo.reel.yaml.")
   .action(async (dir: string, opts: { url: string; name: string }) => {
     await withErrors(() => initSpec(dir, opts));
+  });
+
+program
+  .command("themes")
+  .description("List the colour schemes available to terminal demos.")
+  .action(() => {
+    // Printed as a swatch of the scheme's own colours: a list of names tells you
+    // nothing about what you are choosing between.
+    for (const name of THEME_NAMES) {
+      const t = TERMINAL_THEMES[name];
+      // Base tones first: Solarized's light and dark variants share every accent
+      // colour and differ only here, so a palette-only swatch would show them as
+      // the same theme.
+      const base = bgHex(t.background) + fgHex(t.foreground) + " Aa " + RESET;
+      const swatch = t.palette
+        .slice(0, 8)
+        .map((hex) => bgHex(hex) + "  " + RESET)
+        .join("");
+      process.stdout.write(`  ${base} ${swatch}  ${name}\n`);
+    }
   });
 
 program
