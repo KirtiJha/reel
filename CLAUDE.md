@@ -37,6 +37,7 @@ The browser-driven self-tests cover what unit tests can't:
 ```bash
 npm run test:player   # the interactive build's router, autoplay, embed, a11y
 npm run test:branch   # branch splicing, choice UI, deep links
+npm run test:capture  # captures a spec from the example app, then replays it
 ```
 
 ## Things that are easy to break
@@ -51,3 +52,12 @@ npm run test:branch   # branch splicing, choice UI, deep links
 - **The Studio derives everything from the zod schema** (`src/ui/summary.ts`).
   Add a step kind to the schema and the UI picks it up; don't hand-maintain a
   parallel list.
+- **So does the JSON Schema.** Touch `src/spec/schema.ts` and re-run
+  `npm run schema`, then commit `schema/reel.schema.json` — a test fails if it
+  falls behind. Its hover text is harvested from the doc comments in that file,
+  so a new key wants a comment, not a `.describe()` call.
+- **A new step kind needs a `reel capture` opinion.** If a user can perform it
+  in a browser, `src/authoring/steps.ts` should know how to write it down; if
+  they can't, nothing to do. Selectors are chosen in `src/authoring/selector.ts`
+  and ranked by how stable their *meaning* is — never add a rule that resolves
+  ambiguity by index.

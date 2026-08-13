@@ -47,11 +47,24 @@ and in CI.
 ```bash
 npm i -D @kirtijha/reel        # or: npm i -g @kirtijha/reel
 npx playwright install chromium
+npx reel doctor                # confirm this machine can record
 
 # Scaffold a spec, then record it
 npx reel init
 npx reel record demo.reel.yaml
 ```
+
+Don't want to write the first spec by hand? **Drive your app and let Reel write
+it down:**
+
+```bash
+npx reel capture --url http://localhost:3000 -o demo.reel.yaml
+```
+
+`reel doctor` is worth the ten seconds. Reel leans on a Chromium build and an
+ffmpeg binary, and when either is missing or mismatched the error arrives from
+deep inside a library, phrased for that library's maintainers. Doctor checks
+each one by using it, and tells you the command that fixes it.
 
 Once it's a dependency, `npx reel` resolves to the local binary. To try it
 without installing anything, use the scoped name directly —
@@ -80,6 +93,48 @@ reel ui                  # starts the API + UI and opens your browser
 
 It runs entirely locally: an in-process API (Playwright/ffmpeg) plus the Next.js
 frontend, which proxies data and media back to it.
+
+## Capture — author by doing
+
+```bash
+reel capture --url http://localhost:3000 -o demo.reel.yaml
+```
+
+Your app opens in a real browser. Use it the way you'd demo it; a toolbar at the
+bottom tracks the steps and asks for the two things a recorder can't infer —
+**captions**, and where the **beats** fall. Press Finish and you have a spec that
+already replays.
+
+The interesting part is which selector each step gets, and it's ranked by
+*stability of meaning*, not convenience: a test id is a contract, an accessible
+name is a promise to users, a CSS path is neither. Two rules do most of the work:
+
+- **Anything ambiguous is discarded, not indexed.** `text=Delete` matching four
+  rows isn't "the first Delete" — it's a selector that will act on whichever row
+  the layout puts first tomorrow.
+- **Framework-minted names are rejected.** `:r3:`, `mui-4821`, `css-1x2y3z4a` are
+  stable within a page load and worthless across one, which is the worst kind of
+  failure to debug.
+
+What comes out is a **draft**, and it says so in a comment at the top. Capture
+sees what you clicked; it can't see which moment was the point. Anything it
+couldn't write down is reported rather than dropped in silence.
+
+## Editor support
+
+Every spec `reel init` or `reel capture` writes opens with a schema line, so
+VS Code (with the YAML extension), JetBrains, and Neovim complete step kinds,
+enumerate `frame:` and `theme:` values, and underline a misspelled key:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+```
+
+The schema is **generated from the same zod schema the driver validates
+against** — a hand-maintained second copy would drift, and autocomplete that
+suggests a key the driver rejects is worse than none. The hover text is the
+documentation from Reel's own source. For an editor with no network access,
+`reel schema --out reel.schema.json` vendors a copy.
 
 ## The spec
 
@@ -448,13 +503,27 @@ at one width and not another, and that's exactly the drift worth catching.
 
 | Command | What it does |
 |---|---|
+| `reel doctor` | Check this machine can record: browser, ffmpeg, image pipeline, temp space. |
 | `reel init [dir]` | Scaffold a starter `demo.reel.yaml`. |
+| `reel capture --url <url>` | **Author by doing** — drive the app in a browser and get a spec back. |
 | `reel record <spec>` | Drive the app and render GIF / MP4 / WebM / storyboard. |
 | `reel check <spec>` | Re-run headlessly; **exit 1 if any step can't complete** (CI drift). |
+| `reel diff <before> <after>` | Compare two renders and report **which parts of the demo changed**. |
 | `reel heal <spec> [--write]` | Re-run; when a step breaks (UI drift), an agent re-resolves it, verifies the fix, and repairs the spec. |
+| `reel schema [--out <file>]` | Print the JSON Schema for a spec (editor autocomplete). |
 | `reel ui` | Launch **Reel Studio**, the local web UI. |
 | `reel themes` | List the colour schemes available to terminal demos. |
 | `reel author <story> --url <url>` | AI authoring — an agent drives your app and emits a spec you own. |
+
+Useful flags:
+
+| Flag | What it does |
+|---|---|
+| `--json` | Print one machine-readable result object on **stdout**; logs stay on stderr. |
+| `record --if-changed` | Skip the render when the spec, its inputs and its outputs are all unchanged. |
+| `record --app-revision <sha>` | Identify the app being demoed, so a changed app forces a re-render. |
+| `diff --exit-code` | Exit 1 when the two renders differ, like `git diff --exit-code`. |
+| `-v, --verbose` | Per-step detail, including the ffmpeg invocations. |
 
 ## Why it's reliable (and the plan's three hard problems)
 
@@ -512,6 +581,52 @@ never lying.
 That preview only works because output is deterministic — otherwise every PR
 would carry a media change and the signal would be worthless.
 
+**Don't re-render what didn't change.** Recording is the slowest thing Reel
+does, and CI regenerates on every push. Because identical inputs produce
+identical bytes, the render is pure cost when nothing moved:
+
+```bash
+reel record demo.reel.yaml --if-changed --app-revision "$GITHUB_SHA"
+```
+
+It hashes the spec's bytes plus every local file it names (a `storageState`, a
+mock HAR), the Reel version, and the app revision you pass in — then checks the
+declared outputs are still on disk, because a matching hash means nothing if
+somebody deleted the GIF. The app itself is deliberately *not* fingerprinted:
+Reel can't know what a URL will serve, and pretending otherwise would make
+skipping unsafe. That's what `--app-revision` is for.
+
+**When a step breaks, look at what it saw.** A failure writes diagnostics to
+`.reel-failures/` beside the spec: a full-page `failure.png`, a `failure.gif` of
+the last four seconds leading up to it, the page's HTML, and a `failure.json`
+with the step, the URL and the console output. A CI log saying `Timeout 30000ms
+exceeded` is not a debuggable artifact; the four seconds before it is.
+
+**Machine-readable results.** `--json` prints one result object on stdout —
+logs stay on stderr, so the two never interleave. Failures carry the step that
+broke and the paths to its artifacts, so a job can surface them without knowing
+where Reel puts things:
+
+```bash
+reel check demo.reel.yaml --json | jq -r '.error.artifacts.screenshot // empty'
+```
+
+**Reviewing a changed demo.** A PR that touches the app produces a changed
+binary marked "modified", which isn't review. `reel diff` says what actually
+moved:
+
+```
+$ reel diff before.gif out/demo.gif
+  8.0s–9.8s     2.4% of pixels · hero
+  10.4s–11.4s   5.7% of pixels · hero
+  15.0s–15.4s    50% of pixels · outro · only in one render
+```
+
+Ranges are labelled with the beats they fall in, and each one gets a
+before/after/difference strip with the changed pixels burned magenta. Two
+renders differing is a result, not a failure, so the exit code stays 0 unless
+you pass `--exit-code`.
+
 **Flaky steps.** `retries: 2` re-runs a step that fails transiently. Retries are
 deliberately narrow: steps that mutate nothing are always safe, while a click or
 a type is retried only when the failure proves the action never landed — so a
@@ -556,8 +671,13 @@ determinism, retina capture, auto-zoom, device frames + padding/background,
 polish (synthetic cursor + composited captions), the **scene grammar** (title
 cards, spotlight callouts, rendered scrolling, explicit camera, assertions),
 delivery presets, encoders (GIF/MP4/WebM/storyboard), **interactive HTML**,
-AI authoring, **self-healing drift repair**, **subtitles + localization**, and
-**PII redaction + mock data** — all provider-agnostic via a LiteLLM proxy. See [the product plan](<demosascodeproductplan (1).md>).
+**branching**, **terminal demos**, **capture** and AI authoring, **self-healing
+drift repair**, **subtitles + localization**, and **PII redaction + mock data**
+— the model-backed parts provider-agnostic via a LiteLLM proxy, and optional.
+
+Around them, the things that make it usable day to day: `reel doctor`,
+failure artifacts, `--json`, `--if-changed`, `reel diff`, and a JSON Schema for
+editor autocomplete.
 
 ## License
 
