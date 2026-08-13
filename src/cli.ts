@@ -23,6 +23,7 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
 import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
+import { exportSchema, SCHEMA_FILE, SCHEMA_URL } from "./commands/schema.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -194,6 +195,21 @@ program
   .description("Scaffold a starter demo.reel.yaml.")
   .action(async (dir: string, opts: { url: string; name: string }) => {
     await withErrors(() => initSpec(dir, opts));
+  });
+
+program
+  .command("schema")
+  .description("Print the JSON Schema for a .reel.yaml — editor autocomplete and validation.")
+  .option("-o, --out <file>", "write it to a file instead of stdout, to vendor it in your repo")
+  .action(async (opts: { out?: string }) => {
+    await withErrors(async () => {
+      if (opts.out) {
+        await exportSchema(opts.out);
+        return;
+      }
+      const { readFile } = await import("node:fs/promises");
+      process.stdout.write(await readFile(SCHEMA_FILE, "utf8"));
+    }, "schema");
   });
 
 program

@@ -1,5 +1,6 @@
 import { writeFile, mkdir, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { schemaDirective } from "./schema.js";
 import { log, ReelError } from "../util/log.js";
 
 /** Scaffold a starter spec so a new user is one edit away from a demo. */
@@ -26,7 +27,11 @@ export async function initSpec(
 }
 
 function template(opts: { url: string; name: string }): string {
-  return `# Reel demo spec — https://github.com/reel-dev/reel
+  // The schema line comes first so an editor picks it up before anything else
+  // is typed: completion and validation from the first keystroke is most of
+  // what makes a spec pleasant to write.
+  return `${schemaDirective()}
+# Reel demo spec — https://github.com/KirtiJha/reel
 name: ${opts.name}
 url: ${opts.url}
 viewport: { width: 1280, height: 800, scale: 2 }

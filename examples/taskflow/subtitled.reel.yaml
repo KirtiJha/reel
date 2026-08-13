@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
 name: TaskFlow — subtitled
 url: http://localhost:4321
 viewport: { width: 1000, height: 720, scale: 2 }

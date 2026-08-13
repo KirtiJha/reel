@@ -17,6 +17,7 @@ export const SPEC_VERSION = 1;
 
 const cssColor = z.string().min(1);
 
+/** The browser window the demo is filmed in. */
 export const viewportSchema = z.object({
   width: z.number().int().positive().default(1280),
   height: z.number().int().positive().default(800),
@@ -60,6 +61,10 @@ export const deterministicSchema = z.object({
 });
 export type Deterministic = z.infer<typeof deterministicSchema>;
 
+/**
+ * How the demo is filmed and presented: camera, cursor, captions, and the
+ * frame around the page. None of it changes what the app does.
+ */
 export const polishSchema = z.object({
   /** auto = zoom toward the active element; false = never zoom. */
   zoom: z.union([z.literal("auto"), z.literal(false)]).default("auto"),
@@ -165,6 +170,7 @@ export const PRESETS = {
 
 export type PresetName = keyof typeof PRESETS;
 
+/** What gets rendered, and where it is written. */
 export const outputSchema = z
   .object({
     /** Delivery profile; sets defaults for the fields below. */
@@ -298,10 +304,15 @@ const durationMs = z.number().int().nonnegative();
  * sense, records a `beat` so the encoder holds on meaningful frames.
  */
 const baseStepSchema = z.union([
+  /** Navigate. A path is resolved against `url`; a full URL is used as given. */
   z.object({ goto: z.string() }).strict(),
+  /** Click an element. The cursor glides to it first, and the click ripples. */
   z.object({ click: selector }).strict(),
+  /** Double-click an element. */
   z.object({ dblclick: selector }).strict(),
+  /** Move the cursor onto an element without clicking — for menus and tooltips. */
   z.object({ hover: selector }).strict(),
+  /** Type into a field, character by character, so the typing reads on camera. */
   z
     .object({
       type: z.object({
@@ -312,12 +323,17 @@ const baseStepSchema = z.union([
       }),
     })
     .strict(),
+  /** Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page. */
   z.object({ press: z.object({ selector: selector.optional(), key: z.string() }) }).strict(),
+  /** Set a field's value in one go. Use `type` when the typing is the point. */
   z.object({ fill: z.object({ selector, text: z.string() }) }).strict(),
+  /** Scroll an element into view. Use `scroll` for a filmed, cinematic pan. */
   z.object({ scrollTo: selector }).strict(),
   /** State-based wait — the reliability moat. Never a raw sleep by default. */
   z.object({ waitFor: selector }).strict(),
+  /** Wait until the address bar matches — a substring, or a glob with `*`. */
   z.object({ waitForUrl: z.string() }).strict(),
+  /** Wait for in-flight requests to settle. A last resort — prefer `waitFor`. */
   z.object({ waitForNetworkIdle: z.boolean().default(true) }).strict(),
   /**
    * Caption overlay. A bare string shows until the next caption; the object
@@ -478,8 +494,10 @@ export const branchSchema = z.object({
 });
 export type BranchConfig = z.infer<typeof branchSchema>;
 
+/** One action in the demo. Every step is a single-key object. */
 export const stepSchema = z.union([
   baseStepSchema,
+  /** A fork the viewer chooses between, in the interactive build. */
   z.object({ branch: branchSchema }).strict(),
 ]);
 export type Step = z.infer<typeof stepSchema>;
@@ -567,10 +585,14 @@ export const matrixSchema = z.object({
 export type Matrix = z.infer<typeof matrixSchema>;
 
 const specObject = z.object({
+  /** Spec format version, so the grammar can evolve under semver. */
   version: z.literal(SPEC_VERSION).default(SPEC_VERSION),
+  /** Shown on title cards and in the interactive build. */
   name: z.string().default("Untitled demo"),
+  /** Where the demo starts. Any URL the browser can reach, not just localhost. */
   url: z.string().default("http://localhost:3000"),
   viewport: viewportSchema.default({}),
+  /** The colour scheme the app is asked to render in (`prefers-color-scheme`). */
   theme: z.enum(["light", "dark"]).default("light"),
   run: runSchema.optional(),
   deterministic: deterministicSchema.default({}),
@@ -592,6 +614,7 @@ const specObject = z.object({
   matrix: matrixSchema.optional(),
   /** Enable terminal steps, and configure how the terminal looks and behaves. */
   terminal: terminalSchema.optional(),
+  /** The demo itself, in order. */
   steps: z.array(stepSchema).min(1),
   output: outputSchema,
 });

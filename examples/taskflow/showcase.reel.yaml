@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
 # Showcases Reel's scene grammar: title cards, spotlight callouts, cinematic
 # scrolling, explicit camera moves, and assertions — all in one spec.
 name: TaskFlow — the full scene grammar

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
 # A terminal demo.
 #
 # There is no app and no page to drive — Reel renders the terminal itself, as a

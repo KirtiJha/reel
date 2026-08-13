@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
 # A branching demo.
 #
 # A video is linear, so the GIF/MP4 follows the path marked `default: true`.

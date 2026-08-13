@@ -1,0 +1,1716 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json",
+  "title": "Reel demo spec",
+  "description": "A demos-as-code spec: what to drive, how to film it, and what to render. Generated from Reel's own validation schema — see https://github.com/KirtiJha/reel.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1,
+      "default": 1,
+      "description": "Spec format version, so the grammar can evolve under semver."
+    },
+    "name": {
+      "type": "string",
+      "default": "Untitled demo",
+      "description": "Shown on title cards and in the interactive build."
+    },
+    "url": {
+      "type": "string",
+      "default": "http://localhost:3000",
+      "description": "Where the demo starts. Any URL the browser can reach, not just localhost."
+    },
+    "viewport": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 1280
+        },
+        "height": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 800
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 4,
+          "default": 2,
+          "description": "device pixel ratio — 2 = retina."
+        }
+      },
+      "additionalProperties": false,
+      "default": {},
+      "description": "The browser window the demo is filmed in."
+    },
+    "theme": {
+      "type": "string",
+      "enum": [
+        "light",
+        "dark"
+      ],
+      "default": "light",
+      "description": "The colour scheme the app is asked to render in (`prefers-color-scheme`)."
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Shell command to boot the app (e.g. \"npm run dev\")."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working directory for the command."
+        },
+        "readyOn": {
+          "type": "string",
+          "description": "URL/port to poll until the app is ready before recording."
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 60000,
+          "description": "Max ms to wait for readiness."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra env vars for the spawned process."
+        }
+      },
+      "required": [
+        "cmd"
+      ],
+      "additionalProperties": false,
+      "description": "App lifecycle — how the app under test gets started. The plan implied a\nrunning `url` but never said how it boots; real demos need this."
+    },
+    "deterministic": {
+      "type": "object",
+      "properties": {
+        "freezeClock": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Freeze Date/performance.now to a fixed instant. ISO string or epoch ms."
+        },
+        "disableAnimations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Disable CSS animations/transitions and the text caret blink."
+        },
+        "seedRandom": {
+          "type": "number",
+          "description": "Seed Math.random for reproducible app behaviour."
+        },
+        "reducedMotion": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force prefers-reduced-motion at the app level."
+        },
+        "locale": {
+          "type": "string",
+          "description": "Pin the browser locale (e.g. \"en-US\"). Without this, a CI runner with a\ndifferent system locale formats dates/numbers differently than your laptop\n— a frozen clock alone doesn't make text reproducible."
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Pin the browser timezone (e.g. \"UTC\", \"America/New_York\")."
+        },
+        "timeline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Drive the recording off a virtual clock instead of wall-clock time, so the\nsame spec against the same app renders byte-identical media on any machine.\nWithout it, output length swings with CPU load and CI rewrites the media on\nevery push whether or not the demo changed.\n\nTurn it off only to film an app's own animation as it really happens."
+        }
+      },
+      "additionalProperties": false,
+      "default": {},
+      "description": "Determinism controls. Real web apps are non-deterministic (animations,\nDate.now(), live data). VHS never had to care because a terminal is fully\ncontrolled — a browser is not. These make `reel check` stable and keep\ndrift-detection from crying wolf."
+    },
+    "polish": {
+      "type": "object",
+      "properties": {
+        "zoom": {
+          "type": [
+            "string",
+            "boolean"
+          ],
+          "enum": [
+            "auto",
+            false
+          ],
+          "default": "auto",
+          "description": "auto = zoom toward the active element; false = never zoom."
+        },
+        "zoomOutput": {
+          "type": "boolean",
+          "default": false,
+          "description": "In a terminal demo, let the camera follow each command's output — the same\nregion `zoom: { to: output }` names, applied after every command.\n\nOpt-in rather than implied by `zoom: auto`, which every spec gets by\ndefault: turning it on for everyone would re-shoot existing terminal demos\non upgrade, and `reel check` compares rendered output, so that lands as a\nCI failure rather than a nicer demo. `zoom: false` still switches off\neverything."
+        },
+        "zoomRows": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "default": 12,
+          "description": "Most rows the camera frames at once in a terminal demo. Longer output is\nframed at its tail, where the newest lines are."
+        },
+        "cursor": {
+          "type": "string",
+          "enum": [
+            "smooth",
+            "none"
+          ],
+          "default": "smooth",
+          "description": "Render a synthetic cursor that eases between targets."
+        },
+        "captions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show caption text overlays."
+        },
+        "frame": {
+          "type": "string",
+          "enum": [
+            "none",
+            "browser",
+            "window"
+          ],
+          "default": "none",
+          "description": "Device frame around the captured page:\n - none    : no chrome\n - browser : macOS-style window with traffic lights + a URL pill\n - window  : macOS-style window with traffic lights only"
+        },
+        "padding": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Outer padding around the frame, in reference px (at 1000px-wide output;\nscales with resolution). When a frame is set, a sensible default is used."
+        },
+        "background": {
+          "type": "string",
+          "default": "#0b0b0f",
+          "description": "Background behind the padded frame — a CSS color or gradient."
+        },
+        "radius": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Rounded-corner radius (reference px) applied to the captured page."
+        },
+        "accent": {
+          "type": "string",
+          "minLength": 1,
+          "default": "#6d8bff",
+          "description": "Brand accent — used by the click ripple, the callout spotlight ring, and\nthe title-card rule. One knob so a repo's demos look like one product."
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "default": 1,
+          "description": "Playback rate for every authored duration — holds, captions, typing, camera\nmoves. 2 renders the same demo in half the time; 0.5 slows it down. Real\nwaiting (selectors, network) is unaffected: this paces the demo, it doesn't\nrush the app."
+        },
+        "trimIdle": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Cap any stretch where nothing on screen changes at this many ms.\n\nBlunt on purpose, and worth understanding before reaching for it: it can't\ntell dead air from a deliberate pause, so a 1700ms title card under\n`trimIdle: 700` becomes 700ms — too fast to read. On a virtual timeline\nreal waiting already costs no demo time, so what's left to trim is mostly\nwhat you authored. Use it to rescue a demo full of long waits, not to\ntighten one that is already paced. To shorten a paced demo, prefer\n`speed` or `output.targetDuration`, which scale everything proportionally."
+        }
+      },
+      "additionalProperties": false,
+      "default": {},
+      "description": "How the demo is filmed and presented: camera, cursor, captions, and the\nframe around the page. None of it changes what the app does."
+    },
+    "storageState": {
+      "type": "string",
+      "description": "Playwright storageState path for logged-in demos."
+    },
+    "redact": {
+      "type": "object",
+      "properties": {
+        "selectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "blur",
+            "box"
+          ],
+          "default": "blur"
+        },
+        "blur": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 12
+        }
+      },
+      "additionalProperties": false,
+      "description": "Blur/box sensitive regions so demos don't leak real data."
+    },
+    "mock": {
+      "type": "object",
+      "properties": {
+        "har": {
+          "type": "string"
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "status": {
+                "type": "integer",
+                "default": 200
+              },
+              "body": {
+                "type": "string"
+              },
+              "json": {},
+              "contentType": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "description": "Pin network responses (HAR replay / route stubs) for clean, stable data."
+    },
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "default": 0,
+      "description": "Retry a step that fails for a transient reason (an element not ready yet,\na slow response). Only steps that provably didn't act are retried — a\ntimed-out click never clicked — so a retry can't double-submit a form or\ntype the same text twice."
+    },
+    "matrix": {
+      "type": "object",
+      "properties": {
+        "viewports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "width": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "default": 1280
+              },
+              "height": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "default": 800
+              },
+              "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 4,
+                "default": 2
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "themes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Render this one spec at several viewports and/or themes."
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "default": 90
+        },
+        "rows": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "default": 24
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working directory for commands; relative to the spec file."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "prompt": {
+          "type": "string",
+          "default": "$ ",
+          "description": "The prompt drawn before each typed command."
+        },
+        "title": {
+          "type": "string",
+          "default": "zsh — reel"
+        },
+        "theme": {
+          "type": "string",
+          "enum": [
+            "reel",
+            "dracula",
+            "nord",
+            "catppuccin-mocha",
+            "tokyo-night",
+            "gruvbox-dark",
+            "one-dark",
+            "solarized-dark",
+            "solarized-light",
+            "github-light"
+          ],
+          "default": "reel",
+          "description": "Named colour scheme. Supplies the 16 ANSI colours plus a matching\nbackground and foreground; set either of those explicitly to override it."
+        },
+        "background": {
+          "type": "string",
+          "minLength": 1
+        },
+        "foreground": {
+          "type": "string",
+          "minLength": 1
+        },
+        "palette": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 16,
+          "maxItems": 16,
+          "description": "Replace the theme's 16 ANSI colours outright: 8 normal, then 8 bright."
+        },
+        "fontSize": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 15
+        },
+        "fontFamily": {
+          "type": "string"
+        },
+        "require": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [],
+          "description": "Programs the demo needs on PATH.\n\nChecked once before anything runs, so a missing dependency fails with the\nname of what's absent rather than partway through with whatever error the\nshell happened to produce."
+        },
+        "typing": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 55,
+          "description": "Per-character delay while the command is typed on camera (ms)."
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 120000,
+          "description": "Longest a single command may take before it's killed (ms)."
+        },
+        "replayMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2200,
+          "description": "Longest the captured output may take to stream back on camera (ms).\nOutput is replayed, not filmed live, so a slow command still reads fast."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Enable terminal steps, and configure how the terminal looks and behaves."
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "goto": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "goto"
+                ],
+                "additionalProperties": false,
+                "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "click": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "click"
+                ],
+                "additionalProperties": false,
+                "description": "Click an element. The cursor glides to it first, and the click ripples."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "dblclick": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "dblclick"
+                ],
+                "additionalProperties": false,
+                "description": "Double-click an element."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "hover": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "hover"
+                ],
+                "additionalProperties": false,
+                "description": "Move the cursor onto an element without clicking — for menus and tooltips."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "delay": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 60,
+                        "description": "Per-character delay (ms) so typing reads naturally on camera."
+                      }
+                    },
+                    "required": [
+                      "selector",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Type into a field, character by character, so the typing reads on camera."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "press": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "key": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "press"
+                ],
+                "additionalProperties": false,
+                "description": "Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "fill": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "selector",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "fill"
+                ],
+                "additionalProperties": false,
+                "description": "Set a field's value in one go. Use `type` when the typing is the point."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "scrollTo": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "scrollTo"
+                ],
+                "additionalProperties": false,
+                "description": "Scroll an element into view. Use `scroll` for a filmed, cinematic pan."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "waitFor": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "waitFor"
+                ],
+                "additionalProperties": false,
+                "description": "State-based wait — the reliability moat. Never a raw sleep by default."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "waitForUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "waitForUrl"
+                ],
+                "additionalProperties": false,
+                "description": "Wait until the address bar matches — a substring, or a glob with `*`."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "waitForNetworkIdle": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Wait for in-flight requests to settle. A last resort — prefer `waitFor`."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "caption": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "How long to hold this caption (ms). Omit to run until the next one."
+                          },
+                          "position": {
+                            "type": "string",
+                            "enum": [
+                              "bottom",
+                              "top"
+                            ],
+                            "default": "bottom"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "caption"
+                ],
+                "additionalProperties": false,
+                "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "beat": {
+                    "type": [
+                      "string",
+                      "boolean"
+                    ]
+                  }
+                },
+                "required": [
+                  "beat"
+                ],
+                "additionalProperties": false,
+                "description": "Hero frame: hold longer here. Optional label for the storyboard."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "card": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "title": {
+                            "type": "string"
+                          },
+                          "subtitle": {
+                            "type": "string"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 1800
+                          }
+                        },
+                        "required": [
+                          "title"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "card"
+                ],
+                "additionalProperties": false,
+                "description": "A full-screen title card — the scene grammar a continuous screen recording\nlacks. Use it to open, to separate chapters, and to close."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "callout": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 1500
+                      }
+                    },
+                    "required": [
+                      "selector"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "callout"
+                ],
+                "additionalProperties": false,
+                "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "scroll": {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 900
+                      }
+                    },
+                    "required": [
+                      "to"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "scroll"
+                ],
+                "additionalProperties": false,
+                "description": "Cinematic eased scroll — to an element, or to an absolute Y offset."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "zoom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "out"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "const": "output"
+                              },
+                              {
+                                "type": "string",
+                                "const": "cursor"
+                              },
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            ],
+                            "description": "A selector, or — in a terminal demo — `output` for the rows the last\ncommand wrote, `cursor` for the live prompt line, or `text=…` to\nframe whatever rows contain that text."
+                          },
+                          "level": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 4,
+                            "description": "Magnification: 1 = whole viewport, 2 = half of it, …"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Camera move duration (ms)."
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "zoom"
+                ],
+                "additionalProperties": false,
+                "description": "Explicit camera control, for when auto-zoom's choice isn't the story you're\ntelling. \"out\" is a wide establishing shot."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "expect": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "text": {
+                        "type": "string",
+                        "description": "The element's text must contain this."
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Exactly this many elements must match."
+                      },
+                      "visible": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Whether the element must be visible (default true)."
+                      }
+                    },
+                    "required": [
+                      "selector"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "expect"
+                ],
+                "additionalProperties": false,
+                "description": "An assertion. Unlike `waitFor` (which only proves an element appears), this\nchecks what the app actually rendered — so `reel check` is a real smoke\ntest, not just a selector-existence probe."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "hold": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "hold"
+                ],
+                "additionalProperties": false,
+                "description": "Explicit pause — discouraged, but sometimes you want a deliberate hold."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "run": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "cmd": {
+                            "type": "string"
+                          },
+                          "input": {
+                            "type": "string",
+                            "description": "Text piped to stdin, for commands that prompt."
+                          },
+                          "expectCode": {
+                            "type": "integer",
+                            "description": "Fail the run unless the command exits with this code."
+                          },
+                          "replayMs": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Override the replay budget for this command (ms)."
+                          },
+                          "hidden": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Run the command off camera.\n\nFor the setup a demo needs but nobody wants to watch — seeding a\nfixture, creating a scratch directory, installing something. The\ncommand still runs and `expectCode` still applies, so it stays part of\nwhat `reel check` verifies; it simply never reaches the screen.\n\nNote that each command runs in its own shell, so `cd` in a hidden step\ndoes not carry into later ones. Set `terminal.cwd` for that."
+                          }
+                        },
+                        "required": [
+                          "cmd"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "run"
+                ],
+                "additionalProperties": false,
+                "description": "Type a command at the prompt, run it, and replay its output. The command\nreally runs — so like `expect`, this makes `reel check` a genuine smoke\ntest of the CLI, not a scripted illusion of one."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "expectOutput": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expectOutput"
+                ],
+                "additionalProperties": false,
+                "description": "Assert the terminal screen contains this text."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "clear": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "clear"
+                ],
+                "additionalProperties": false,
+                "description": "Clear the terminal screen."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "show": {
+                    "type": "string",
+                    "enum": [
+                      "terminal",
+                      "app"
+                    ]
+                  }
+                },
+                "required": [
+                  "show"
+                ],
+                "additionalProperties": false,
+                "description": "Switch between the terminal and the app underneath it."
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "branch": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "default": "Choose a path",
+                    "description": "The question put to the viewer, e.g. \"What do you want to see?\""
+                  },
+                  "paths": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "default": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "The path the video follows, and the one pre-selected in the click-through.\nDefaults to the first path when none is marked."
+                        },
+                        "steps": {
+                          "type": "array",
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "goto": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "goto"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "click": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "click"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Click an element. The cursor glides to it first, and the click ripples."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "dblclick": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "dblclick"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Double-click an element."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "hover": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "hover"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Move the cursor onto an element without clicking — for menus and tooltips."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "delay": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 60,
+                                        "description": "Per-character delay (ms) so typing reads naturally on camera."
+                                      }
+                                    },
+                                    "required": [
+                                      "selector",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Type into a field, character by character, so the typing reads on camera."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "press": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "key"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "press"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "fill": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "selector",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "fill"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Set a field's value in one go. Use `type` when the typing is the point."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "scrollTo": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "scrollTo"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Scroll an element into view. Use `scroll` for a filmed, cinematic pan."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "waitFor": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "waitFor"
+                                ],
+                                "additionalProperties": false,
+                                "description": "State-based wait — the reliability moat. Never a raw sleep by default."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "waitForUrl": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "waitForUrl"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Wait until the address bar matches — a substring, or a glob with `*`."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "waitForNetworkIdle": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "description": "Wait for in-flight requests to settle. A last resort — prefer `waitFor`."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "caption": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "How long to hold this caption (ms). Omit to run until the next one."
+                                          },
+                                          "position": {
+                                            "type": "string",
+                                            "enum": [
+                                              "bottom",
+                                              "top"
+                                            ],
+                                            "default": "bottom"
+                                          }
+                                        },
+                                        "required": [
+                                          "text"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "caption"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "beat": {
+                                    "type": [
+                                      "string",
+                                      "boolean"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "beat"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Hero frame: hold longer here. Optional label for the storyboard."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "card": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "subtitle": {
+                                            "type": "string"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "default": 1800
+                                          }
+                                        },
+                                        "required": [
+                                          "title"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "card"
+                                ],
+                                "additionalProperties": false,
+                                "description": "A full-screen title card — the scene grammar a continuous screen recording\nlacks. Use it to open, to separate chapters, and to close."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "callout": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "ms": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 1500
+                                      }
+                                    },
+                                    "required": [
+                                      "selector"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "callout"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "scroll": {
+                                    "type": "object",
+                                    "properties": {
+                                      "to": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          {
+                                            "type": "number"
+                                          }
+                                        ]
+                                      },
+                                      "ms": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 900
+                                      }
+                                    },
+                                    "required": [
+                                      "to"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "scroll"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Cinematic eased scroll — to an element, or to an absolute Y offset."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "zoom": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "const": "out"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "to": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "const": "output"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "cursor"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            ],
+                                            "description": "A selector, or — in a terminal demo — `output` for the rows the last\ncommand wrote, `cursor` for the live prompt line, or `text=…` to\nframe whatever rows contain that text."
+                                          },
+                                          "level": {
+                                            "type": "number",
+                                            "minimum": 1,
+                                            "maximum": 4,
+                                            "description": "Magnification: 1 = whole viewport, 2 = half of it, …"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "Camera move duration (ms)."
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "zoom"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Explicit camera control, for when auto-zoom's choice isn't the story you're\ntelling. \"out\" is a wide establishing shot."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "expect": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "text": {
+                                        "type": "string",
+                                        "description": "The element's text must contain this."
+                                      },
+                                      "count": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "Exactly this many elements must match."
+                                      },
+                                      "visible": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Whether the element must be visible (default true)."
+                                      }
+                                    },
+                                    "required": [
+                                      "selector"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "expect"
+                                ],
+                                "additionalProperties": false,
+                                "description": "An assertion. Unlike `waitFor` (which only proves an element appears), this\nchecks what the app actually rendered — so `reel check` is a real smoke\ntest, not just a selector-existence probe."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "hold": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "hold"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Explicit pause — discouraged, but sometimes you want a deliberate hold."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "run": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "cmd": {
+                                            "type": "string"
+                                          },
+                                          "input": {
+                                            "type": "string",
+                                            "description": "Text piped to stdin, for commands that prompt."
+                                          },
+                                          "expectCode": {
+                                            "type": "integer",
+                                            "description": "Fail the run unless the command exits with this code."
+                                          },
+                                          "replayMs": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "Override the replay budget for this command (ms)."
+                                          },
+                                          "hidden": {
+                                            "type": "boolean",
+                                            "default": false,
+                                            "description": "Run the command off camera.\n\nFor the setup a demo needs but nobody wants to watch — seeding a\nfixture, creating a scratch directory, installing something. The\ncommand still runs and `expectCode` still applies, so it stays part of\nwhat `reel check` verifies; it simply never reaches the screen.\n\nNote that each command runs in its own shell, so `cd` in a hidden step\ndoes not carry into later ones. Set `terminal.cwd` for that."
+                                          }
+                                        },
+                                        "required": [
+                                          "cmd"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "run"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Type a command at the prompt, run it, and replay its output. The command\nreally runs — so like `expect`, this makes `reel check` a genuine smoke\ntest of the CLI, not a scripted illusion of one."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "expectOutput": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "expectOutput"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Assert the terminal screen contains this text."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "clear": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "clear"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Clear the terminal screen."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "show": {
+                                    "type": "string",
+                                    "enum": [
+                                      "terminal",
+                                      "app"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "show"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Switch between the terminal and the app underneath it."
+                              }
+                            ]
+                          },
+                          "minItems": 1
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "steps"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 2
+                  }
+                },
+                "required": [
+                  "paths"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "branch"
+            ],
+            "additionalProperties": false,
+            "description": "A fork the viewer chooses between, in the interactive build."
+          }
+        ]
+      },
+      "minItems": 1,
+      "description": "The demo itself, in order."
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": [
+            "share",
+            "readme",
+            "hq",
+            "social",
+            "docs"
+          ],
+          "default": "share",
+          "description": "Delivery profile; sets defaults for the fields below."
+        },
+        "gif": {
+          "type": "string"
+        },
+        "mp4": {
+          "type": "string"
+        },
+        "webm": {
+          "type": "string"
+        },
+        "storyboard": {
+          "type": "string",
+          "description": "Directory to drop a PNG storyboard (one image per beat)."
+        },
+        "html": {
+          "type": "string",
+          "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
+        },
+        "fps": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "description": "Frame rate for video (overrides preset)."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Cap the output width in px (overrides preset)."
+        },
+        "gifFps": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 50,
+          "description": "GIF-specific overrides (GIFs trade size for smoothness/palette)."
+        },
+        "gifMaxWidth": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "gifColors": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 256
+        },
+        "subtitles": {
+          "type": [
+            "boolean",
+            "string"
+          ],
+          "description": "Emit sidecar subtitles from the captions. true, or an explicit path base."
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Localize the subtitles into these languages, e.g. [\"es\",\"fr\"]."
+        },
+        "targetDuration": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "Fit the finished demo to a length: `30`, `\"30s\"`, `\"1500ms\"`. Applied\nafter `polish.trimIdle`, by rescaling the recorded timeline rather than\nre-running the demo. Useful where length is a hard limit (social embeds)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What gets rendered, and where it is written."
+    }
+  },
+  "required": [
+    "steps",
+    "output"
+  ],
+  "additionalProperties": false
+}
