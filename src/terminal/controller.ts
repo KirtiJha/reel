@@ -2,6 +2,7 @@ import type { Page } from "playwright-core";
 import type { TerminalConfig } from "../spec/schema.js";
 import type { Recorder } from "../driver/recorder.js";
 import { TerminalEmulator } from "./emulator.js";
+import { findTextRegion, fitToContent, type GridRegion } from "./grid.js";
 import { runCommand } from "./session.js";
 import {
   DEFAULT_TERMINAL_FONT,
@@ -24,6 +25,12 @@ export class TerminalController {
   private readonly emu: TerminalEmulator;
   /** Text of every command run, for a useful error when an assertion fails. */
   private lastOutput = "";
+  /** Rows the last `run` occupied — the camera target for `zoom: { to: output }`. */
+  private lastRegion: GridRegion | null = null;
+  /** Whether that command actually printed anything. */
+  private lastPrinted = false;
+  /** Whether the terminal layer is the visible surface. */
+  private shown = false;
 
   constructor(
     private readonly page: Page,
@@ -51,7 +58,19 @@ export class TerminalController {
   }
 
   async show(which: "terminal" | "app"): Promise<void> {
-    await showTerminal(this.page, which === "terminal");
+    this.shown = which === "terminal";
+    await showTerminal(this.page, this.shown);
+  }
+
+  /**
+   * Whether the terminal is the surface on screen.
+   *
+   * A hybrid spec shows a command and then the app it affected, so `text=` has
+   * to mean the grid in one moment and the DOM in the next. This is how the
+   * camera tells them apart.
+   */
+  get visible(): boolean {
+    return this.shown;
   }
 
   /** The text currently on screen — what assertions read. */
@@ -67,6 +86,9 @@ export class TerminalController {
 
   async clear(): Promise<void> {
     this.emu.reset();
+    // The rows the last command occupied no longer hold it.
+    this.lastRegion = null;
+    this.lastPrinted = false;
     await this.paint();
     await this.rec.frameFor(180);
   }
@@ -92,6 +114,12 @@ export class TerminalController {
     replayMs?: number;
   }): Promise<void> {
     const { cmd } = opts;
+
+    // Note where this command starts so the camera can frame it afterwards.
+    // Rows are viewport-relative and the screen scrolls, so the start row is
+    // re-based by however many times it scrolled while the command ran.
+    const scrollsBefore = this.emu.scrollCount();
+    const startRow = this.emu.cursor().y;
 
     // 1) Prompt and typed command.
     this.emu.write(this.cfg.prompt);
@@ -130,6 +158,44 @@ export class TerminalController {
 
     // 3) Replay the output.
     await this.replay(result.output, opts.replayMs ?? this.cfg.replayMs);
+
+    const shifted = this.emu.scrollCount() - scrollsBefore;
+    const row0 = Math.max(0, startRow - shifted);
+    const row1 = Math.max(row0, this.emu.cursor().y);
+    this.lastRegion = { row0, row1 };
+    this.lastPrinted = result.output.length > 0;
+  }
+
+  /**
+   * Rows the last command occupied — its prompt line through its final output.
+   *
+   * `printed` is false when the command was silent. Auto-zoom sits still in
+   * that case: there is nothing new to look at, and moving the camera onto a
+   * bare prompt reads as a twitch.
+   */
+  outputRegion(): { region: GridRegion; printed: boolean } | null {
+    return this.lastRegion ? { region: this.lastRegion, printed: this.lastPrinted } : null;
+  }
+
+  /** The row the cursor is on — the live prompt line. */
+  cursorRegion(): GridRegion {
+    const y = this.emu.cursor().y;
+    return { row0: y, row1: y };
+  }
+
+  /** Rows containing `needle`, matched against the same text `expectOutput` reads. */
+  findRegion(needle: string): GridRegion | null {
+    return findTextRegion(this.emu.text(), needle);
+  }
+
+  /** Narrow a region's columns to the text on those rows. */
+  fit(region: GridRegion): GridRegion {
+    return fitToContent(region, this.emu.text());
+  }
+
+  /** Grid width, for converting a region to pixels. */
+  get cols(): number {
+    return this.cfg.cols;
   }
 
   /** Feed the whole input to stdin of a command already described by `run`. */

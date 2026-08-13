@@ -73,6 +73,8 @@ export class TerminalEmulator {
   private cy = 0;
   /** Bytes that arrived mid-escape-sequence, awaiting the rest. */
   private pending = "";
+  /** How many times the screen has scrolled — lets a caller re-base a row it noted earlier. */
+  private scrolls = 0;
 
   constructor(
     readonly cols: number,
@@ -119,6 +121,17 @@ export class TerminalEmulator {
 
   cursor(): { x: number; y: number } {
     return { x: this.cx, y: this.cy };
+  }
+
+  /**
+   * Total scrolls since construction.
+   *
+   * A row noted before some output arrived has moved up by the difference in
+   * this count — that is how a region recorded across a `run` stays pointed at
+   * the same text once the screen has scrolled under it.
+   */
+  scrollCount(): number {
+    return this.scrolls;
   }
 
   /** Feed a chunk of output. Safe to call with a sequence split across chunks. */
@@ -183,6 +196,7 @@ export class TerminalEmulator {
       this.grid.shift();
       this.grid.push(this.blankRow());
       this.cy = this.rows - 1;
+      this.scrolls++;
     }
   }
 

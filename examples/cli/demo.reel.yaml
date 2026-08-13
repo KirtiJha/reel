@@ -24,6 +24,10 @@ polish:
   background: "linear-gradient(135deg, #22304f, #12151f)"
   accent: "#7cf3c4"
   captions: true
+  # The camera follows each command's output. Off by default, so upgrading
+  # never changes how an existing demo is shot — this example opts in.
+  zoomOutput: true
+  zoomRows: 12 # longest shot, in rows; taller output is framed at its tail
 
 steps:
   - card: { title: "Reel", subtitle: "Demos as code — for the terminal too", ms: 1600 }
@@ -36,6 +40,15 @@ steps:
   - caption: "Colour and progress replay just as they printed"
   - run: node -e "console.log('[32m✓[0m built in [1m1.2s[0m')"
   - expectOutput: built in
+  # The camera can also be aimed by hand. In a terminal `to:` takes `output`
+  # (the rows the last command wrote), `cursor` (the live prompt line), or
+  # `text=…` to frame whatever rows contain that text:
+  #   - zoom: { to: "text=built in", level: 1.6 }
+  #
+  # `text=` matches the first occurrence on screen, and the command you typed is
+  # on screen too — searching for a word that also appears in the command frames
+  # the command line instead of its output. Match on something only the output
+  # says.
   - beat: colours
 
   - caption: "Exit codes are assertions — so this is a smoke test"

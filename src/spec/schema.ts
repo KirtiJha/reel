@@ -62,6 +62,22 @@ export type Deterministic = z.infer<typeof deterministicSchema>;
 export const polishSchema = z.object({
   /** auto = zoom toward the active element; false = never zoom. */
   zoom: z.union([z.literal("auto"), z.literal(false)]).default("auto"),
+  /**
+   * In a terminal demo, let the camera follow each command's output — the same
+   * region `zoom: { to: output }` names, applied after every command.
+   *
+   * Opt-in rather than implied by `zoom: auto`, which every spec gets by
+   * default: turning it on for everyone would re-shoot existing terminal demos
+   * on upgrade, and `reel check` compares rendered output, so that lands as a
+   * CI failure rather than a nicer demo. `zoom: false` still switches off
+   * everything.
+   */
+  zoomOutput: z.boolean().default(false),
+  /**
+   * Most rows the camera frames at once in a terminal demo. Longer output is
+   * framed at its tail, where the newest lines are.
+   */
+  zoomRows: z.number().int().positive().max(120).default(12),
   /** Render a synthetic cursor that eases between targets. */
   cursor: z.union([z.literal("smooth"), z.literal("none")]).default("smooth"),
   /** Show caption text overlays. */
@@ -332,7 +348,12 @@ const baseStepSchema = z.union([
     zoom: z.union([
       z.literal("out"),
       z.object({
-        to: selector.optional(),
+        /**
+         * A selector, or — in a terminal demo — `output` for the rows the last
+         * command wrote, `cursor` for the live prompt line, or `text=…` to
+         * frame whatever rows contain that text.
+         */
+        to: z.union([z.literal("output"), z.literal("cursor"), selector]).optional(),
         /** Magnification: 1 = whole viewport, 2 = half of it, … */
         level: z.number().min(1).max(4).optional(),
         /** Camera move duration (ms). */

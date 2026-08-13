@@ -13,7 +13,8 @@ import {
 import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
-import type { ZoomKey } from "../polish/zoom.js";
+import type { Rect, ZoomKey } from "../polish/zoom.js";
+import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../terminal/grid.js";
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
 import type { ScreenshotCapture } from "../capture/screenshot.js";
 import type { Scene } from "../encode/html.js";
@@ -312,6 +313,12 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
       if (!to) {
         ctx.zoom.push({ t: ctx.now(), rect: null, ms });
+      } else if (isTerminalTarget(ctx, to)) {
+        // A terminal has no element tree, so the target is a region of the
+        // emulator's grid rather than a box on the page.
+        const rect = await terminalRect(ctx, to);
+        if (rect) ctx.zoom.push({ t: ctx.now(), rect, level, ms });
+        else log.debug(`zoom: nothing on the terminal matched "${to}" — camera held`);
       } else {
         const box = await locate(page, to).boundingBox();
         if (box) {
@@ -337,6 +344,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const term = requireTerminal(ctx, "run");
     const r = typeof step.run === "string" ? { cmd: step.run } : step.run;
     await term.run(r);
+    await autoZoomOutput(ctx, term);
     snap(ctx, label);
     return;
   }
@@ -347,7 +355,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("clear" in step) {
-    if (step.clear) await requireTerminal(ctx, "clear").clear();
+    if (step.clear) {
+      await requireTerminal(ctx, "clear").clear();
+      // The rows the camera was framing are gone; anything else crops to blank.
+      zoomOut(ctx);
+    }
     return;
   }
 
@@ -468,6 +480,71 @@ function zoomOut(ctx: StepContext): void {
   if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
     ctx.zoom.push({ t: ctx.now(), rect: null });
   }
+}
+
+/**
+ * Whether a camera target names a region of the terminal grid rather than an
+ * element. Only meaningful while the terminal is the surface on screen: in a
+ * hybrid spec `text=` addresses the app's DOM once `show: app` has run.
+ */
+function isTerminalTarget(ctx: StepContext, to: string): boolean {
+  if (!ctx.term?.visible) return false;
+  return to === "output" || to === "cursor" || to.startsWith("text=");
+}
+
+/**
+ * Resolve a terminal camera target to a viewport rect.
+ *
+ * Returns null when the target can't be framed — no measurable grid, or text
+ * that isn't on screen. Callers treat that as "leave the camera alone", which
+ * is better than cropping to a region that holds nothing.
+ */
+async function terminalRect(ctx: StepContext, to: string): Promise<Rect | null> {
+  const term = ctx.term;
+  if (!term) return null;
+
+  let region: GridRegion | null = null;
+  if (to === "output") region = term.outputRegion()?.region ?? null;
+  else if (to === "cursor") region = term.cursorRegion();
+  else if (to.startsWith("text=")) region = term.findRegion(to.slice("text=".length));
+  if (!region) return null;
+
+  const metrics = await measureGrid(ctx.page);
+  if (!metrics) return null;
+
+  const maxRows = ctx.spec.polish.zoomRows;
+  // Trim to the newest rows first, then to the columns those rows actually use:
+  // fitting content before trimming rows would measure width against text that
+  // is about to be cropped away.
+  const framed = term.fit(tailRegion(region, maxRows));
+  const rect = regionToRect(framed, metrics, term.cols);
+  log.debug(
+    `terminal zoom "${to}" → rows ${framed.row0}-${framed.row1}, cols ${framed.col0}-${framed.col1}`,
+  );
+  return rect;
+}
+
+/**
+ * After a command runs, ease the camera onto what it printed.
+ *
+ * Opt-in via `polish.zoomOutput`, and silent on a command that printed nothing:
+ * there is nothing new to look at, and a move onto a bare prompt reads as a
+ * twitch rather than a camera decision.
+ */
+async function autoZoomOutput(ctx: StepContext, term: TerminalController): Promise<void> {
+  if (ctx.mode !== "record") return;
+  if (ctx.spec.polish.zoom !== "auto") return;
+  if (!ctx.spec.polish.zoomOutput) return;
+  const out = term.outputRegion();
+  if (!out?.printed) return;
+  const rect = await terminalRect(ctx, "output");
+  if (!rect) return;
+  ctx.zoom.push({ t: ctx.now(), rect });
+  // Let the move finish inside the step, the way an explicit `zoom:` does.
+  // Without this the camera is still at its old rect when the next step runs,
+  // so a beat straight after a command captures the first frame of the ease —
+  // which reads as the camera never having moved at all.
+  await ctx.rec.hold(HOLD.camera);
 }
 
 function locate(page: Page, selector: string) {
