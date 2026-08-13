@@ -9,6 +9,14 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { loadSpec } from "./spec/load.js";
 import { expandMatrix } from "./spec/matrix.js";
+import {
+  declaredOutputs,
+  fingerprint,
+  isUpToDate,
+  readStamp,
+  stampPath,
+  writeStamp,
+} from "./spec/fingerprint.js";
 import { record, check } from "./driver/run.js";
 import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
@@ -21,6 +29,7 @@ import { StepFailure } from "./driver/run.js";
 import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 
+const VERSION = "0.1.0";
 const program = new Command();
 
 /** Truecolour background escape, for printing a theme's palette as swatches. */
@@ -40,7 +49,7 @@ function rgbOf(hex: string): number[] {
 program
   .name("reel")
   .description("Open-source demos-as-code for web apps.")
-  .version("0.1.0")
+  .version(VERSION)
   .option("-v, --verbose", "verbose logging", false)
   .option("--json", "print a machine-readable result on stdout (logs stay on stderr)", false)
   .hook("preAction", (thisCmd) => {
@@ -51,10 +60,37 @@ program
 program
   .command("record")
   .argument("<spec>", "path to a .reel.yaml spec")
+  .option(
+    "--if-changed",
+    "skip the render when the spec, its inputs and its outputs are all unchanged",
+    false,
+  )
+  .option(
+    "--app-revision <id>",
+    "identifier for the app being demoed (a commit SHA), so a changed app forces a re-render",
+  )
   .description("Drive your app from a spec and render the demo (GIF/MP4/WebM).")
-  .action(async (specPath: string) => {
+  .action(async (specPath: string, opts: { ifChanged: boolean; appRevision?: string }) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
+
+      // Skipping is only sound because the output is deterministic: identical
+      // inputs would produce identical bytes, so the render is pure cost.
+      const fp = await fingerprint(loaded, VERSION, opts.appRevision);
+      const stamp = stampPath(loaded);
+      const outputs0 = declaredOutputs(loaded);
+      if (opts.ifChanged) {
+        const state = await isUpToDate(await readStamp(stamp), fp, outputs0);
+        if (state.upToDate) {
+          log.ok(`Up to date — ${state.reason}. Skipping.`);
+          emit("record", true, {
+            result: { spec: loaded.path, skipped: true, reason: state.reason, outputs: outputs0 },
+          });
+          return;
+        }
+        log.info(`Re-recording: ${state.reason}.`);
+      }
+
       const variants = expandMatrix(loaded);
       const outputs: string[] = [];
       const rendered: Record<string, unknown>[] = [];
@@ -75,8 +111,18 @@ program
       }
       log.phase("Done");
       for (const o of outputs) log.info(o);
+      // Written after a successful render only: a stamp for media that failed
+      // to encode would skip the retry that fixes it.
+      await writeStamp(stamp, fp, outputs);
       emit("record", true, {
-        result: { spec: loaded.path, name: loaded.spec.name, variants: rendered, outputs },
+        result: {
+          spec: loaded.path,
+          name: loaded.spec.name,
+          skipped: false,
+          fingerprint: fp.hash,
+          variants: rendered,
+          outputs,
+        },
       });
     }, "record");
   });

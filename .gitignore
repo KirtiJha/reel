@@ -22,3 +22,6 @@ examples/*/out/
 
 # Diagnostics from a failed step — local, never committed.
 .reel-failures/
+
+# Render fingerprint, written beside a spec's outputs.
+.reel-stamp.json
