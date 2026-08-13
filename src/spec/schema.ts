@@ -253,7 +253,7 @@ const durationMs = z.number().int().nonnegative();
  * Every action step auto-waits (Playwright semantics) and, where it makes
  * sense, records a `beat` so the encoder holds on meaningful frames.
  */
-export const stepSchema = z.union([
+const baseStepSchema = z.union([
   z.object({ goto: z.string() }).strict(),
   z.object({ click: selector }).strict(),
   z.object({ dblclick: selector }).strict(),
@@ -387,7 +387,66 @@ export const stepSchema = z.union([
   /** Switch between the terminal and the app underneath it. */
   z.object({ show: z.enum(["terminal", "app"]) }).strict(),
 ]);
+/** Every step except `branch` — what a branch path may contain. */
+export type BaseStep = z.infer<typeof baseStepSchema>;
+
+/**
+ * A fork the viewer chooses between.
+ *
+ * Two constraints shape this. A video is linear, so the rendered GIF/MP4
+ * follows one designated path while the interactive build carries the whole
+ * tree. And the app has state, so alternate paths can't be spliced in after the
+ * fact — Reel re-runs the steps leading up to the branch before recording each
+ * one, which is the only approach that holds for an app it knows nothing about.
+ */
+export const branchPathSchema = z.object({
+  label: z.string().min(1),
+  /**
+   * The path the video follows, and the one pre-selected in the click-through.
+   * Defaults to the first path when none is marked.
+   */
+  default: z.boolean().default(false),
+  steps: z.array(baseStepSchema).min(1),
+});
+export type BranchPath = z.infer<typeof branchPathSchema>;
+
+export const branchSchema = z.object({
+  /** The question put to the viewer, e.g. "What do you want to see?" */
+  prompt: z.string().default("Choose a path"),
+  paths: z.array(branchPathSchema).min(2),
+});
+export type BranchConfig = z.infer<typeof branchSchema>;
+
+export const stepSchema = z.union([
+  baseStepSchema,
+  z.object({ branch: branchSchema }).strict(),
+]);
 export type Step = z.infer<typeof stepSchema>;
+
+/** Narrow a step to a branch without repeating the shape check everywhere. */
+export function isBranch(step: Step): step is { branch: BranchConfig } {
+  return typeof step === "object" && step !== null && "branch" in step;
+}
+
+/** The path the video follows: the one marked default, else the first. */
+export function defaultPath(branch: BranchConfig): BranchPath {
+  return branch.paths.find((p) => p.default) ?? branch.paths[0]!;
+}
+
+/**
+ * The steps that must run before `index` to put the app where that step expects
+ * it. Earlier branches collapse to their default path, so a later branch's
+ * alternates are recorded on top of the same trunk the video shows.
+ */
+export function trunkSteps(steps: Step[], index: number): BaseStep[] {
+  const out: BaseStep[] = [];
+  for (let i = 0; i < index; i++) {
+    const s = steps[i]!;
+    if (isBranch(s)) out.push(...defaultPath(s.branch).steps);
+    else out.push(s);
+  }
+  return out;
+}
 
 /* ------------------------- Privacy & data ------------------------ */
 

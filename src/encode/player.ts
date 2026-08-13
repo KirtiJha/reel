@@ -118,6 +118,27 @@ export const PLAYER_CSS = `
     font: inherit; font-size: 11px; padding: 1px 5px; border-radius: 4px;
     border: 1px solid var(--line); background: var(--panel);
   }
+  /* Branch choice */
+  .choices {
+    position: absolute; inset: auto 0 0 0; padding: 18px 16px 20px;
+    background: linear-gradient(to top, rgba(8,10,16,.94), rgba(8,10,16,.72) 70%, transparent);
+    line-height: 1.4; text-align: center;
+  }
+  .choice-prompt {
+    margin: 0 0 10px; color: #fff; font-size: clamp(13px, 1.4vw, 17px); font-weight: 650;
+  }
+  .choice-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  button.choice {
+    border: 1px solid rgba(255,255,255,.26); background: rgba(255,255,255,.1);
+    color: #fff; border-radius: 999px; padding: 8px 16px;
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background .18s, border-color .18s;
+  }
+  button.choice:hover { background: rgba(255,255,255,.2); }
+  button.choice[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #0b0d12; }
+  button.choice:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .choices[hidden] { display: none; }
+
   .sr {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -143,64 +164,167 @@ const prev = el('prev'), next = el('next'), play = el('play');
 const stage = el('stage'), live = el('live'), counter = el('counter');
 const link = el('link');
 
-const total = DATA.scenes.length;
+/* ---- branching -------------------------------------------------------
+   Scenes are stored flat; the running order is computed. Trunk scenes belong
+   to no path, so the order is every path-less scene, with the chosen path's
+   scenes spliced in at its choice point. Switching a choice re-splices — the
+   viewer's route is always trunk → their path → continuation. */
+const BRANCHES = DATA.branches || [];
+const choice = {};             // branch id → chosen path id
+BRANCHES.forEach((b) => {
+  const def = b.paths.find((p) => p.isDefault) || b.paths[0];
+  if (def) choice[b.id] = def.id;
+});
+const branchAt = new Map(BRANCHES.map((b) => [b.atScene, b]));
+
+function order() {
+  const out = [];
+  DATA.scenes.forEach((s, n) => {
+    if (s.path) return;        // path scenes are spliced in, never listed flat
+    out.push(n);
+    const b = branchAt.get(n);
+    if (!b) return;
+    const chosen = b.paths.find((p) => p.id === choice[b.id]);
+    if (chosen) out.push(...chosen.scenes);
+  });
+  return out;
+}
+
+/** Which branch/path a scene belongs to, so a deep link can select it. */
+function pathOf(sceneIndex) {
+  const p = DATA.scenes[sceneIndex] && DATA.scenes[sceneIndex].path;
+  if (!p) return null;
+  for (const b of BRANCHES) {
+    const hit = b.paths.find((x) => x.id === p);
+    if (hit) return { branch: b, path: hit };
+  }
+  return null;
+}
+
+let ORDER = order();
 let i = 0, timer = null, playing = false;
 
-/* ---- deep links ------------------------------------------------------ */
-/* A scene is addressable: chapters by slug (stable across re-records as long
-   as the chapter keeps its name), everything else by index. */
-function hashFor(n) {
-  const s = DATA.scenes[n];
-  return s.slug ? '#/' + s.slug : '#/step-' + (n + 1);
+/** Position in the running order → scene index. */
+function sceneAt(pos) { return ORDER[Math.max(0, Math.min(ORDER.length - 1, pos))]; }
+function posOfScene(n) {
+  const at = ORDER.indexOf(n);
+  return at >= 0 ? at : 0;
 }
-function indexFromHash() {
+
+/* ---- deep links ------------------------------------------------------
+   Links address a SCENE, not a position, so they survive a viewer switching
+   paths — and landing on a scene inside a path selects that path. */
+function hashFor(pos) {
+  const n = sceneAt(pos);
+  const s = DATA.scenes[n];
+  return s && s.slug ? '#/' + s.slug : '#/step-' + (n + 1);
+}
+function posFromHash() {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
   if (!h) return 0;
-  const bySlug = DATA.scenes.findIndex((s) => s.slug === h);
-  if (bySlug >= 0) return bySlug;
-  const m = /^step-(\d+)$/.exec(h);
-  if (m) return clamp(Number(m[1]) - 1);
-  return 0;
+  let scene = DATA.scenes.findIndex((s) => s.slug === h);
+  if (scene < 0) {
+    const m = /^step-(\d+)$/.exec(h);
+    if (!m) return 0;
+    scene = Math.max(0, Math.min(DATA.scenes.length - 1, Number(m[1]) - 1));
+  }
+  const owner = pathOf(scene);
+  if (owner && choice[owner.branch.id] !== owner.path.id) {
+    choice[owner.branch.id] = owner.path.id;
+    rebuild();
+  }
+  return posOfScene(scene);
 }
-function clamp(n) { return Math.max(0, Math.min(total - 1, n)); }
 
 /* ---- ticks and chapters --------------------------------------------- */
-DATA.scenes.forEach((s, n) => {
-  const t = document.createElement('button');
-  t.className = 'tick';
-  t.type = 'button';
-  t.setAttribute('aria-label', 'Go to step ' + (n + 1) + (s.label ? ': ' + s.label : ''));
-  t.innerHTML = '<span class="fill"></span>';
-  t.addEventListener('click', (e) => { e.stopPropagation(); stop(); go(n, true); });
-  track.appendChild(t);
-});
-
-const chapterAt = [];
-DATA.scenes.forEach((s, n) => {
-  if (!s.chapter) return;
-  chapterAt.push(n);
-  const c = document.createElement('button');
-  c.className = 'chip';
-  c.type = 'button';
-  c.textContent = s.chapter;
-  c.addEventListener('click', (e) => { e.stopPropagation(); stop(); go(n, true); });
-  chapters.appendChild(c);
-});
-
-/* ---- rendering ------------------------------------------------------- */
-function preload(n) {
-  const s = DATA.scenes[n];
-  if (!s) return;
-  const img = new Image();
-  img.src = IMAGES[s.image];
+function buildTicks() {
+  track.innerHTML = '';
+  ORDER.forEach((n, pos) => {
+    const s = DATA.scenes[n];
+    const t = document.createElement('button');
+    t.className = 'tick';
+    t.type = 'button';
+    t.setAttribute('aria-label', 'Go to step ' + (pos + 1) + (s.label ? ': ' + s.label : ''));
+    t.innerHTML = '<span class="fill"></span>';
+    t.addEventListener('click', (e) => { e.stopPropagation(); stop(); go(pos, true); });
+    track.appendChild(t);
+  });
 }
 
-function go(n, pushHash) {
-  i = clamp(n);
-  const s = DATA.scenes[i];
+let chapterAt = [];
+function buildChapters() {
+  chapters.innerHTML = '';
+  chapterAt = [];
+  ORDER.forEach((n, pos) => {
+    const s = DATA.scenes[n];
+    if (!s.chapter) return;
+    chapterAt.push(pos);
+    const c = document.createElement('button');
+    c.className = 'chip';
+    c.type = 'button';
+    c.textContent = s.chapter;
+    c.addEventListener('click', (e) => { e.stopPropagation(); stop(); go(pos, true); });
+    chapters.appendChild(c);
+  });
+}
+
+/* Re-splice the running order after a choice changes. */
+function rebuild() {
+  ORDER = order();
+  buildTicks();
+  buildChapters();
+}
+
+/* ---- branch choice UI ------------------------------------------------ */
+function renderChoice(branch) {
+  choices.innerHTML = '';
+  if (!branch) { choices.hidden = true; return; }
+  choices.hidden = false;
+  const q = document.createElement('p');
+  q.className = 'choice-prompt';
+  q.textContent = branch.prompt;
+  choices.appendChild(q);
+  const row = document.createElement('div');
+  row.className = 'choice-row';
+  branch.paths.forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'choice';
+    b.type = 'button';
+    b.textContent = p.label;
+    b.setAttribute('aria-pressed', String(choice[branch.id] === p.id));
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      stop();
+      const scene = sceneAt(i);
+      choice[branch.id] = p.id;
+      rebuild();
+      // Stay on the choice scene, then step into the path just picked.
+      go(posOfScene(scene), false);
+      post({ type: 'reel:branch', branch: branch.id, path: p.id, label: p.label });
+      go(i + 1, true);
+    });
+    row.appendChild(b);
+  });
+  choices.appendChild(row);
+}
+
+/* ---- rendering ------------------------------------------------------- */
+function preload(pos) {
+  const n = ORDER[pos];
+  if (n === undefined) return;
+  const img = new Image();
+  img.src = IMAGES[DATA.scenes[n].image];
+}
+
+function go(pos, pushHash) {
+  i = Math.max(0, Math.min(ORDER.length - 1, pos));
+  const n = sceneAt(i);
+  const s = DATA.scenes[n];
   shot.src = IMAGES[s.image];
-  shot.alt = s.label ? s.label : 'Step ' + (i + 1) + ' of ' + total;
+  shot.alt = s.label ? s.label : 'Step ' + (i + 1) + ' of ' + ORDER.length;
   caption.textContent = s.caption || '';
+
+  renderChoice(s.branch ? branchAt.get(n) : null);
 
   if (s.hotspot) {
     const h = s.hotspot;
@@ -223,22 +347,29 @@ function go(n, pushHash) {
   });
   [...chapters.children].forEach((c, n2) => {
     const start = chapterAt[n2];
-    const end = chapterAt[n2 + 1] ?? total;
+    const end = chapterAt[n2 + 1] ?? ORDER.length;
     c.setAttribute('aria-current', String(i >= start && i < end));
   });
 
   prev.disabled = i === 0;
-  next.textContent = i === total - 1 ? 'Restart' : 'Next ›';
-  counter.textContent = (i + 1) + ' / ' + total;
-  // Announced rather than shown: a sighted viewer already sees the change.
-  live.textContent = 'Step ' + (i + 1) + ' of ' + total + (s.label ? '. ' + s.label : '');
+  next.textContent = i === ORDER.length - 1 ? 'Restart' : 'Next ›';
+  counter.textContent = (i + 1) + ' / ' + ORDER.length;
+  live.textContent = 'Step ' + (i + 1) + ' of ' + ORDER.length + (s.label ? '. ' + s.label : '');
 
   if (pushHash) {
     const h = hashFor(i);
     if (location.hash !== h) history.pushState(null, '', h);
   }
   preload(i + 1);
-  post({ type: 'reel:scene', index: i, total, label: s.label || null, chapter: s.chapter || null });
+  post({
+    type: 'reel:scene',
+    index: i,
+    scene: n,
+    total: ORDER.length,
+    label: s.label || null,
+    chapter: s.chapter || null,
+    path: s.path || null,
+  });
   if (playing) schedule();
 }
 
@@ -247,7 +378,10 @@ function go(n, pushHash) {
    way the video does instead of marching at a fixed interval. */
 function schedule() {
   clearTimeout(timer);
-  const ms = Math.max(600, DATA.scenes[i].ms || 2000);
+  const s = DATA.scenes[sceneAt(i)];
+  // A choice is a question: autoplay stops rather than answering it for them.
+  if (s.branch) { stop(); return; }
+  const ms = Math.max(600, s.ms || 2000);
   const fill = track.children[i] && track.children[i].firstElementChild;
   if (fill) {
     fill.style.transition = 'none';
@@ -257,7 +391,7 @@ function schedule() {
     fill.style.width = '100%';
   }
   timer = setTimeout(() => {
-    if (i === total - 1) { stop(); return; }
+    if (i === ORDER.length - 1) { stop(); return; }
     go(i + 1, true);
   }, ms);
 }
@@ -270,7 +404,7 @@ function stop() {
   post({ type: 'reel:pause', index: i });
 }
 function start() {
-  if (i === total - 1) go(0, true);
+  if (i === ORDER.length - 1) go(0, true);
   playing = true;
   play.textContent = '❚❚ Pause';
   play.setAttribute('aria-label', 'Pause the demo');
@@ -278,7 +412,7 @@ function start() {
   post({ type: 'reel:play', index: i });
 }
 function toggle() { playing ? stop() : start(); }
-function advance() { stop(); go(i === total - 1 ? 0 : i + 1, true); }
+function advance() { stop(); go(i === ORDER.length - 1 ? 0 : i + 1, true); }
 
 /* ---- host page API --------------------------------------------------- */
 /* An embedded demo can report progress to the page around it, and be driven
@@ -292,6 +426,13 @@ window.addEventListener('message', (e) => {
   if (d.type === 'reel:go' && Number.isInteger(d.index)) { stop(); go(d.index, true); }
   else if (d.type === 'reel:play') start();
   else if (d.type === 'reel:pause') stop();
+  else if (d.type === 'reel:choose' && d.branch && d.path) {
+    if (choice[d.branch] === undefined) return;
+    stop();
+    choice[d.branch] = d.path;
+    rebuild();
+    go(i, true);
+  }
 });
 
 /* ---- input ----------------------------------------------------------- */
@@ -318,7 +459,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { stop(); go(i + 1, true); }
   else if (e.key === 'ArrowLeft') { stop(); go(i - 1, true); }
   else if (e.key === 'Home') { stop(); go(0, true); }
-  else if (e.key === 'End') { stop(); go(total - 1, true); }
+  else if (e.key === 'End') { stop(); go(ORDER.length - 1, true); }
   else if (e.key === ' ') { e.preventDefault(); toggle(); }
 });
 
@@ -334,19 +475,24 @@ stage.addEventListener('touchend', (e) => {
   go(dx < 0 ? i + 1 : i - 1, true);
 }, { passive: true });
 
-window.addEventListener('popstate', () => go(indexFromHash(), false));
-window.addEventListener('hashchange', () => go(indexFromHash(), false));
+window.addEventListener('popstate', () => go(posFromHash(), false));
+window.addEventListener('hashchange', () => go(posFromHash(), false));
 
 /* A same-origin host page (or a test) can drive the player directly, without
    going through postMessage. */
 window.reelDemo = {
   scenes: DATA.scenes,
-  get total() { return total; },
+  branches: BRANCHES,
+  get total() { return ORDER.length; },
   get index() { return i; },
+  get scene() { return sceneAt(i); },
+  get choices() { return { ...choice }; },
+  choose(branchId, pathId) { stop(); choice[branchId] = pathId; rebuild(); go(i, true); },
   go(n) { stop(); go(n, true); },
   play: start,
   pause: stop,
 };
 
-go(indexFromHash(), false);
+rebuild();
+go(posFromHash(), false);
 `;

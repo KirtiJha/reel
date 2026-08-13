@@ -19,7 +19,7 @@ import type { ScreenshotCapture } from "../capture/screenshot.js";
 import type { Scene } from "../encode/html.js";
 import { log, ReelError } from "../util/log.js";
 
-export type Mode = "record" | "check";
+export type Mode = "record" | "check" | "stills";
 
 export interface StepContext {
   page: Page;
@@ -41,6 +41,8 @@ export interface StepContext {
   term?: TerminalController | null;
   /** Click-through scenes for the interactive HTML build. */
   scenes: Scene[];
+  /** Branch path these steps belong to, stamped onto every scene they produce. */
+  currentPath?: string;
   /** When the last title card appeared — a card resets the narration context. */
   cardAt?: number;
 }
@@ -51,13 +53,16 @@ function snap(
   label: string,
   extra: { hotspot?: Scene["hotspot"]; chapter?: string; caption?: string } = {},
 ): void {
-  if (ctx.mode !== "record") return;
+  // "stills" records scenes for the interactive build without filming them —
+  // how alternate branch paths are captured.
+  if (ctx.mode === "check") return;
   ctx.scenes.push({
     t: ctx.now(),
     label,
     caption: extra.caption ?? activeCaptionText(ctx),
     chapter: extra.chapter,
     hotspot: extra.hotspot,
+    path: ctx.currentPath,
   });
 }
 

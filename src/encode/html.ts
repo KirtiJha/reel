@@ -38,6 +38,20 @@ export interface Scene {
   chapter?: string;
   /** The element to click, in viewport CSS px. */
   hotspot?: Hotspot;
+  /** Set when this scene presents a choice to the viewer. */
+  branch?: {
+    id: string;
+    prompt: string;
+    paths: { id: string; label: string; isDefault: boolean }[];
+  };
+  /** The branch path this scene belongs to, if any. */
+  path?: string;
+  /**
+   * An explicitly captured still, used instead of resolving by timestamp.
+   * Alternate branch paths are captured this way: they never enter the video's
+   * frame timeline, so there is no timestamp to resolve against.
+   */
+  frameFile?: string;
 }
 
 export interface HtmlOptions {
@@ -91,6 +105,46 @@ export function assignSlugs(chapters: (string | undefined)[]): (string | null)[]
   });
 }
 
+export interface BranchInfo {
+  id: string;
+  prompt: string;
+  /** Index of the scene that presents the choice. */
+  atScene: number;
+  paths: { id: string; label: string; isDefault: boolean; scenes: number[] }[];
+  /** First scene after the branch, where every path rejoins. */
+  rejoinScene: number | null;
+}
+
+/**
+ * Turn per-scene branch markers into the structure the player navigates.
+ *
+ * Paths are spliced into the running order at the choice point and rejoin
+ * afterwards, so the viewer's route is (trunk → their path → continuation)
+ * regardless of which path they pick, and regardless of the fact that the
+ * alternates were recorded in a completely separate pass.
+ */
+export function buildBranches(scenes: { branch?: Scene["branch"]; path?: string }[]): BranchInfo[] {
+  const out: BranchInfo[] = [];
+  scenes.forEach((s, i) => {
+    if (!s.branch) return;
+    const paths = s.branch.paths.map((p) => ({
+      ...p,
+      scenes: scenes.flatMap((x, j) => (x.path === p.id ? [j] : [])),
+    }));
+    // The continuation is the first later scene belonging to no path at all;
+    // scenes inside any path of this branch are alternatives, not the rejoin.
+    let rejoin: number | null = null;
+    for (let j = i + 1; j < scenes.length; j++) {
+      if (!scenes[j]!.path) {
+        rejoin = j;
+        break;
+      }
+    }
+    out.push({ id: s.branch.id, prompt: s.branch.prompt, atScene: i, paths, rejoinScene: rejoin });
+  });
+  return out;
+}
+
 export async function writeInteractiveHtml(opts: HtmlOptions): Promise<void> {
   const sharp = (await import("sharp")).default;
   const { scenes, frames, framesDir, outPath, spec } = opts;
@@ -106,17 +160,19 @@ export async function writeInteractiveHtml(opts: HtmlOptions): Promise<void> {
   const built: (Scene & { image: number })[] = [];
 
   for (const scene of scenes) {
-    const frame = nearestFrame(frames, scene.t);
-    if (!frame) continue;
-    let index = cache.get(frame.file);
+    // Alternate branch paths carry an explicit still: they were never part of
+    // the video's timeline, so there is no timestamp to resolve against.
+    const file = scene.frameFile ?? nearestFrame(frames, scene.t)?.file;
+    if (!file) continue;
+    let index = cache.get(file);
     if (index === undefined) {
-      const buf = await sharp(join(framesDir, frame.file))
+      const buf = await sharp(join(framesDir, file))
         .resize({ width, withoutEnlargement: true })
         .jpeg({ quality: 78, mozjpeg: true })
         .toBuffer();
       index = images.length;
       images.push(`data:image/jpeg;base64,${buf.toString("base64")}`);
-      cache.set(frame.file, index);
+      cache.set(file, index);
     }
     built.push({ ...scene, image: index });
   }
@@ -134,6 +190,7 @@ export async function writeInteractiveHtml(opts: HtmlOptions): Promise<void> {
   const slugs = assignSlugs(built.map((s) => s.chapter));
   const payload = {
     name: spec.name,
+    branches: buildBranches(built),
     scenes: built.map((s, i) => ({
       image: s.image,
       label: s.label,
@@ -141,6 +198,8 @@ export async function writeInteractiveHtml(opts: HtmlOptions): Promise<void> {
       chapter: s.chapter ?? null,
       slug: slugs[i],
       ms: durations[i],
+      path: s.path ?? null,
+      branch: s.branch ?? null,
       // Normalised to the viewport so the hotspot scales with the image.
       hotspot: s.hotspot
         ? {
@@ -200,6 +259,7 @@ ${PLAYER_CSS}
       <div class="hotspot" id="hotspot" hidden></div>
       <div class="nudge" id="nudge" hidden></div>
       <div class="caption" id="caption"></div>
+      <div class="choices" id="choices" hidden></div>
     </div>
 
     <div class="bar">

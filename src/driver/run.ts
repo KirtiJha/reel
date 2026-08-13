@@ -4,11 +4,17 @@ import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
-import { resolveOutputProfile, type Step } from "../spec/schema.js";
+import {
+  defaultPath,
+  isBranch,
+  resolveOutputProfile,
+  type Step,
+} from "../spec/schema.js";
 import { applyDeterminism } from "./determinism.js";
 import { Timeline } from "./timeline.js";
 import { Recorder } from "./recorder.js";
 import { TerminalController } from "../terminal/controller.js";
+import { recordAlternatePaths, type BranchPoint } from "./branches.js";
 import { installOverlay } from "../overlay/overlay.js";
 import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
@@ -58,11 +64,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // Headless in both modes: screencast works headless and it's what CI runs,
     // so what you record is what `reel check` verifies.
     browser = await chromium.launch({ headless: true });
-    const context = await createContext(browser, loaded);
-    await applyDeterminism(context, spec.deterministic);
-    if (spec.mock) await applyMocks(context, spec.mock, loaded);
-    if (spec.redact) await applyRedaction(context, spec.redact);
-
+    const context = await prepareContext(browser, loaded);
     const page = await context.newPage();
     // In CI drift mode, fail fast: a gone selector shouldn't cost 30s.
     if (mode === "check") page.setDefaultTimeout(8_000);
@@ -152,8 +154,41 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     }
 
     log.phase(`Recording “${spec.name}” (${spec.steps.length} steps)`);
+    const branchPoints: BranchPoint[] = [];
     for (let i = 0; i < spec.steps.length; i++) {
-      await runStepWithRetries(spec.steps[i]!, ctx, i, spec.retries);
+      const step = spec.steps[i]!;
+
+      if (isBranch(step)) {
+        // The video can only take one path; the click-through gets the rest,
+        // recorded separately once the main pass is done.
+        const chosen = defaultPath(step.branch);
+        const id = `b${branchPoints.length + 1}`;
+        branchPoints.push({ id, index: i, config: step.branch });
+        log.step(`${String(i + 1).padStart(2, "0")}  branch “${step.branch.prompt}” → ${chosen.label}`);
+
+        scenes.push({
+          t: timeline.now(),
+          label: step.branch.prompt,
+          branch: {
+            id,
+            prompt: step.branch.prompt,
+            paths: step.branch.paths.map((p) => ({
+              id: `${id}:${pathSlug(p.label)}`,
+              label: p.label,
+              isDefault: p === chosen,
+            })),
+          },
+        });
+
+        ctx.currentPath = `${id}:${pathSlug(chosen.label)}`;
+        for (const inner of chosen.steps) {
+          await runStepWithRetries(inner as Step, ctx, i, spec.retries);
+        }
+        ctx.currentPath = undefined;
+        continue;
+      }
+
+      await runStepWithRetries(step, ctx, i, spec.retries);
     }
 
     // A closing scene so the interactive build ends on the finished state.
@@ -181,6 +216,19 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     }
 
     if (mode === "check") {
+      // Every branch path is a flow that can break, so drift detection has to
+      // walk all of them — not just the one the video happens to take.
+      if (branchPoints.length) {
+        await recordAlternatePaths({
+          browser,
+          loaded,
+          framesDir,
+          points: branchPoints,
+          fps: profile.fps,
+          makeContext: prepareContext,
+          capture: false,
+        });
+      }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
       return { frames: 0, beats: beats.length, durationMs, outputs: [] };
     }
@@ -236,12 +284,25 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     }
     for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
 
-    // Interactive build: the same demo as a self-contained click-through.
+    // Interactive build: the same demo as a self-contained click-through, and
+    // the only output that can carry more than one path.
     if (spec.output.html) {
       const htmlPath = resolveOutput(loaded, spec.output.html);
       log.phase("Interactive");
+      let allScenes = scenes;
+      if (branchPoints.length) {
+        const alt = await recordAlternatePaths({
+          browser,
+          loaded,
+          framesDir,
+          points: branchPoints,
+          fps: profile.fps,
+          makeContext: prepareContext,
+        });
+        allScenes = [...scenes, ...alt.scenes];
+      }
       await writeInteractiveHtml({
-        scenes,
+        scenes: allScenes,
         frames,
         framesDir,
         outPath: htmlPath,
@@ -283,6 +344,11 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
   }
 }
 
+/** Stable id fragment for a branch path label. */
+function pathSlug(v: string): string {
+  return v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "path";
+}
+
 /**
  * Run a step, retrying transient failures when repeating it is provably safe
  * (see driver/retry.ts). A demo that fails once in twenty on a slow runner is
@@ -319,6 +385,26 @@ async function waitForFonts(page: Page): Promise<void> {
     page.evaluate(() => (document as any).fonts?.ready).catch(() => {}),
     page.waitForTimeout(3_000),
   ]);
+}
+
+/**
+ * A browser context with every reproducibility control already installed.
+ *
+ * Alternate branch paths are recorded in their own context, and they have to be
+ * prepared exactly like the main pass — same frozen clock, same mocks, same
+ * redaction — or the paths a viewer switches between wouldn't agree with each
+ * other. Getting this subtly wrong is easy, so there is one way to build one.
+ */
+export async function prepareContext(
+  browser: Browser,
+  loaded: LoadedSpec,
+): Promise<BrowserContext> {
+  const { spec } = loaded;
+  const context = await createContext(browser, loaded);
+  await applyDeterminism(context, spec.deterministic);
+  if (spec.mock) await applyMocks(context, spec.mock, loaded);
+  if (spec.redact) await applyRedaction(context, spec.redact);
+  return context;
 }
 
 async function createContext(browser: Browser, loaded: LoadedSpec): Promise<BrowserContext> {

@@ -196,6 +196,56 @@ coordinates map exactly to what you see.
 `npm run test:player` drives a generated build in a real browser — 26 checks over
 the router, autoplay, embed mode, the host API and the accessibility surface.
 
+## Branching — let the viewer choose
+
+Some demos have more than one story. A `branch` step forks the flow, and the
+click-through lets the viewer pick:
+
+```yaml
+steps:
+  - type: { selector: "#task-input", text: "Ship the Reel demo" }
+  - click: role=button[name=Add]
+
+  - branch:
+      prompt: "What do you want to see?"
+      paths:
+        - label: "Complete a task"
+          default: true              # the path the video follows
+          steps:
+            - click: text=Ship the Reel demo
+            - expect: { selector: "#count", text: "0 of 1" }
+        - label: "Add a second task"
+          steps:
+            - type: { selector: "#task-input", text: "Write the README" }
+            - click: role=button[name=Add]
+
+  - caption: "Both paths end up here"   # the shared continuation
+```
+
+**A video is linear**, so the GIF/MP4 follows the path marked `default: true`.
+The interactive build carries all of them — it's the one format that can.
+
+**An app has state**, so alternates can't be spliced in afterwards. Reel replays
+the steps leading up to the branch and then records that path, which is the only
+approach that holds for an app it knows nothing about. The replay is silent: no
+frames, no demo time. Alternates are captured as stills, so they can never leak
+into the video.
+
+**Every path is checked.** `reel check` walks all of them, so a branch the video
+never shows is still a tested flow — break an assertion on the path not taken and
+the build fails.
+
+Two constraints worth knowing:
+
+- A fresh browser context resets cookies and storage, **not a server's
+  database**. For a server-backed app, pin responses with `mock:` so every path
+  starts from the same state.
+- Branches don't nest in v1 — a nested branch is a spec error, not a silent
+  no-op. Recording a tree deeper than one level multiplies the trunk replays.
+
+See [`examples/taskflow/branching.reel.yaml`](examples/taskflow/branching.reel.yaml),
+and `npm run test:branch` for the end-to-end checks.
+
 ## Delivery presets — the same demo, shared many ways
 
 A demo isn't only a README GIF. Reel captures the flow once and renders whatever

@@ -63,6 +63,14 @@ jobs:
       - name: Terminal demo check
         run: npx reel check examples/cli/demo.reel.yaml
 
+      # Branching: every path is a flow that can break, including the ones the
+      # video never shows.
+      - name: Branching demo
+        run: |
+          npx reel check examples/taskflow/branching.reel.yaml
+          npx reel record examples/taskflow/branching.reel.yaml
+          npm run test:branch
+
       - name: Detect media change
         id: media
         run: |

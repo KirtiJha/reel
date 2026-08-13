@@ -1,0 +1,67 @@
+# A branching demo.
+#
+# A video is linear, so the GIF/MP4 follows the path marked `default: true`.
+# The interactive build (`output.html`) carries every path and lets the viewer
+# choose — which is the one output format that can.
+#
+# Reel records the alternates by replaying the steps before the branch and then
+# capturing that path, because an app has state and you cannot rewind into the
+# path not taken. The replay is silent, so it costs no demo time and produces no
+# frames the video could pick up.
+name: TaskFlow — pick your path
+url: http://localhost:4321
+viewport: { width: 1000, height: 720, scale: 2 }
+theme: dark
+
+run:
+  cmd: node server.mjs
+  cwd: .
+  readyOn: http://localhost:4321
+  env: { PORT: "4321" }
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  background: "linear-gradient(135deg, #2b3a67, #1a1f36)"
+  accent: "#6d8bff"
+
+steps:
+  - card: { title: "TaskFlow", subtitle: "Two ways to work", ms: 1500 }
+  - caption: "Start by capturing a task"
+  - type: { selector: "#task-input", text: "Ship the Reel demo" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the Reel demo
+  - beat: ready
+
+  - branch:
+      prompt: "What do you want to see?"
+      paths:
+        - label: "Complete a task"
+          default: true # the path the video follows
+          steps:
+            - caption: "Click a task to complete it"
+            - click: text=Ship the Reel demo
+            - expect: { selector: "#count", text: "0 of 1" }
+            - beat: completed
+
+        - label: "Add a second task"
+          steps:
+            - caption: "Or keep capturing — add another"
+            - type: { selector: "#task-input", text: "Write the README" }
+            - click: role=button[name=Add]
+            - waitFor: text=Write the README
+            - expect: { selector: "#count", text: "2 of 2" }
+            - beat: added
+
+  # Both paths rejoin here.
+  - caption: "Either way, the demo is a test that runs in CI"
+  - beat: outro
+
+output:
+  preset: readme
+  gif: out/branching.gif
+  html: out/branching.html # every path lives here
+  storyboard: out/branching-storyboard
