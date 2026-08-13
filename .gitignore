@@ -19,3 +19,6 @@ examples/*/out/
 # (hero.reel.yaml, aangan.reel.yaml). The copies the site ships are committed
 # under studio/public/demo/ instead — see docs/deploy-site.md.
 /out/
+
+# Diagnostics from a failed step — local, never committed.
+.reel-failures/

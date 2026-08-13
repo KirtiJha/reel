@@ -156,6 +156,15 @@ export class ScreenshotCapture {
    * End the recording. `finalT` stamps the closing frame on a deterministic
    * run, where the driver — not the wall clock — owns the timeline.
    */
+  /**
+   * The frames captured so far, without ending the recording. Used to build the
+   * run-up clip when a step fails mid-demo, where `stop()` would be wrong: the
+   * recording is being abandoned, not finished.
+   */
+  captured(): CapturedFrame[] {
+    return [...this.frames].sort((a, b) => a.t - b.t);
+  }
+
   async stop(finalT?: number): Promise<CapturedFrame[]> {
     this.running = false;
     await this.loop?.catch(() => {});

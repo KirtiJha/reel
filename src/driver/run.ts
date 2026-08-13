@@ -20,6 +20,8 @@ import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
 import { runStep, type StepContext, type Mode } from "./steps.js";
 import { isRetryable, retryDelayMs } from "./retry.js";
+import { captureFailure, reportFailure, type FailureArtifacts } from "./failure.js";
+import { describeStep } from "../heal/selectors.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
 import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
@@ -37,6 +39,25 @@ export interface RunResult {
   beats: number;
   durationMs: number;
   outputs: string[];
+}
+
+/**
+ * A step failure, carrying what was captured at the moment it broke.
+ *
+ * The artifacts ride on the error rather than being logged and forgotten, so
+ * every caller — the CLI, the Studio, the JSON reporter — can point at them
+ * without re-deriving where they went.
+ */
+export class StepFailure extends ReelError {
+  constructor(
+    message: string,
+    hint: string | undefined,
+    readonly artifacts: FailureArtifacts | null,
+    readonly step: { number: number; label: string },
+  ) {
+    super(message, hint);
+    this.name = "StepFailure";
+  }
 }
 
 /**
@@ -186,13 +207,13 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
         ctx.currentPath = `${id}:${pathSlug(chosen.label)}`;
         for (const inner of chosen.steps) {
-          await runStepWithRetries(inner as Step, ctx, i, spec.retries);
+          await guarded(inner as Step, ctx, i, spec.retries, loaded, capture, framesDir);
         }
         ctx.currentPath = undefined;
         continue;
       }
 
-      await runStepWithRetries(step, ctx, i, spec.retries);
+      await guarded(step, ctx, i, spec.retries, loaded, capture, framesDir);
     }
 
     // A closing scene so the interactive build ends on the finished state.
@@ -352,6 +373,39 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
   }
 }
 
+/**
+ * Run a step and, if it fails for good, capture the scene of the crime before
+ * the browser closes. The window is narrow: `finally` tears down the context a
+ * few lines later, and by the time the error surfaces the page is gone.
+ */
+async function guarded(
+  step: Step,
+  ctx: StepContext,
+  i: number,
+  retries: number,
+  loaded: LoadedSpec,
+  capture: ScreenshotCapture | null,
+  framesDir: string,
+): Promise<void> {
+  try {
+    await runStepWithRetries(step, ctx, i, retries);
+  } catch (err) {
+    const error = err as Error;
+    const label = describeStep(step);
+    const artifacts = await captureFailure(ctx.page, {
+      stepNumber: i + 1,
+      label,
+      step,
+      error,
+      specPath: loaded.path,
+      frames: capture?.captured(),
+      framesDir,
+    });
+    reportFailure(artifacts);
+    throw new StepFailure(error.message, undefined, artifacts, { number: i + 1, label });
+  }
+}
+
 /** Stable id fragment for a branch path label. */
 function pathSlug(v: string): string {
   return v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "path";
@@ -435,6 +489,16 @@ export async function check(loaded: LoadedSpec): Promise<void> {
   try {
     await record(loaded, "check");
   } catch (err) {
+    // A StepFailure already carries the artifacts and the step it broke on;
+    // re-wrapping it would lose both.
+    if (err instanceof StepFailure) {
+      throw new StepFailure(
+        `Drift check FAILED at step ${err.step.number} (${err.step.label}): ${err.message}`,
+        "A step could not complete — your demo no longer matches the app.",
+        err.artifacts,
+        err.step,
+      );
+    }
     if (err instanceof ReelError) throw err;
     throw new ReelError(
       `Drift check FAILED: ${(err as Error).message}`,
