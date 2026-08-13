@@ -9,7 +9,9 @@ import { record, check } from "../driver/run.js";
 import { heal } from "../heal/heal.js";
 import { authorSpec } from "../ai/author.js";
 import { addLogSink, log, ReelError } from "../util/log.js";
-import { loadLlmConfig } from "../ai/llm.js";
+import { chat, loadLlmConfig } from "../ai/llm.js";
+import { PROVIDERS, findProvider } from "../ai/providers.js";
+import { writeEnvFile } from "./env-file.js";
 import { summarize } from "./summary.js";
 
 const MIME: Record<string, string> = {
@@ -31,15 +33,24 @@ const MIME: Record<string, string> = {
 
 let busy = false; // one in-process job at a time keeps the log stream clean
 
-/** Start the in-process API + media server (the Next.js UI proxies to it). */
+/**
+ * Start the in-process API + media server (the Next.js UI proxies to it).
+ *
+ * Bound to loopback, deliberately. This server reads the workspace, writes
+ * spec files and provider credentials, and `record` executes the spec's
+ * `run.cmd` in a shell — so an open bind would hand anyone on the same network
+ * command execution on this machine. Studio is a local tool; it listens only
+ * to this machine.
+ */
 export async function startApiServer(port: number): Promise<http.Server> {
   const cwd = process.cwd();
   const server = http.createServer((req, res) => {
-    // Permit the Next dev origin to call the API directly if ever needed.
-    res.setHeader("access-control-allow-origin", "*");
+    // Same-origin only: the browser reaches this through the Next.js proxy on
+    // the UI port, so no cross-origin caller needs to be allowed in.
+    res.setHeader("vary", "origin");
     handle(req, res, cwd).catch((err) => sendJson(res, 500, { error: (err as Error).message }));
   });
-  await new Promise<void>((r) => server.listen(port, r));
+  await new Promise<void>((r) => server.listen(port, "127.0.0.1", r));
   return server;
 }
 
@@ -88,6 +99,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   }
 
   // --- Mutations / jobs ---
+  if (path === "/api/llm-config" && req.method === "POST") return saveLlmConfig(req, res, cwd);
+  if (path === "/api/llm-test" && req.method === "POST") return testLlm(res);
   if (path === "/api/spec" && req.method === "POST") return saveSpec(req, res, cwd);
   if (path === "/api/record" && req.method === "POST") {
     const body = await readBody(req);
@@ -126,14 +139,30 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
 /* ------------------------------ helpers ------------------------------ */
 
 async function getConfig() {
-  let llm: { configured: boolean; model?: string; host?: string } = { configured: false };
+  let llm: {
+    configured: boolean;
+    model?: string;
+    host?: string;
+    provider?: string;
+    protocol?: string;
+    /** What the user would have to fix, when nothing resolved. */
+    error?: string;
+  } = { configured: false };
   try {
     const cfg = loadLlmConfig();
-    llm = { configured: true, model: cfg.model, host: new URL(cfg.apiBase).host };
-  } catch {
-    /* not configured */
+    llm = {
+      configured: true,
+      model: cfg.model,
+      host: new URL(cfg.apiBase).host,
+      provider: cfg.providerLabel,
+      protocol: cfg.protocol,
+    };
+  } catch (err) {
+    // Studio should say *why* nothing is configured rather than only that
+    // nothing is — the message already names the provider and the variable.
+    llm = { configured: false, error: err instanceof Error ? err.message : undefined };
   }
-  return { llm, platform: process.platform };
+  return { llm, platform: process.platform, providers: PROVIDERS.map((p) => ({ id: p.id, label: p.label })) };
 }
 
 async function listSpecs(cwd: string): Promise<string[]> {
@@ -300,6 +329,79 @@ function deepMerge(target: any, patch: any): any {
     }
   }
   return target;
+}
+
+/**
+ * Persist provider settings to the workspace `.env`.
+ *
+ * The API key is write-only: it is stored and applied, and no endpoint ever
+ * returns it. Sending no key leaves whatever is already configured in place,
+ * so someone changing only the model doesn't have to re-enter their secret —
+ * and so the UI never has to hold one to round-trip it.
+ */
+async function saveLlmConfig(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  cwd: string,
+): Promise<void> {
+  const body = await readBody(req);
+  const providerId = String(body.provider ?? "").trim();
+  const provider = findProvider(providerId);
+  if (!provider) {
+    return void sendJson(res, 400, {
+      error: `Unknown provider "${providerId}".`,
+      hint: `Known providers: ${PROVIDERS.map((p) => p.id).join(", ")}.`,
+    });
+  }
+
+  const model = String(body.model ?? "").trim();
+  const baseUrl = String(body.baseUrl ?? "").trim();
+  const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+
+  if (!provider.baseUrl && !baseUrl) {
+    return void sendJson(res, 400, {
+      error: `${provider.label} needs an endpoint URL.`,
+      hint: `See ${provider.docs}.`,
+    });
+  }
+
+  const edits: Record<string, string | null> = {
+    REEL_LLM_PROVIDER: provider.id,
+    // An empty field clears the override so the provider's own default applies
+    // again, rather than pinning an empty string.
+    REEL_LLM_MODEL: model || null,
+    REEL_LLM_BASE_URL: baseUrl || null,
+  };
+  if (apiKey) edits.REEL_LLM_API_KEY = apiKey;
+
+  await writeEnvFile(join(cwd, ".env"), edits);
+  // Never echo the key back; report only what resolved from it.
+  sendJson(res, 200, { ok: true, ...(await getConfig()) });
+}
+
+/**
+ * Prove the saved settings actually work, with one real round trip.
+ *
+ * Configuration that merely parses is not configuration that works — a wrong
+ * endpoint, a revoked key or a model the account can't reach all look identical
+ * until something calls the provider.
+ */
+async function testLlm(res: http.ServerResponse): Promise<void> {
+  try {
+    const cfg = loadLlmConfig();
+    const started = Date.now();
+    const r = await chat(cfg, [{ role: "user", content: "Reply with exactly: OK" }]);
+    sendJson(res, 200, {
+      ok: true,
+      provider: cfg.providerLabel,
+      model: cfg.model,
+      ms: Date.now() - started,
+      reply: (r.message.content ?? "").slice(0, 80),
+    });
+  } catch (err) {
+    const e = err as Error & { hint?: string };
+    sendJson(res, 200, { ok: false, error: e.message, hint: e.hint });
+  }
 }
 
 async function saveSpec(req: http.IncomingMessage, res: http.ServerResponse, cwd: string): Promise<void> {

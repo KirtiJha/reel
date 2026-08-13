@@ -32,7 +32,10 @@ export async function launchStudio(opts: StudioOptions): Promise<void> {
   log.ok(`API + media on http://localhost:${opts.apiPort}`);
   log.step(`Starting the UI on http://localhost:${opts.uiPort} …`);
 
-  const child = spawn(nextBin, ["dev", "-p", String(opts.uiPort)], {
+  // `-H 127.0.0.1` for the same reason the API server binds to loopback: this
+  // UI can write provider credentials and start jobs that run shell commands,
+  // so it must not be reachable from the network.
+  const child = spawn(nextBin, ["dev", "-p", String(opts.uiPort), "-H", "127.0.0.1"], {
     cwd: studioDir,
     env: { ...process.env, REEL_API_URL: `http://localhost:${opts.apiPort}` },
     stdio: "inherit",

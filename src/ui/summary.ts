@@ -55,6 +55,9 @@ export interface SpecSummary {
     timeline: boolean;
     captions: boolean;
     zoom: boolean;
+    /** Terminal demos only: whether the camera follows each command's output. */
+    zoomOutput: boolean;
+    zoomRows: number;
     subtitles: boolean;
     languages: string[];
     html?: string;
@@ -125,6 +128,8 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
     timeline: spec.deterministic.timeline,
     captions: spec.polish.captions,
     zoom: spec.polish.zoom === "auto",
+    zoomOutput: spec.polish.zoomOutput,
+    zoomRows: spec.polish.zoomRows,
     subtitles: Boolean(o.subtitles),
     languages: o.languages ?? [],
     html: o.html,
@@ -155,6 +160,8 @@ export function summarize(raw: string): SpecSummary {
       timeline: true,
       captions: true,
       zoom: true,
+      zoomOutput: false,
+      zoomRows: 12,
       subtitles: false,
       languages: [],
     },

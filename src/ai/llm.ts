@@ -3,21 +3,36 @@ import https from "node:https";
 import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { ReelError, log } from "../util/log.js";
+import { fromAnthropicResponse, toAnthropicRequest } from "./anthropic-wire.js";
+import {
+  PROVIDERS,
+  findProvider,
+  inferProvider,
+  type AuthStyle,
+  type Protocol,
+  type Provider,
+} from "./providers.js";
 
 /**
- * LiteLLM client — talks to a LiteLLM proxy over its OpenAI-compatible
- * `/chat/completions` endpoint. This mirrors the approach used by the GridFlow
- * service (`litellm_client.py` + `app_config.py`):
- *  - config from env: LITELLM_API_BASE / LITELLM_API_KEY / LITELLM_MODEL
- *    (with the usual OPENAI_* fallbacks),
- *  - the base is normalized to end in `/v1`, and a leading `provider/` prefix is
- *    stripped from the model name for the OpenAI-compatible call,
- *  - TLS verification follows SSL_VERIFY (default true); set SSL_VERIFY=false for
- *    corporate proxies whose certificates don't verify,
- *  - transient errors (429/5xx/timeouts) retry with exponential backoff + jitter.
+ * The model client.
  *
- * Reel is provider-agnostic: whatever model the proxy routes to (Claude, Gemini,
- * GPT, …) is fine, as long as it supports OpenAI-style tool calling.
+ * Reel is provider-agnostic: point it at OpenAI, Anthropic, Gemini, a LiteLLM
+ * proxy, Ollama on your laptop, or anything else with an OpenAI-compatible
+ * endpoint. Configuration resolves in three layers, most specific first:
+ *
+ *   1. explicit `REEL_LLM_*` variables,
+ *   2. the named provider's preset (see `providers.ts`) and its conventional
+ *      key variable — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and so on,
+ *   3. the legacy `LITELLM_*` / `OPENAI_*` names, so existing setups keep
+ *      working untouched.
+ *
+ * Messages use one canonical (OpenAI-shaped) format internally regardless of
+ * provider; a vendor whose wire format differs is translated at the boundary
+ * rather than leaking its shape into the agent, the healer or the translator.
+ *
+ * TLS verification follows SSL_VERIFY (default true) — set it false for
+ * corporate proxies whose certificates don't verify locally. Transient errors
+ * (429 / 5xx / timeouts) retry with exponential backoff and jitter.
  */
 
 const MAX_RETRIES = 5;
@@ -26,12 +41,19 @@ const MAX_BACKOFF_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
 export interface LlmConfig {
-  apiBase: string; // normalized, ends in /v1
+  /** Which preset resolved — surfaced in errors and in Studio. */
+  providerId: string;
+  providerLabel: string;
+  protocol: Protocol;
+  auth: AuthStyle;
+  apiBase: string;
   apiKey: string;
-  model: string; // provider prefix stripped
+  model: string;
   sslVerify: boolean;
   /** Path to a corporate CA bundle to trust (SSL_CERT_FILE / REQUESTS_CA_BUNDLE). */
   caBundle?: string;
+  /** Query parameters the endpoint requires (Azure's api-version). */
+  query?: Record<string, string>;
   temperature?: number;
   reasoningEffort?: string;
 }
@@ -90,31 +112,90 @@ export function extractModelName(model: string): string {
   return n.slice(n.indexOf("/") + 1) || n;
 }
 
-/** Build config from env (+ an optional model override), matching GridFlow's keys. */
+/**
+ * Which provider to talk to.
+ *
+ * An explicit name always wins, and a wrong one is an error rather than a
+ * silent fallback — a typo in `REEL_LLM_PROVIDER` should say so, not quietly
+ * send the request somewhere else. Otherwise: an existing `LITELLM_API_BASE`
+ * means an existing LiteLLM setup, then whichever vendor's key is present, and
+ * finally LiteLLM, whose error message names what to set.
+ */
+export function resolveProvider(): Provider {
+  const named = getEnv("REEL_LLM_PROVIDER");
+  if (named) {
+    const found = findProvider(named);
+    if (found) return found;
+    throw new ReelError(
+      `Unknown LLM provider "${named}".`,
+      `Known providers: ${PROVIDERS.map((p) => p.id).join(", ")}. ` +
+        "Use `custom` with REEL_LLM_BASE_URL for any other OpenAI-compatible endpoint.",
+    );
+  }
+  if (getEnv("LITELLM_API_BASE") !== undefined) return findProvider("litellm")!;
+  return inferProvider() ?? findProvider("litellm")!;
+}
+
+/**
+ * Resolve the provider, endpoint, key and model from the environment.
+ *
+ * The three layers are ordered so that adding an explicit setting always wins
+ * over a guess, and so an existing LiteLLM setup keeps working with no edits.
+ */
 export function loadLlmConfig(modelOverride?: string): LlmConfig {
-  const apiBase = getEnv("LITELLM_API_BASE", "OPENAI_API_BASE");
-  const apiKey = getEnv("LITELLM_API_KEY", "OPENAI_API_KEY");
+  const provider = resolveProvider();
+
+  const apiBase =
+    getEnv("REEL_LLM_BASE_URL", "LITELLM_API_BASE", "OPENAI_API_BASE") ?? provider.baseUrl;
+  const apiKey = getEnv("REEL_LLM_API_KEY", ...provider.keyEnv, "LITELLM_API_KEY", "OPENAI_API_KEY");
   const modelRaw =
     modelOverride ??
-    getEnv("LITELLM_MODEL", "LLM_MODEL_NAME", "OPENAI_CHAT_MODEL_NAME", "OPENAI_API_MODEL");
+    getEnv(
+      "REEL_LLM_MODEL",
+      "LITELLM_MODEL",
+      "LLM_MODEL_NAME",
+      "OPENAI_CHAT_MODEL_NAME",
+      "OPENAI_API_MODEL",
+    ) ??
+    provider.defaultModel;
 
   if (!apiBase) {
     throw new ReelError(
-      "No LiteLLM endpoint configured.",
-      "Set LITELLM_API_BASE (and LITELLM_API_KEY, LITELLM_MODEL). See .env.example.",
+      `No endpoint configured for ${provider.label}.`,
+      `Set REEL_LLM_BASE_URL to the ${provider.label} endpoint. See .env.example, or ${provider.docs}.`,
     );
   }
-  if (!apiKey) throw new ReelError("LITELLM_API_KEY is not set.", "Add it to your environment or .env.");
-  if (!modelRaw) throw new ReelError("No model configured.", "Set LITELLM_MODEL or pass --model.");
+  if (!apiKey && !provider.keyOptional) {
+    throw new ReelError(
+      `No API key configured for ${provider.label}.`,
+      `Set REEL_LLM_API_KEY${provider.keyEnv.length ? ` or ${provider.keyEnv[0]}` : ""} in your environment or .env.`,
+    );
+  }
+  if (!modelRaw) {
+    throw new ReelError(
+      `No model configured for ${provider.label}.`,
+      "Set REEL_LLM_MODEL, or pass --model.",
+    );
+  }
 
-  const reasoning = getEnv("LITELLM_REASONING_EFFORT");
-  const temp = getEnv("LITELLM_TEMPERATURE");
+  const reasoning = getEnv("REEL_LLM_REASONING_EFFORT", "LITELLM_REASONING_EFFORT");
+  const temp = getEnv("REEL_LLM_TEMPERATURE", "LITELLM_TEMPERATURE");
   return {
-    apiBase: ensureOpenAiBase(apiBase),
-    apiKey,
-    model: extractModelName(modelRaw),
+    providerId: provider.id,
+    providerLabel: provider.label,
+    protocol: provider.protocol,
+    auth: provider.auth,
+    // Only endpoints the user types by hand get the /v1 convenience — a
+    // vendor with a fixed path shape 404s if it is rewritten.
+    apiBase: provider.appendV1 ? ensureOpenAiBase(apiBase) : apiBase.replace(/\/+$/, ""),
+    apiKey: apiKey ?? "",
+    // A `provider/model` prefix is a proxy-routing convention; strip it only
+    // where a proxy is what's being addressed. Vendors use slashes in real
+    // model names (`accounts/fireworks/...`, `meta-llama/...`).
+    model: provider.id === "litellm" ? extractModelName(modelRaw) : modelRaw.trim(),
     sslVerify: getBool("SSL_VERIFY", true),
     caBundle: getEnv("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "HTTPX_SSL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS"),
+    query: provider.query,
     temperature: temp !== undefined ? Number(temp) : 0.2,
     reasoningEffort: reasoning && reasoning !== "none" ? reasoning : undefined,
   };
@@ -142,6 +223,16 @@ export async function chat(
     }
 
     try {
+      if (cfg.protocol === "anthropic") {
+        const res = await postJson(
+          `${cfg.apiBase}/messages`,
+          toAnthropicRequest(cfg.model, messages, tools, {
+            temperature: stripOptional ? undefined : cfg.temperature,
+          }),
+          cfg,
+        );
+        return fromAnthropicResponse(res);
+      }
       const res = await postJson(`${cfg.apiBase}/chat/completions`, body, cfg);
       const choice = res?.choices?.[0];
       if (!choice) {
@@ -163,10 +254,19 @@ export async function chat(
       const retryable = e.status === 429 || (e.status ?? 0) >= 500 || e.transient === true;
       if (!retryable || attempt === MAX_RETRIES) {
         if (e.status === 401 || e.status === 403) {
-          throw new ReelError(`LiteLLM auth failed (HTTP ${e.status}).`, "Check LITELLM_API_KEY.");
+          throw new ReelError(
+            `${cfg.providerLabel} rejected the API key (HTTP ${e.status}).`,
+            `Check REEL_LLM_API_KEY${cfg.providerId !== "custom" ? ` (or the provider's own key variable)` : ""}.`,
+          );
+        }
+        if (e.status === 404) {
+          throw new ReelError(
+            `${cfg.providerLabel} returned 404 for ${cfg.apiBase}.`,
+            `Check REEL_LLM_BASE_URL and that "${cfg.model}" exists on this provider.`,
+          );
         }
         throw new ReelError(
-          `LiteLLM request failed${e.status ? ` (HTTP ${e.status})` : ""}: ${e.message}`,
+          `${cfg.providerLabel} request failed${e.status ? ` (HTTP ${e.status})` : ""}: ${e.message}`,
           e.body?.slice(0, 300),
         );
       }
@@ -183,6 +283,26 @@ interface HttpError extends Error {
   body?: string;
   transient?: boolean;
 }
+
+/**
+ * Vendors disagree about how a key is presented: most take a bearer token,
+ * Anthropic takes `x-api-key` alongside a required API version, and Azure takes
+ * `api-key`. Getting this wrong reads as an auth failure, so it's explicit.
+ */
+export function authHeaders(cfg: LlmConfig): Record<string, string> {
+  switch (cfg.auth) {
+    case "x-api-key":
+      return { "x-api-key": cfg.apiKey, "anthropic-version": ANTHROPIC_VERSION };
+    case "azure-key":
+      return { "api-key": cfg.apiKey };
+    default:
+      // A local runtime with no key shouldn't send an empty bearer token.
+      return cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {};
+  }
+}
+
+/** Anthropic requires an explicit API version on every request. */
+const ANTHROPIC_VERSION = "2023-06-01";
 
 /**
  * TLS agent for the corporate LiteLLM proxy: trust a CA bundle when provided
@@ -215,6 +335,12 @@ function postJson(
       reject(Object.assign(new Error(`Invalid LITELLM_API_BASE: ${endpoint}`), { transient: false }));
       return;
     }
+    // Endpoints that route by query parameter (Azure's api-version) need them
+    // merged in rather than appended, so a base URL that already carries one
+    // isn't corrupted.
+    for (const [k, v] of Object.entries(cfg.query ?? {})) {
+      if (!url.searchParams.has(k)) url.searchParams.set(k, v);
+    }
     const isHttps = url.protocol === "https:";
     const payload = Buffer.from(JSON.stringify(body));
     const opts: https.RequestOptions = {
@@ -225,7 +351,7 @@ function postJson(
       headers: {
         "content-type": "application/json",
         "content-length": String(payload.length),
-        authorization: `Bearer ${cfg.apiKey}`,
+        ...authHeaders(cfg),
       },
       timeout: REQUEST_TIMEOUT_MS,
     };
