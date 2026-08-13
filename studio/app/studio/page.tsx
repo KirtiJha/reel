@@ -5,11 +5,32 @@ import { EmptyState, PageHead, Spinner, Toggle } from "@/components/bits";
 import { LogConsole } from "@/components/LogConsole";
 import { MediaPreview } from "@/components/MediaPreview";
 import { SpecChips, SpecOutline } from "@/components/SpecOutline";
-import { getJSON, postJSON, runJob, type LogLine, type SpecSummary } from "@/lib/api";
+import {
+  getJSON,
+  postJSON,
+  runJob,
+  type LogLine,
+  type OutlineStep,
+  type SpecSummary,
+} from "@/lib/api";
 
 const PRESETS = ["share", "readme", "social", "hq", "docs"];
 const FRAMES = ["none", "browser", "window"];
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+/* Mirrors THEME_NAMES in src/terminal/themes.ts — test/themes.test.ts fails if
+   the two drift, so a new scheme can't be added to one and not the other. */
+const TERMINAL_THEMES = [
+  "reel",
+  "dracula",
+  "nord",
+  "catppuccin-mocha",
+  "tokyo-night",
+  "gruvbox-dark",
+  "one-dark",
+  "solarized-dark",
+  "solarized-light",
+  "github-light",
+];
 
 export default function StudioPage() {
   const [specs, setSpecs] = useState<string[]>([]);
@@ -31,6 +52,7 @@ export default function StudioPage() {
   const [timeline, setTimeline] = useState(true);
   const [zoomOutput, setZoomOutput] = useState(false);
   const [zoomRows, setZoomRows] = useState(12);
+  const [terminalTheme, setTerminalTheme] = useState("reel");
 
   // job
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -61,6 +83,7 @@ export default function StudioPage() {
     setTimeline(s.options.timeline);
     setZoomOutput(s.options.zoomOutput);
     setZoomRows(s.options.zoomRows);
+    setTerminalTheme(s.options.terminalTheme ?? "reel");
   }, []);
 
   const loadSpec = useCallback(
@@ -143,6 +166,7 @@ export default function StudioPage() {
       // it was before anyone touched the toggle.
       patch.polish.zoomOutput = zoomOutput ? true : null;
       patch.polish.zoomRows = zoomOutput ? zoomRows : null;
+      patch.terminal = { theme: terminalTheme };
     }
     patch.output.subtitles = subtitles ? true : null;
     // Name the interactive build after the spec, so it lands beside the video.
@@ -157,6 +181,37 @@ export default function StudioPage() {
     setDirty(true);
     setNoteTone("ok");
     setNote("Options applied — review and Save.");
+  }
+
+  /**
+   * Flip a run step between filmed and off-camera.
+   *
+   * Goes through its own endpoint rather than the options patch: the step may be
+   * written as a bare string, and merging a flag into a string would drop the
+   * command. The server normalises the form before setting the flag.
+   */
+  async function toggleHidden(step: OutlineStep) {
+    try {
+      const r = await postJSON<{ raw: string; summary: SpecSummary }>("/api/step-hidden", {
+        raw,
+        index: step.index - 1, // the outline is 1-based, the step list is not
+        hidden: !step.hidden,
+      });
+      setRaw(r.raw);
+      // Refresh the outline only — hydrate() would also reset the options form,
+      // discarding anything typed there but not yet applied.
+      setSummary(r.summary);
+      setDirty(true);
+      setNoteTone("ok");
+      setNote(
+        step.hidden
+          ? "Step will be filmed again — review and Save."
+          : "Step will run off camera — review and Save.",
+      );
+    } catch (err) {
+      setNoteTone("err");
+      setNote((err as Error).message);
+    }
   }
 
   async function job(kind: "record" | "check" | "heal", extra: Record<string, unknown> = {}) {
@@ -361,7 +416,7 @@ export default function StudioPage() {
                     The shape of the demo. A branch shows both paths — only the one marked
                     <span className="mx-1 text-brand">in video</span> reaches the GIF.
                   </p>
-                  <SpecOutline summary={summary} />
+                  <SpecOutline summary={summary} onToggleHidden={toggleHidden} />
                 </div>
               ) : tab === "output" ? (
                 <div className="max-h-[560px] space-y-4 overflow-y-auto pr-1">
@@ -413,6 +468,22 @@ export default function StudioPage() {
 
                   {summary?.kind === "terminal" && (
                     <div className="rounded-xl border border-line bg-bg2 p-3.5">
+                      <label className="mb-3 block border-b border-line pb-3">
+                        <span className="label">Terminal theme</span>
+                        <select
+                          className="input"
+                          value={terminalTheme}
+                          onChange={(e) => setTerminalTheme(e.target.value)}
+                        >
+                          {TERMINAL_THEMES.map((t) => (
+                            <option key={t}>{t}</option>
+                          ))}
+                        </select>
+                        <span className="mt-1.5 block text-xs leading-relaxed text-faint">
+                          The 16 ANSI colours plus a matching background. Changing it re-shoots the
+                          demo — its rendered media will change.
+                        </span>
+                      </label>
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <div className="text-sm font-medium">Camera follows output</div>

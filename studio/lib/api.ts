@@ -33,6 +33,8 @@ export interface OutlineStep {
   index: number;
   kind: string;
   label: string;
+  /** Terminal `run` steps only; undefined where hiding doesn't apply. */
+  hidden?: boolean;
   branch?: {
     prompt: string;
     paths: { label: string; isDefault: boolean; steps: OutlineStep[] }[];
@@ -69,6 +71,8 @@ export interface SpecSummary {
     /** Terminal demos only: whether the camera follows each command's output. */
     zoomOutput: boolean;
     zoomRows: number;
+    /** Terminal demos only: the named colour scheme. */
+    terminalTheme?: string;
     subtitles: boolean;
     languages: string[];
     html?: string;

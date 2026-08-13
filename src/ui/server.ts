@@ -2,7 +2,7 @@ import http from "node:http";
 import { readFile, writeFile, stat, readdir } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, dirname, resolve, relative, isAbsolute } from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parse as parseYaml, parseDocument } from "yaml";
 import { loadSpec } from "../spec/load.js";
 import { specSchema } from "../spec/schema.js";
 import { record, check } from "../driver/run.js";
@@ -64,14 +64,25 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   if (path === "/api/gallery" && req.method === "GET") return sendJson(res, 200, { specs: await gallery(cwd) });
   if (path === "/api/patch" && req.method === "POST") {
     const body = await readBody(req);
-    let parsed: any = {};
     try {
-      parsed = parseYaml(String(body.raw ?? "")) ?? {};
+      return sendJson(res, 200, { raw: applyPatch(String(body.raw ?? ""), body.patch ?? {}) });
     } catch {
-      parsed = {};
+      // Unparseable YAML: hand back what was sent rather than replacing the
+      // author's work with an empty document.
+      return sendJson(res, 200, { raw: String(body.raw ?? "") });
     }
-    deepMerge(parsed, body.patch ?? {});
-    return sendJson(res, 200, { raw: stringifyYaml(parsed, { lineWidth: 0 }) });
+  }
+  if (path === "/api/step-hidden" && req.method === "POST") {
+    const body = await readBody(req);
+    try {
+      const raw = setStepHidden(String(body.raw ?? ""), Number(body.index), Boolean(body.hidden));
+      // The outline *is* the control here: without a fresh summary the step you
+      // just hid would keep rendering as filmed until you saved, which reads as
+      // the button having done nothing.
+      return sendJson(res, 200, { raw, summary: summarize(raw) });
+    } catch (err) {
+      return sendJson(res, 400, { error: (err as Error).message });
+    }
   }
   if (path === "/api/spec" && req.method === "GET") {
     const p = safePath(cwd, u.searchParams.get("path") ?? "");
@@ -316,19 +327,71 @@ async function gallery(cwd: string): Promise<GallerySpec[]> {
   return out;
 }
 
-function deepMerge(target: any, patch: any): any {
-  for (const k of Object.keys(patch ?? {})) {
-    const v = patch[k];
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      if (!target[k] || typeof target[k] !== "object") target[k] = {};
-      deepMerge(target[k], v);
-    } else if (v === null) {
-      delete target[k];
-    } else {
-      target[k] = v;
+/**
+ * Toggle `hidden` on one terminal `run` step, returning the rewritten YAML.
+ *
+ * This is its own operation rather than a `/api/patch` call because the step has
+ * two spellings. `- run: ls ..` is a bare string, and merging `{hidden: true}`
+ * into a string would replace the command with an object that has no `cmd` —
+ * silently deleting what the step runs. Normalising to the object form first is
+ * the only safe way to set the flag.
+ *
+ * Turning it back off removes the key rather than writing `hidden: false`, so a
+ * spec that never used the feature reads exactly as it did before.
+ */
+export function setStepHidden(raw: string, index: number, hidden: boolean): string {
+  const doc = parseDocument(raw);
+  const steps: any = doc.get("steps");
+  if (!steps || typeof steps.get !== "function") throw new Error("this spec has no steps");
+  const step: any = steps.get(index);
+  if (!step || typeof step.has !== "function" || !step.has("run")) {
+    throw new Error(`step ${index + 1} is not a run step`);
+  }
+
+  const run = step.get("run");
+  if (typeof run === "string") {
+    // Only pay the cost of the longer form when the flag is actually being set.
+    if (!hidden) return raw;
+    doc.setIn(["steps", index, "run"], { cmd: run, hidden: true });
+  } else if (hidden) {
+    doc.setIn(["steps", index, "run", "hidden"], true);
+  } else {
+    doc.deleteIn(["steps", index, "run", "hidden"]);
+    // A lone `cmd` reads better as the shorthand it started as.
+    const rest = run?.toJSON?.() ?? {};
+    if (Object.keys(rest).length === 1 && "cmd" in rest) {
+      doc.setIn(["steps", index, "run"], rest.cmd);
     }
   }
-  return target;
+  return doc.toString({ lineWidth: 0 });
+}
+
+/**
+ * Apply an options patch to a spec's YAML without rewriting the whole file.
+ *
+ * The obvious implementation — parse to plain objects, merge, re-serialise —
+ * silently deletes every comment in the spec. Specs are hand-written and their
+ * comments carry the reasoning, so "Apply to spec" would quietly destroy the
+ * most valuable part of the file. Editing the parsed *document* instead touches
+ * only the keys in the patch and leaves the rest byte-for-byte intact.
+ *
+ * `null` removes a key, matching the convention the Studio's form already uses
+ * to mean "return this to its default".
+ */
+export function applyPatch(raw: string, patch: unknown): string {
+  const doc = parseDocument(raw.trim() ? raw : "{}");
+  walk(patch, []);
+  return doc.toString({ lineWidth: 0 });
+
+  function walk(node: unknown, path: (string | number)[]): void {
+    if (node && typeof node === "object" && !Array.isArray(node)) {
+      for (const [k, v] of Object.entries(node)) walk(v, [...path, k]);
+      return;
+    }
+    if (path.length === 0) return;
+    if (node === null) doc.deleteIn(path);
+    else doc.setIn(path, node);
+  }
 }
 
 /**

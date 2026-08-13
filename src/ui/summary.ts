@@ -25,6 +25,12 @@ export interface OutlineStep {
   kind: string;
   /** A short human description. */
   label: string;
+  /**
+   * Terminal `run` steps only: the command executes but is never filmed.
+   * Undefined on every other kind, so the UI can tell "not hidden" from
+   * "hiding doesn't apply here".
+   */
+  hidden?: boolean;
   /** Present on a branch step. */
   branch?: {
     prompt: string;
@@ -58,6 +64,8 @@ export interface SpecSummary {
     /** Terminal demos only: whether the camera follows each command's output. */
     zoomOutput: boolean;
     zoomRows: number;
+    /** Terminal demos only: the named colour scheme. Undefined for web specs. */
+    terminalTheme?: string;
     subtitles: boolean;
     languages: string[];
     html?: string;
@@ -100,6 +108,11 @@ function outlineOf(steps: (Step | BaseStep)[], from = 1): OutlineStep[] {
       kind: kindOf(step),
       label: labelOf(step),
     };
+    if (entry.kind === "run") {
+      const run = (step as { run: unknown }).run;
+      // The shorthand `- run: ls` is never hidden; only the object form can be.
+      entry.hidden = typeof run === "object" && run !== null && (run as { hidden?: boolean }).hidden === true;
+    }
     if (isBranch(step as Step)) {
       const b = (step as { branch: Parameters<typeof defaultPath>[0] }).branch;
       const chosen = defaultPath(b);
@@ -130,6 +143,7 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
     zoom: spec.polish.zoom === "auto",
     zoomOutput: spec.polish.zoomOutput,
     zoomRows: spec.polish.zoomRows,
+    terminalTheme: spec.terminal?.theme,
     subtitles: Boolean(o.subtitles),
     languages: o.languages ?? [],
     html: o.html,

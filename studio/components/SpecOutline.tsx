@@ -72,8 +72,18 @@ const ICONS: Record<string, string> = {
   branch: "⑂",
 };
 
-function Row({ step, depth = 0 }: { step: OutlineStep; depth?: number }) {
+function Row({
+  step,
+  depth = 0,
+  onToggleHidden,
+}: {
+  step: OutlineStep;
+  depth?: number;
+  /** Absent inside a branch path, where a step's index isn't a top-level one. */
+  onToggleHidden?: (step: OutlineStep) => void;
+}) {
   const group = GROUPS[KIND_GROUP[step.kind] ?? "wait"]!;
+  const canHide = step.hidden !== undefined && onToggleHidden;
   return (
     <li className="group">
       <div
@@ -88,10 +98,27 @@ function Row({ step, depth = 0 }: { step: OutlineStep; depth?: number }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className={`text-[12.5px] font-medium ${group.tone}`}>{step.kind}</span>{" "}
-          <span className="break-words font-mono text-[12px] text-muted">
+          <span
+            className={`break-words font-mono text-[12px] ${step.hidden ? "text-faint line-through" : "text-muted"}`}
+          >
             {step.label.slice(step.kind.length).trim()}
           </span>
         </span>
+        {canHide && (
+          <button
+            onClick={() => onToggleHidden(step)}
+            className={`tag flex-none transition ${
+              step.hidden ? "!border-warn/40 !bg-warn/10 !text-warn" : "opacity-0 group-hover:opacity-100"
+            }`}
+            title={
+              step.hidden
+                ? "Runs off camera. Click to film it again."
+                : "Run this command off camera — it still runs, and still counts for reel check"
+            }
+          >
+            {step.hidden ? "hidden" : "hide"}
+          </button>
+        )}
       </div>
 
       {step.branch && (
@@ -131,7 +158,13 @@ function Row({ step, depth = 0 }: { step: OutlineStep; depth?: number }) {
   );
 }
 
-export function SpecOutline({ summary }: { summary: SpecSummary | null }) {
+export function SpecOutline({
+  summary,
+  onToggleHidden,
+}: {
+  summary: SpecSummary | null;
+  onToggleHidden?: (step: OutlineStep) => void;
+}) {
   if (!summary) {
     return <p className="text-sm text-faint">Select a spec to see its shape.</p>;
   }
@@ -152,7 +185,7 @@ export function SpecOutline({ summary }: { summary: SpecSummary | null }) {
   return (
     <ul className="-mx-2 max-h-[420px] space-y-0.5 overflow-y-auto">
       {summary.outline.map((s) => (
-        <Row key={s.index} step={s} />
+        <Row key={s.index} step={s} onToggleHidden={onToggleHidden} />
       ))}
     </ul>
   );
