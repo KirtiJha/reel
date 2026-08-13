@@ -36,6 +36,16 @@ examples/taskflow/  self-contained demo app used to dogfood
 - **The spec is a semver'd contract.** Additive changes only within a major;
   update `SPEC_VERSION` for breaking ones.
 
+## One-time setup
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Commits here are attributed to the person who made them. AI assistants default
+to appending `Co-Authored-By:` and session-link trailers; the `commit-msg` hook
+strips them whatever tool wrote the message.
+
 ## Before opening a PR
 
 - `npm run typecheck` is clean.

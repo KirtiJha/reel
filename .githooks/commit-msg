@@ -1,0 +1,23 @@
+#!/bin/sh
+# Keep AI-assistant attribution out of the history.
+#
+# Assistants that help on this repo default to appending `Co-Authored-By:` and
+# session-link trailers. Commits here are attributed to the person who made
+# them, so this strips those trailers whatever tool wrote the message.
+#
+# Anchored to the start of a line and to the exact trailer keys, so prose that
+# happens to mention Claude or Anthropic (e.g. a file called anthropic-wire.ts)
+# is left alone.
+#
+# Enable it once per clone:  git config core.hooksPath .githooks
+
+msg_file="$1"
+[ -f "$msg_file" ] || exit 0
+
+tmp="$msg_file.reel-tmp"
+grep -viE '^(Co-Authored-By:[[:space:]]*Claude|Claude-Session:)' "$msg_file" > "$tmp" || true
+
+# Drop any blank lines the removal left dangling at the end.
+awk 'BEGIN{n=0} {lines[n++]=$0} END{while(n>0 && lines[n-1] ~ /^[[:space:]]*$/) n--; for(i=0;i<n;i++) print lines[i]}' \
+  "$tmp" > "$msg_file"
+rm -f "$tmp"
