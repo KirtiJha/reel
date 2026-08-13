@@ -28,6 +28,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "//prepublishOnly": "dist/ is git-ignored, so a publish from a fresh clone would otherwise ship an empty package. Building and testing here makes that impossible.",
+    "prepublishOnly": "npm run build && npm test",
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "reel": "tsx src/cli.ts",
