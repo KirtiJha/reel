@@ -340,7 +340,11 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
   } finally {
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});
-    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    // REEL_KEEP_FRAMES leaves the intermediate frames on disk. Encoder problems
+    // are otherwise near-impossible to reproduce: the inputs that triggered them
+    // are deleted by the time the failure is read.
+    if (process.env.REEL_KEEP_FRAMES) log.warn(`Keeping frames: ${workDir}`);
+    else await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

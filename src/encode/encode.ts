@@ -56,8 +56,7 @@ export async function encode(
         "-y",
         "-f", "concat", "-safe", "0", "-i", "frames.concat",
         "-vf", `fps=${opts.fps},${scale},format=yuv420p`,
-        "-c:v", "libx264", "-preset", "veryslow", "-crf", "18",
-        "-movflags", "+faststart", ...BITEXACT,
+        ...H264, ...BITEXACT,
         abspath(framesDir, targets.mp4),
       ],
       framesDir,
@@ -176,6 +175,29 @@ function nearestFrame(frames: CapturedFrame[], t: number): CapturedFrame | undef
  * run, so committed demo media churns in CI even when the demo is unchanged.
  */
 export const BITEXACT = ["-fflags", "+bitexact", "-flags:v", "+bitexact", "-map_metadata", "-1"];
+
+/**
+ * H.264 settings for video a browser will actually play.
+ *
+ * The level cap is the part that matters and the part that is easy to lose:
+ * `veryslow` uses up to 16 reference frames, and the decoded-picture buffer
+ * that implies pushes the signalled level to 5.0. Browsers decline to allocate
+ * for that — Chrome parks at readyState 0 and raises no error, so the demo
+ * video silently never plays in the README it was rendered for. Level 4.0
+ * covers 1080p30 with room to spare; x264 reduces the reference frames to fit
+ * and the quality difference is invisible at this size.
+ *
+ * Both encode paths (plain concat and the polish renderer) share this so the
+ * two can't drift apart again.
+ */
+export const H264 = [
+  "-c:v", "libx264",
+  "-preset", "veryslow",
+  "-crf", "18",
+  "-profile:v", "high",
+  "-level:v", "4.0",
+  "-movflags", "+faststart",
+];
 
 /** Even-dimension-safe scale filter, optionally capping width. */
 function scaleFilter(maxWidth?: number): string {

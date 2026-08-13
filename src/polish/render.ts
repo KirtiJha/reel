@@ -3,7 +3,8 @@ import { join, dirname } from "node:path";
 import { cpus } from "node:os";
 import type { CapturedFrame } from "../capture/frames.js";
 import { ffmpeg } from "../encode/ffmpeg.js";
-import { BITEXACT, buildConcatManifest, type EncodeTargets, type EncodeOptions } from "../encode/encode.js";
+import { assertGifComplete } from "../encode/verify.js";
+import { BITEXACT, H264, buildConcatManifest, type EncodeTargets, type EncodeOptions } from "../encode/encode.js";
 import {
   resolveTimeline,
   sampleRect,
@@ -146,8 +147,7 @@ export async function renderWithZoom(
       [
         "-y", ...seqInput,
         "-vf", "format=yuv420p",
-        "-c:v", "libx264", "-preset", "veryslow", "-crf", "18", "-movflags", "+faststart",
-        ...BITEXACT,
+        ...H264, ...BITEXACT,
         abspath(targets.mp4),
       ],
       framesDir,
@@ -183,6 +183,14 @@ export async function renderWithZoom(
         abspath(targets.gif),
       ],
       framesDir,
+    );
+    // ffmpeg can finish this filtergraph early and still exit 0, leaving a GIF
+    // that holds a fraction of the demo. Catch it here rather than letting a
+    // truncated demo ship.
+    await assertGifComplete(
+      abspath(targets.gif),
+      Math.round(cfrFiles.length * (gifFps / opts.fps)),
+      targets.gif,
     );
     log.ok(`gif  → ${targets.gif}`);
   }
