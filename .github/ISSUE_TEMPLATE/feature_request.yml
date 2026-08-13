@@ -1,0 +1,42 @@
+name: Feature request
+description: Something you want to demo that Reel can't express yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: demo
+    attributes:
+      label: What are you trying to demo?
+      description: >
+        Describe the demo, not the feature. Most good additions here started as
+        "I wanted to show X and had to fake it" — that framing usually points at
+        a better design than a guessed API does.
+    validations:
+      required: true
+
+  - type: textarea
+    id: blocked
+    attributes:
+      label: What stops you today?
+      description: What you tried, and where it fell short.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What might it look like in a spec?
+      description: A sketch is plenty — it doesn't have to be right.
+      render: yaml
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Does it fit how Reel works?
+      description: >
+        Not a gate — just worth thinking about, since these are the constraints
+        that shape most of the design. Tick whatever applies.
+      options:
+        - label: It waits on a state rather than a fixed sleep
+        - label: It renders the same bytes on any machine (no wall-clock dependence)
+        - label: It works headless, in CI, with no human watching
+        - label: I'm not sure — happy to talk it through

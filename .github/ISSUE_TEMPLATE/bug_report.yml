@@ -1,0 +1,87 @@
+name: Bug report
+description: Reel did something wrong — a crash, a bad render, or output that isn't what the spec says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you file:** if a step stopped working after you changed your app,
+        that's usually drift rather than a Reel bug — try `reel heal <spec> --write`,
+        which repairs renamed ids and relabelled buttons on its own.
+
+  - type: dropdown
+    id: command
+    attributes:
+      label: Which command?
+      options:
+        - reel record
+        - reel check
+        - reel heal
+        - reel author
+        - reel ui (Studio)
+        - reel init
+        - something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: If the output looks wrong rather than failing, attach the GIF/MP4 or a frame.
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: The smallest spec that reproduces it
+      description: >
+        Trim it to the fewest steps that still show the problem, and redact
+        anything private. This is the single most useful thing in a report.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output from `-v`
+      description: Re-run with `-v` (e.g. `reel -v record demo.reel.yaml`) and paste the log.
+      render: shell
+
+  - type: dropdown
+    id: example
+    attributes:
+      label: Does the bundled example work?
+      description: "`npx reel record examples/taskflow/demo.reel.yaml` — this separates a Reel bug from a setup problem."
+      options:
+        - "Yes — the example records fine, only my spec fails"
+        - "No — the example fails too"
+        - "Haven't tried"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Reel version
+      placeholder: "0.1.0, or a commit SHA if you're on main"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS and Node version
+      placeholder: "macOS 15.3 (arm64), Node 20.11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >
+        Useful if relevant: whether the app is local or remote, whether it's a
+        terminal or branching spec, and whether `deterministic.timeline` is off.

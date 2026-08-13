@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/KirtiJha/reel/security/advisories/new
+    about: Report privately, not in a public issue. See SECURITY.md.
+  - name: Spec reference and guides
+    url: https://github.com/KirtiJha/reel#the-spec
+    about: The step grammar, output presets, branching, terminal demos and CI setup.
+  - name: Contributing
+    url: https://github.com/KirtiJha/reel/blob/main/CONTRIBUTING.md
+    about: How to set up, what to run before a PR, and the design constraints to keep in mind.
