@@ -39,6 +39,12 @@ export interface RunResult {
   beats: number;
   durationMs: number;
   outputs: string[];
+  /**
+   * Where each beat landed on the final timeline. Kept alongside the count so
+   * that later tools — `reel diff` naming the beat a change fell in — can talk
+   * about the demo in its own terms rather than in raw seconds.
+   */
+  timeline: { label: string; t: number }[];
 }
 
 /**
@@ -255,7 +261,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         });
       }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
-      return { frames: 0, beats: beats.length, durationMs, outputs: [] };
+      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats };
     }
 
     // Encode deliverables.
@@ -361,7 +367,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       outputs.push(...narrated);
     }
 
-    return { frames: frames.length, beats: beats.length, durationMs, outputs };
+    return { frames: frames.length, beats: beats.length, durationMs, outputs, timeline: beats };
   } finally {
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});

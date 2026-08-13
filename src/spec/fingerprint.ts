@@ -102,6 +102,14 @@ export interface Stamp {
   epoch: number;
   at: string;
   outputs: string[];
+  /**
+   * What the render actually produced, which `reel diff` uses to describe a
+   * change in the demo's own vocabulary ("beat 3, Create a project") instead of
+   * as a bare timecode. Optional: a stamp written by an older Reel, or none at
+   * all, costs labels and nothing else.
+   */
+  beats?: { label: string; t: number }[];
+  durationMs?: number;
 }
 
 export async function readStamp(path: string): Promise<Stamp | null> {
@@ -154,6 +162,7 @@ export async function writeStamp(
   path: string,
   fp: Fingerprint,
   outputs: string[],
+  render?: { beats?: { label: string; t: number }[]; durationMs?: number },
 ): Promise<void> {
   const stamp: Stamp = {
     hash: fp.hash,
@@ -161,6 +170,8 @@ export async function writeStamp(
     epoch: fp.epoch,
     at: new Date().toISOString(),
     outputs,
+    ...(render?.beats?.length ? { beats: render.beats } : {}),
+    ...(render?.durationMs ? { durationMs: render.durationMs } : {}),
   };
   try {
     await mkdir(dirname(path), { recursive: true });

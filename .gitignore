@@ -25,3 +25,6 @@ examples/*/out/
 
 # Render fingerprint, written beside a spec's outputs.
 .reel-stamp.json
+
+# Before/after strips from `reel diff` — a review aid, not an artifact.
+.reel-diff/

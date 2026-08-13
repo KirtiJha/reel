@@ -22,6 +22,7 @@ import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
+import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -94,6 +95,8 @@ program
       const variants = expandMatrix(loaded);
       const outputs: string[] = [];
       const rendered: Record<string, unknown>[] = [];
+      let timeline: { label: string; t: number }[] = [];
+      let durationMs = 0;
       for (const v of variants) {
         if (variants.length > 1) log.phase(`Variant: ${v.label}`);
         const res = await record(v.loaded, "record");
@@ -101,6 +104,12 @@ program
           `${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`,
         );
         outputs.push(...res.outputs);
+        // The first variant's beats stand for the demo: a matrix renders the
+        // same script at several sizes, so its beats are the same beats.
+        if (!timeline.length) {
+          timeline = res.timeline;
+          durationMs = res.durationMs;
+        }
         rendered.push({
           variant: v.label,
           frames: res.frames,
@@ -113,7 +122,7 @@ program
       for (const o of outputs) log.info(o);
       // Written after a successful render only: a stamp for media that failed
       // to encode would skip the retry that fixes it.
-      await writeStamp(stamp, fp, outputs);
+      await writeStamp(stamp, fp, outputs, { beats: timeline, durationMs });
       emit("record", true, {
         result: {
           spec: loaded.path,
@@ -200,6 +209,41 @@ program
       if (!report.ok) process.exitCode = 1;
     }, "doctor");
   });
+
+program
+  .command("diff")
+  .argument("<before>", "the earlier render (gif, mp4 or webm)")
+  .argument("<after>", "the newer render")
+  .description("Compare two renders and report which parts of the demo changed.")
+  .option("--fps <n>", "samples per second to compare at", String(DIFF_DEFAULTS.fps))
+  .option(
+    "--threshold <pct>",
+    "percentage of changed pixels before a moment counts as changed",
+    String(DIFF_DEFAULTS.threshold * 100),
+  )
+  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
+  .option("--no-out", "skip the comparison images")
+  .option("--exit-code", "exit 1 when the renders differ, like git diff --exit-code", false)
+  .action(
+    async (
+      before: string,
+      after: string,
+      opts: { fps: string; threshold: string; out: string | false; exitCode: boolean },
+    ) => {
+      await withErrors(async () => {
+        const report = await diff(before, after, {
+          fps: Number(opts.fps),
+          threshold: Number(opts.threshold) / 100,
+          out: opts.out,
+        });
+        printDiff(report);
+        emit("diff", true, { result: report });
+        // Opt-in, because two renders differing is the expected outcome of
+        // changing the app — it is a result, not a failure.
+        if (opts.exitCode && !report.identical) process.exitCode = 1;
+      }, "diff");
+    },
+  );
 
 program
   .command("themes")
