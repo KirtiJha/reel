@@ -247,6 +247,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         outPath: htmlPath,
         spec,
         maxWidth: profile.maxWidth,
+        durationMs,
       });
       outputs.push(htmlPath);
     }

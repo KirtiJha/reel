@@ -24,6 +24,7 @@
     "test": "tsx --test test/*.test.ts",
     "example": "tsx src/cli.ts record examples/taskflow/demo.reel.yaml",
     "test:author": "tsx scripts/author-selftest.ts",
+    "test:player": "tsx scripts/player-selftest.ts",
     "ui": "tsx src/cli.ts ui",
     "studio:install": "npm --prefix studio install"
   },

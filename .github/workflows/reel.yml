@@ -54,6 +54,15 @@ jobs:
       - name: Regenerate demo media
         run: npx reel record examples/taskflow/showcase.reel.yaml
 
+      # The interactive build ships its own router, autoplay and host API;
+      # only a real browser can prove the file people open actually works.
+      - name: Interactive build self-test
+        run: npm run test:player
+
+      # Terminal demos run real commands, so this is also a CLI smoke test.
+      - name: Terminal demo check
+        run: npx reel check examples/cli/demo.reel.yaml
+
       - name: Detect media change
         id: media
         run: |

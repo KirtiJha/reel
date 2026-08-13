@@ -164,14 +164,37 @@ output:
 - **Hotspots** on the exact elements the demo interacted with, pulsing in your
   accent colour.
 - **Chapters** from your title cards, as a clickable rail.
-- **Keyboard nav** (`←` `→` to step, `space` to autoplay) and a progress track.
-- **One file.** Frames are embedded as data URIs — the showcase demo is 245 KB
+- **Deep links.** Every scene is addressable — `demo.html#/create-a-project` for
+  a chapter, `#/step-4` for anything else — with working Back and Forward, and a
+  *Copy link* button. Link a support reply straight at the step that matters.
+- **Autoplay that breathes.** Paced by the durations actually recorded, so a
+  title card lingers and a click doesn't. The progress track fills in real time.
+- **Keyboard, touch and screen readers.** `←` `→` `Home` `End` to step, `space`
+  to play, swipe on a phone, a live region announcing each step, visible focus
+  rings, and `prefers-reduced-motion` respected.
+- **Light and dark**, following the viewer's system preference.
+- **Embeddable.** `?embed=1` drops the chrome for an `<iframe>`, and the player
+  reports progress to the host page and takes commands back:
+
+  ```js
+  frame.contentWindow.postMessage({ type: 'reel:go', index: 4 }, '*');
+  window.addEventListener('message', (e) => {
+    if (e.data.type === 'reel:scene') console.log(e.data.index, e.data.chapter);
+  });
+  ```
+
+  Same-origin hosts can skip the messaging and use `frame.contentWindow.reelDemo`
+  directly.
+- **One file.** Frames are embedded as data URIs — the showcase demo is ~205 KB
   for 10 scenes. Open it locally, commit it to `docs/`, or drop it on any static
   host. Nothing phones home.
 
 This is the shape interactive-demo SaaS sells; here it falls out of the spec you
 already wrote. It uses the raw frames rather than the polished video, so hotspot
 coordinates map exactly to what you see.
+
+`npm run test:player` drives a generated build in a real browser — 26 checks over
+the router, autoplay, embed mode, the host API and the accessibility surface.
 
 ## Delivery presets — the same demo, shared many ways
 
@@ -248,6 +271,37 @@ mock:
 - **Spotlight callouts** — dim everything but one element, ring it in your accent
   colour, and label it.
 - **Title cards** — open and close on a card, or use one to separate chapters.
+
+## Terminal demos
+
+Reel renders the terminal itself, as a layer in the same document it uses for
+web demos — so a CLI demo gets captions, title cards, device frames, the
+deterministic timeline and every output format, and **one spec can show a
+command and the browser it affects**:
+
+```yaml
+terminal:
+  cols: 84
+  rows: 20
+  prompt: "~/app $ "
+
+steps:
+  - run: npm run build          # types it, runs it for real, replays the output
+  - expectOutput: "built in"    # a real assertion, checked by `reel check`
+  - run: { cmd: npm test, expectCode: 0 }
+  - show: app                   # cut to the browser
+  - click: text=Deploy
+```
+
+Commands genuinely execute, so `reel check` is a smoke test of your CLI. Output
+is captured to completion and then *replayed* on camera at a bounded pace —
+which is why a 60-second install becomes two seconds of film, and why the result
+is byte-identical every run.
+
+Colour comes from `FORCE_COLOR`, which covers build tools, package managers, git
+and bespoke CLIs. Full-screen TUIs need a real pty and aren't supported.
+
+See [`examples/cli/demo.reel.yaml`](examples/cli/demo.reel.yaml).
 
 ## Reproducible output
 
