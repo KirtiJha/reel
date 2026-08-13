@@ -94,6 +94,12 @@ export const polishSchema = z.object({
    * rush the app.
    */
   speed: z.number().positive().max(10).default(1),
+  /**
+   * Cap any stretch where nothing on screen changes at this many ms. Dead air
+   * — waiting out a slow save, a long declared hold — is what makes a demo
+   * drag; this trims it without touching the moments that move.
+   */
+  trimIdle: z.number().int().positive().optional(),
 });
 export type Polish = z.infer<typeof polishSchema>;
 
@@ -162,6 +168,12 @@ export const outputSchema = z
     subtitles: z.union([z.boolean(), z.string()]).optional(),
     /** Localize the subtitles into these languages, e.g. ["es","fr"]. */
     languages: z.array(z.string()).optional(),
+    /**
+     * Fit the finished demo to a length: `30`, `"30s"`, `"1500ms"`. Applied
+     * after `polish.trimIdle`, by rescaling the recorded timeline rather than
+     * re-running the demo. Useful where length is a hard limit (social embeds).
+     */
+    targetDuration: z.union([z.number().positive(), z.string()]).optional(),
   })
   .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html, {
     message: "output must specify at least one of: gif, mp4, webm, storyboard, html",

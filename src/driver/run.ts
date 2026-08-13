@@ -17,6 +17,7 @@ import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
+import { buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
@@ -139,8 +140,24 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       scenes.push({ t: timeline.now(), label: "Done" });
     }
 
-    const durationMs = timeline.now();
+    let durationMs = timeline.now();
     const frames = (await capture?.stop(deterministic ? durationMs : undefined)) ?? [];
+
+    // Pacing: cap dead air and/or fit a target length. Everything downstream is
+    // timestamped in demo time, so this is a remap — no re-recording.
+    const retime = buildRetime(frames.map((f) => f.t), durationMs, {
+      maxIdleMs: spec.polish.trimIdle,
+      targetMs: parseDuration(spec.output.targetDuration),
+    });
+    if (retime.changed) {
+      for (const f of frames) f.t = retime.map(f.t);
+      for (const c of captions) c.t = retime.map(c.t);
+      for (const z of zoom) z.t = retime.map(z.t);
+      for (const b of beats) b.t = retime.map(b.t);
+      for (const s of scenes) s.t = retime.map(s.t);
+      log.step(`Pacing ${(durationMs / 1000).toFixed(1)}s → ${(retime.endMs / 1000).toFixed(1)}s`);
+      durationMs = retime.endMs;
+    }
 
     if (mode === "check") {
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
@@ -160,7 +177,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     const encodeOpts = {
       fps: profile.fps,
       maxWidth: profile.maxWidth,
-      tailMs: 900,
+      // The closing hold normally guarantees the ending is readable, but it
+      // would push the result past an explicitly requested length — and a
+      // target duration is usually a hard limit (a social embed's cap).
+      tailMs: parseDuration(spec.output.targetDuration) ? 0 : 900,
       endMs: durationMs,
       gif: profile.gif,
     };
