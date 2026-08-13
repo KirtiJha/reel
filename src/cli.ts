@@ -8,6 +8,7 @@ try {
 import { Command } from "commander";
 import pc from "picocolors";
 import { loadSpec } from "./spec/load.js";
+import { expandMatrix } from "./spec/matrix.js";
 import { record, check } from "./driver/run.js";
 import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
@@ -33,12 +34,18 @@ program
   .action(async (specPath: string) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
-      const res = await record(loaded, "record");
+      const variants = expandMatrix(loaded);
+      const outputs: string[] = [];
+      for (const v of variants) {
+        if (variants.length > 1) log.phase(`Variant: ${v.label}`);
+        const res = await record(v.loaded, "record");
+        log.ok(
+          `${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`,
+        );
+        outputs.push(...res.outputs);
+      }
       log.phase("Done");
-      log.ok(
-        `${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`,
-      );
-      for (const o of res.outputs) log.info(o);
+      for (const o of outputs) log.info(o);
     });
   });
 
@@ -49,7 +56,13 @@ program
   .action(async (specPath: string) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
-      await check(loaded);
+      // Every variant is checked: a responsive layout can hide an element at
+      // one width and not another, which is exactly the drift worth catching.
+      const variants = expandMatrix(loaded);
+      for (const v of variants) {
+        if (variants.length > 1) log.phase(`Variant: ${v.label}`);
+        await check(v.loaded);
+      }
     });
   });
 

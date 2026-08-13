@@ -362,6 +362,23 @@ export type Mock = z.infer<typeof mockSchema>;
 
 /* ----------------------------- Spec ------------------------------ */
 
+/**
+ * Render one spec as several variants. A docs page usually needs the same flow
+ * at desktop and mobile, and in both themes — that's the same demo four times,
+ * and maintaining four specs guarantees they drift apart.
+ *
+ * Output paths template `{viewport}` and `{theme}` so the variants don't
+ * collide.
+ */
+export const matrixSchema = z.object({
+  viewports: z
+    .array(viewportSchema.extend({ name: z.string().min(1) }))
+    .nonempty()
+    .optional(),
+  themes: z.array(z.enum(["light", "dark"])).nonempty().optional(),
+});
+export type Matrix = z.infer<typeof matrixSchema>;
+
 export const specSchema = z.object({
   version: z.literal(SPEC_VERSION).default(SPEC_VERSION),
   name: z.string().default("Untitled demo"),
@@ -384,6 +401,8 @@ export const specSchema = z.object({
    * type the same text twice.
    */
   retries: z.number().int().nonnegative().max(5).default(0),
+  /** Render this one spec at several viewports and/or themes. */
+  matrix: matrixSchema.optional(),
   steps: z.array(stepSchema).min(1),
   output: outputSchema,
 });
