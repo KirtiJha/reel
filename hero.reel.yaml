@@ -1,0 +1,49 @@
+# The hero demo on the landing page.
+#
+# Recorded against Aangan — a real, public app we own — rather than the bundled
+# TaskFlow example. A landing page for a demo tool is judged on whether the demo
+# looks like real software, and it should never be a third party's product: that
+# implies an endorsement nobody gave, and their next redesign breaks your hero.
+#
+# MP4 only. This render is the one that trips ffmpeg's palettegen (see
+# src/encode/verify.ts), so asking for a GIF here fails the whole record.
+#
+#   npm run reel -- record hero.reel.yaml
+#   cp out/hero.mp4 studio/public/demo/hero.mp4
+name: Aangan — find your society
+url: https://my-aangan.vercel.app/landing
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: light
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: auto
+  cursor: smooth
+  captions: true
+  frame: browser
+  background: "linear-gradient(135deg, #1e2a4a, #0d1220)"
+
+steps:
+  - caption: "A real app, driven by a short spec"
+  - beat: hero
+
+  - caption: "Find your society"
+  - click: text=Find your society
+  - waitFor: '[placeholder="e.g. Prestige Shantiniketan, Whitefield"]'
+
+  - caption: "Results appear as you type"
+  - type:
+      selector: '[placeholder="e.g. Prestige Shantiniketan, Whitefield"]'
+      text: DS Max
+  - waitFor: text=DS Max Senate
+  - beat: results
+
+  - click: text=DS Max Senate
+  - caption: "Selected — and this clip re-renders itself when the app changes"
+  - beat: outro
+
+output:
+  preset: share
+  mp4: out/hero.mp4

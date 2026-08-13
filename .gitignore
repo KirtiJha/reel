@@ -11,3 +11,11 @@ coverage/
 scripts/out/
 scripts/authored.reel.yaml
 examples/*/out/
+# Planning notes kept alongside the code but not published with it: the
+# positioning, competitive read and roadmap are working documents, not docs.
+/demosascodeproductplan*.md
+
+# Renders written by a spec's `output:` paths when run from the repo root
+# (hero.reel.yaml, aangan.reel.yaml). The copies the site ships are committed
+# under studio/public/demo/ instead — see docs/deploy-site.md.
+/out/

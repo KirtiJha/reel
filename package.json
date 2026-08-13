@@ -1,11 +1,22 @@
 {
-  "name": "reel",
+  "name": "@kirtijha/reel",
   "version": "0.1.0",
   "description": "Open-source demos-as-code for web apps. Describe it or script it; Reel drives your real app and renders a polished, always-current demo — and fails your build when the flow breaks.",
   "license": "MIT",
   "type": "module",
+  "homepage": "https://github.com/KirtiJha/reel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KirtiJha/reel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KirtiJha/reel/issues"
+  },
   "bin": {
     "reel": "dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist",

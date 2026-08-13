@@ -1,0 +1,38 @@
+# Authored by `reel author`. Review, tweak captions/beats, then: reel record <file>
+name: Find DS Max Senate Society
+url: https://my-aangan.vercel.app/landing
+viewport:
+  width: 1280
+  height: 800
+  scale: 2
+theme: light
+deterministic:
+  disableAnimations: true
+polish:
+  zoom: auto
+  cursor: smooth
+  captions: true
+steps:
+  - goto: /
+  - card:
+      title: Aangan
+      subtitle: Discover and connect with your society
+  - beat: hero
+  - caption: Start by finding your society
+  - click: text=Find your society
+  - caption: Search for DS Max Senate society
+  - type:
+      selector: '[placeholder="e.g. Prestige Shantiniketan, Whitefield"]'
+      text: DS Max Senate
+  - click: text=
+  - goto: /onboard
+  - type:
+      selector: '[placeholder="e.g. Prestige Shantiniketan, Whitefield"]'
+      text: DS Max
+  - caption: Results appear instantly as you type
+  - click: text=DS Max Senate
+  - caption: DS Max Senate is now selected
+output:
+  preset: share
+  mp4: out/find-ds-max-senate-society.mp4
+  gif: out/find-ds-max-senate-society.gif

@@ -5,8 +5,18 @@ export interface LogLine {
 }
 
 export interface ConfigInfo {
-  llm: { configured: boolean; model?: string; host?: string };
+  llm: {
+    configured: boolean;
+    model?: string;
+    host?: string;
+    provider?: string;
+    protocol?: string;
+    /** Why nothing resolved — already names the provider and the variable. */
+    error?: string;
+  };
   platform: string;
+  /** Every provider Reel knows how to talk to. */
+  providers?: { id: string; label: string }[];
 }
 export interface GallerySpec {
   path: string;
@@ -56,6 +66,9 @@ export interface SpecSummary {
     timeline: boolean;
     captions: boolean;
     zoom: boolean;
+    /** Terminal demos only: whether the camera follows each command's output. */
+    zoomOutput: boolean;
+    zoomRows: number;
     subtitles: boolean;
     languages: string[];
     html?: string;

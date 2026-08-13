@@ -52,14 +52,88 @@ export function Spinner() {
   );
 }
 
-export function PageHead({ eyebrow, title, sub }: { eyebrow?: string; title: string; sub?: string }) {
+export function PageHead({
+  eyebrow,
+  title,
+  sub,
+  actions,
+}: {
+  eyebrow?: string;
+  title: string;
+  sub?: string;
+  /** Right-aligned controls that belong to the page as a whole. */
+  actions?: ReactNode;
+}) {
   return (
-    <div className="mb-7 animate-fade-up">
-      {eyebrow && (
-        <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-faint">{eyebrow}</div>
-      )}
-      <h1 className="text-[26px] font-semibold tracking-tight">{title}</h1>
-      {sub && <p className="mt-1 max-w-[62ch] text-muted">{sub}</p>}
+    <div className="mb-8 flex items-start justify-between gap-6 animate-fade-up max-[720px]:flex-col max-[720px]:gap-4">
+      <div>
+        {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
+        <h1 className="text-[32px] font-bold leading-tight tracking-[-0.02em]">{title}</h1>
+        {sub && <p className="mt-2 max-w-[68ch] text-[15px] leading-relaxed text-muted">{sub}</p>}
+      </div>
+      {actions && <div className="flex flex-none items-center gap-2">{actions}</div>}
     </div>
+  );
+}
+
+/**
+ * What a panel shows before it has anything to show.
+ *
+ * An empty dark rectangle reads as broken; saying what will appear here, and
+ * what to do to make it appear, reads as ready.
+ */
+export function EmptyState({
+  icon,
+  title,
+  sub,
+  children,
+}: {
+  icon?: string;
+  title: string;
+  sub?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="grid place-items-center rounded-xl border border-dashed border-line2 px-6 py-12 text-center">
+      {icon && (
+        <svg
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="mb-3 text-faint"
+        >
+          <path d={icon} />
+        </svg>
+      )}
+      <div className="text-[15px] font-medium text-muted">{title}</div>
+      {sub && <p className="mt-1.5 max-w-[46ch] text-[13.5px] leading-relaxed text-faint">{sub}</p>}
+      {children && <div className="mt-4">{children}</div>}
+    </div>
+  );
+}
+
+/** A labelled group of controls inside a card. */
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="label flex items-baseline justify-between gap-3">
+        <span>{label}</span>
+        {hint && <span className="font-normal text-faint">{hint}</span>}
+      </span>
+      {children}
+    </label>
   );
 }

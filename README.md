@@ -32,7 +32,7 @@ and in CI.
 ## Quick start
 
 ```bash
-npm install            # or: npm i -g reel
+npm i -D @kirtijha/reel        # or: npm i -g @kirtijha/reel
 npx playwright install chromium
 
 # Scaffold a spec, then record it
@@ -40,11 +40,19 @@ npx reel init
 npx reel record demo.reel.yaml
 ```
 
-Try the bundled example (boots its own app, records a GIF/MP4/storyboard):
+Once it's a dependency, `npx reel` resolves to the local binary. To try it
+without installing anything, use the scoped name directly —
+`npx @kirtijha/reel init`.
+
+Working in a clone of this repo instead? The package's own binary isn't linked
+into `node_modules/.bin`, so go through the script:
 
 ```bash
-npx reel record examples/taskflow/demo.reel.yaml
+npm install
+npm run reel -- record examples/taskflow/demo.reel.yaml
 ```
+
+That example boots its own app and records a GIF/MP4/storyboard.
 
 ## Reel Studio (web UI)
 
@@ -137,7 +145,7 @@ steps:
 Run the bundled example to see all of it at once:
 
 ```bash
-npx reel record examples/taskflow/showcase.reel.yaml
+npm run reel -- record examples/taskflow/showcase.reel.yaml
 ```
 
 **Scrolling is rendered, not recorded.** Capturing a live scroll races Chromium's

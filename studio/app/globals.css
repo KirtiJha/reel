@@ -4,6 +4,8 @@
 
 :root {
   color-scheme: dark;
+  /* One place to change how far content may stretch. */
+  --page: 1240px;
 }
 
 html,
@@ -11,9 +13,19 @@ body {
   height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   @apply bg-bg text-ink font-sans antialiased;
-  background: radial-gradient(1200px 700px at 80% -12%, #16203c 0%, #0b0d12 55%);
+  /* Two offset washes rather than one: a single radial reads as a spotlight,
+     two overlapping ones read as depth without drawing attention. */
+  background:
+    radial-gradient(900px 500px at 88% -10%, rgba(109, 139, 255, 0.16), transparent 60%),
+    radial-gradient(700px 420px at 4% 0%, rgba(124, 243, 196, 0.07), transparent 55%),
+    #0b0d12;
+  background-attachment: fixed;
 }
 
 ::selection {
@@ -35,33 +47,127 @@ body {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4159;
+  background-clip: content-box;
+}
+
+/* Keyboard users get a visible ring; mouse users never see it. */
+:focus-visible {
+  outline: 2px solid theme("colors.brand");
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 @layer components {
+  /* ---- surfaces ---------------------------------------------------- */
   .card {
     @apply rounded-2xl border border-line bg-gradient-to-b from-panel to-bg2 p-5;
   }
+  /* A card that responds to the pointer — for anything clickable. */
+  .card-interactive {
+    @apply card transition duration-200 hover:-translate-y-0.5 hover:border-line2 hover:shadow-panel;
+  }
+  .glass {
+    @apply border border-white/[0.07] bg-white/[0.03] backdrop-blur-xl;
+  }
+  /* A hairline top edge catches the light and separates stacked panels. */
+  .sheen {
+    position: relative;
+  }
+  .sheen::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.13), transparent);
+  }
+
+  /* ---- controls ----------------------------------------------------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line2 bg-elev px-4 py-2.5 text-sm font-semibold text-ink transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line2 bg-elev px-4 py-2.5 text-sm font-semibold text-ink transition duration-150 hover:border-brand hover:bg-panel2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply border-0 bg-brand text-[#0a0d13] shadow-glow hover:brightness-105;
+    @apply border-0 bg-brand text-[#0a0d13] shadow-glow hover:brightness-110;
+  }
+  .btn-brand {
+    @apply border-0 bg-brand bg-gradient-to-br from-brand to-brand2 text-[#0a0d13] shadow-glow hover:brightness-110;
   }
   .btn-ghost {
-    @apply border-line2 bg-transparent;
+    @apply border-line2 bg-transparent hover:bg-panel;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-[13px];
   }
+  .btn-lg {
+    @apply rounded-[14px] px-6 py-3.5 text-[15px];
+  }
   .input {
-    @apply w-full rounded-xl border border-line bg-bg2 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/20;
+    @apply w-full rounded-xl border border-line bg-bg2 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-faint hover:border-line2 focus:border-brand focus:ring-2 focus:ring-brand/20;
   }
   .label {
     @apply mb-1.5 block text-xs font-medium text-muted;
   }
+
+  /* ---- markers ------------------------------------------------------ */
   .pill {
     @apply inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-xs font-semibold;
   }
   .tag {
     @apply rounded-md border border-line bg-panel2 px-2 py-0.5 text-[11px] uppercase tracking-wider text-muted;
+  }
+  .kbd {
+    @apply rounded-[5px] border border-line2 bg-elev px-1.5 py-0.5 font-mono text-[11px] text-muted;
+  }
+
+  /* ---- type --------------------------------------------------------- */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-brand2/80;
+  }
+  /* Gradient headline. Needs a text color fallback for non-webkit clips. */
+  .grad-text {
+    @apply bg-gradient-to-br from-ink via-ink to-brand2 bg-clip-text text-transparent;
+  }
+  .prose-muted {
+    @apply text-[15px] leading-relaxed text-muted;
+  }
+
+  /* ---- layout ------------------------------------------------------- */
+  .page {
+    @apply mx-auto w-full;
+    max-width: var(--page);
+  }
+}
+
+@layer utilities {
+  /* Stagger children in without hand-writing a delay on each one. */
+  .stagger > * {
+    animation: fade-up 0.5s ease both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0.04s; }
+  .stagger > *:nth-child(2) { animation-delay: 0.08s; }
+  .stagger > *:nth-child(3) { animation-delay: 0.12s; }
+  .stagger > *:nth-child(4) { animation-delay: 0.16s; }
+  .stagger > *:nth-child(5) { animation-delay: 0.2s; }
+  .stagger > *:nth-child(6) { animation-delay: 0.24s; }
+
+  /* Faint grid, for hero sections that would otherwise read as flat black. */
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
   }
 }

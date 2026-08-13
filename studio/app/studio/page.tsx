@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { PageHead, Spinner, Toggle } from "@/components/bits";
+import Link from "next/link";
+import { EmptyState, PageHead, Spinner, Toggle } from "@/components/bits";
 import { LogConsole } from "@/components/LogConsole";
 import { MediaPreview } from "@/components/MediaPreview";
 import { SpecChips, SpecOutline } from "@/components/SpecOutline";
@@ -28,16 +29,22 @@ export default function StudioPage() {
   const [targetDuration, setTargetDuration] = useState("");
   const [retries, setRetries] = useState(0);
   const [timeline, setTimeline] = useState(true);
+  const [zoomOutput, setZoomOutput] = useState(false);
+  const [zoomRows, setZoomRows] = useState(12);
 
   // job
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [running, setRunning] = useState<string | null>(null);
   const [outputs, setOutputs] = useState<string[]>([]);
   const [note, setNote] = useState<string | null>(null);
+  /** Whether the last note was a success or a failure — they read very differently. */
+  const [noteTone, setNoteTone] = useState<"ok" | "err">("ok");
   /** True when the preview is a previous render rather than this session's. */
   const [stale, setStale] = useState(false);
   const editor = useRef<HTMLTextAreaElement>(null);
-  const [tab, setTab] = useState<"yaml" | "steps">("yaml");
+  /* Output settings live beside the spec rather than below it: stacked, they
+     doubled the page height for controls you touch once per demo. */
+  const [tab, setTab] = useState<"yaml" | "steps" | "output">("yaml");
 
   /** Fill the form from what the spec says, so applying can't clobber it. */
   const hydrate = useCallback((s: SpecSummary | null) => {
@@ -52,6 +59,8 @@ export default function StudioPage() {
     setTargetDuration(s.options.targetDuration ?? "");
     setRetries(s.options.retries);
     setTimeline(s.options.timeline);
+    setZoomOutput(s.options.zoomOutput);
+    setZoomRows(s.options.zoomRows);
   }, []);
 
   const loadSpec = useCallback(
@@ -101,6 +110,7 @@ export default function StudioPage() {
       return false;
     }
     setWarnings(r.warnings ?? []);
+    setNoteTone("ok");
     setNote("Saved.");
     setDirty(false);
     // Re-read so the outline and chips reflect what was just written.
@@ -126,6 +136,14 @@ export default function StudioPage() {
   async function applyOptions() {
     const patch: any = { output: { preset }, polish: { frame, speed }, retries };
     patch.deterministic = { timeline };
+    // Camera-follow is terminal-only; writing it into a web spec would add a
+    // key that does nothing there.
+    if (summary?.kind === "terminal") {
+      // null removes the key, so switching it off leaves the spec as clean as
+      // it was before anyone touched the toggle.
+      patch.polish.zoomOutput = zoomOutput ? true : null;
+      patch.polish.zoomRows = zoomOutput ? zoomRows : null;
+    }
     patch.output.subtitles = subtitles ? true : null;
     // Name the interactive build after the spec, so it lands beside the video.
     const base = path.split("/").pop()?.replace(/\.reel\.ya?ml$/i, "") || "demo";
@@ -137,6 +155,7 @@ export default function StudioPage() {
     const r = await postJSON<{ raw: string }>("/api/patch", { raw, patch });
     setRaw(r.raw);
     setDirty(true);
+    setNoteTone("ok");
     setNote("Options applied — review and Save.");
   }
 
@@ -149,6 +168,7 @@ export default function StudioPage() {
     const done = await runJob(`/api/${kind}`, { path, ...extra }, (l) => setLogs((p) => [...p, l]));
     setRunning(null);
     if (!done.ok) {
+      setNoteTone("err");
       setNote(done.hint ? `${done.error} — ${done.hint}` : done.error ?? "failed");
       return;
     }
@@ -157,6 +177,7 @@ export default function StudioPage() {
       setStale(false);
     }
     if (kind === "check") {
+      setNoteTone("ok");
       setNote(
         summary?.branchCount
           ? "✓ Drift check passed — every step, on every branch path."
@@ -166,6 +187,7 @@ export default function StudioPage() {
     if (kind === "heal") {
       const fixes = done.result?.fixes ?? [];
       const unresolved = done.result?.unresolved ?? [];
+      setNoteTone(unresolved.length ? "err" : "ok");
       setNote(
         fixes.length || unresolved.length
           ? `${fixes.length} repaired, ${unresolved.length} unresolved.`
@@ -175,291 +197,388 @@ export default function StudioPage() {
     }
   }
 
+
   const lineCount = Math.max(raw.split("\n").length, 1);
+  const busy = !!running;
+  const invalid = Boolean(summary && !summary.valid && path);
+
+  /* The three jobs share a shape, so describe them once rather than repeating
+     the button markup three times with slightly different titles. */
+  const ACTIONS = [
+    {
+      kind: "record" as const,
+      label: "Record",
+      title:
+        summary && summary.variants > 1
+          ? `Drive the app and render ${summary.variants} variants`
+          : "Drive the app and render the demo",
+      primary: true,
+      extra: {},
+    },
+    {
+      kind: "check" as const,
+      label: "Check drift",
+      title: "Re-run headlessly and fail if any step can't complete",
+      primary: false,
+      extra: {},
+    },
+    {
+      kind: "heal" as const,
+      label: "Heal",
+      title: "Repair broken selectors — works offline, no model required",
+      primary: false,
+      extra: { write: true },
+    },
+  ];
 
   return (
     <div>
       <PageHead
         eyebrow="Studio"
         title="Edit, render, and preview"
-        sub="Tune the spec and output, then record — or verify and self-heal it against the live app."
+        sub="Tune the spec and its output, then record — or verify and self-heal it against the live app."
       />
 
-      <div className="grid grid-cols-[1.15fr_1fr] gap-5 max-[980px]:grid-cols-1">
-        {/* left: spec + editor + options */}
-        <div>
-          <div className="card">
-            <div className="mb-3 flex items-center gap-2">
-              <select className="input" value={path} onChange={(e) => loadSpec(e.target.value)}>
-                <option value="">Select a spec…</option>
-                {specs.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="btn btn-sm"
-                onClick={() => getJSON<{ specs: string[] }>("/api/specs").then((d) => setSpecs(d.specs))}
-                title="Refresh spec list"
-              >
-                ↻
-              </button>
-            </div>
+      {/* ---- toolbar ------------------------------------------------------
+          Spec choice and the three jobs are what this page is for, so they
+          stay pinned instead of scrolling away behind a long YAML file. */}
+      <div className="sticky top-0 z-30 -mx-2 mb-5 rounded-2xl border border-line bg-bg/80 px-4 py-3 backdrop-blur-xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            className="input !w-auto min-w-[260px] flex-1 font-mono text-[13px]"
+            value={path}
+            onChange={(e) => loadSpec(e.target.value)}
+          >
+            <option value="">Select a spec…</option>
+            {specs.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() =>
+              getJSON<{ specs: string[] }>("/api/specs").then((d) => setSpecs(d.specs))
+            }
+            title="Refresh the spec list"
+          >
+            ↻
+          </button>
 
-            {summary && (
-              <div className="mb-3">
-                <SpecChips summary={summary} />
-              </div>
-            )}
-
-            {/* The outline is the fastest way to read a spec's shape, so it sits
-                beside the YAML rather than below it. */}
-            <div className="mb-3 inline-flex rounded-xl border border-line bg-bg2 p-1">
-              {(["yaml", "steps"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${
-                    tab === t ? "bg-brand text-[#0a0d13]" : "text-muted hover:text-ink"
-                  }`}
-                >
-                  {t === "yaml" ? "YAML" : `Steps${summary?.valid ? ` · ${summary.stepCount}` : ""}`}
-                </button>
-              ))}
-            </div>
-
-            {tab === "steps" ? (
-              <div className="rounded-xl border border-line bg-bg2 p-3">
-                <p className="mb-2 text-xs text-faint">
-                  The shape of the demo. A branch shows both paths — only the one marked
-                  <span className="mx-1 text-brand">in video</span> reaches the GIF.
-                </p>
-                <SpecOutline summary={summary} />
-              </div>
-            ) : (
-            /* Line numbers make a YAML error message ("steps.3.click") findable. */
-            <div className="flex overflow-hidden rounded-xl border border-line bg-bg2 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
-              <pre
-                aria-hidden
-                className="select-none border-r border-line px-2.5 py-2.5 text-right font-mono text-[12.5px] leading-relaxed text-faint"
-              >
-                {Array.from({ length: lineCount }, (_, i) => i + 1).join("\n")}
-              </pre>
-              <textarea
-                ref={editor}
-                className="min-h-[320px] flex-1 resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-faint"
-                value={raw}
-                onChange={(e) => {
-                  setRaw(e.target.value);
-                  setDirty(true);
-                }}
-                onKeyDown={(e) => {
-                  // Tab indents instead of leaving the editor — YAML is indented.
-                  if (e.key === "Tab") {
-                    e.preventDefault();
-                    const el = e.currentTarget;
-                    const { selectionStart: a, selectionEnd: b } = el;
-                    const next = `${raw.slice(0, a)}  ${raw.slice(b)}`;
-                    setRaw(next);
-                    setDirty(true);
-                    requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
-                  }
-                }}
-                spellCheck={false}
-                placeholder="Select a spec to edit its YAML…"
-              />
-            </div>
-            )}
-
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button className="btn btn-primary btn-sm" onClick={save} disabled={!path}>
-                Save
-              </button>
-              <kbd className="rounded border border-line bg-elev px-1.5 py-0.5 font-mono text-[11px] text-faint">
-                ⌘S
-              </kbd>
-              {dirty && <span className="tag !border-warn/40 !text-warn">unsaved</span>}
-              {summary && !summary.valid && path && (
-                <button
-                  className="tag !border-warn/40 !text-warn"
-                  onClick={() => setTab("steps")}
-                  title="See what's wrong"
-                >
-                  {summary.errors.length} error{summary.errors.length > 1 ? "s" : ""}
-                </button>
-              )}
-              {note && <span className="text-sm text-muted">{note}</span>}
-            </div>
-
-            {warnings.length > 0 && (
-              <ul className="mt-2 list-disc pl-5 text-[12.5px] text-warn">
-                {warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            )}
+          <div className="flex items-center gap-2 max-[720px]:w-full">
+            <button className="btn btn-sm" onClick={save} disabled={!path}>
+              Save
+            </button>
+            <kbd className="kbd">⌘S</kbd>
+            {dirty && <span className="tag !border-warn/40 !text-warn">unsaved</span>}
           </div>
 
-          <div className="card">
-            <h2 className="mb-4 text-base font-semibold">Output &amp; polish</h2>
-            <div className="grid grid-cols-2 gap-3 max-[560px]:grid-cols-1">
-              <label className="block">
-                <span className="label">Preset</span>
-                <select className="input" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                  {PRESETS.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="label">Device frame</span>
-                <select className="input" value={frame} onChange={(e) => setFrame(e.target.value)}>
-                  {FRAMES.map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="label">Speed</span>
-                <select
-                  className="input"
-                  value={speed}
-                  onChange={(e) => setSpeed(Number(e.target.value))}
-                >
-                  {SPEEDS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}×{s === 1 ? " (as authored)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="label">Fit to duration</span>
-                <input
-                  className="input"
-                  value={targetDuration}
-                  onChange={(e) => setTargetDuration(e.target.value)}
-                  placeholder="30s — leave blank for natural"
-                />
-              </label>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-line bg-bg2 p-3.5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-medium">Reproducible timeline</div>
-                  <div className="text-xs text-faint">
-                    Renders byte-identical media on any machine, so committed demo media only
-                    changes when the demo does. Turn off to film the app&apos;s own animation in
-                    real time.
-                  </div>
-                </div>
-                <Toggle checked={timeline} onChange={setTimeline} />
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-xl border border-line bg-bg2 p-3.5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-medium">Interactive HTML</div>
-                  <div className="text-xs text-faint">
-                    A self-contained click-through with hotspots and deep links — one file, no
-                    hosting.{" "}
-                    {summary?.branchCount
-                      ? "This spec branches, so it's the only output that carries every path."
-                      : ""}
-                  </div>
-                </div>
-                <Toggle checked={interactive} onChange={setInteractive} />
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-3">
-              <Toggle checked={subtitles} onChange={setSubtitles} label="Subtitles (SRT/VTT)" />
-              <label className="flex items-center gap-2">
-                <span className="label mb-0">Localize</span>
-                <input
-                  className="input !w-40 !py-1.5"
-                  value={languages}
-                  onChange={(e) => setLanguages(e.target.value)}
-                  placeholder="es, fr"
-                />
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="label mb-0" title="Retry a step that fails transiently">
-                  Retries
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={5}
-                  className="input !w-20 !py-1.5"
-                  value={retries}
-                  onChange={(e) => setRetries(Number(e.target.value))}
-                />
-              </label>
-            </div>
-
-            <button className="btn btn-sm mt-4" onClick={applyOptions} disabled={!path}>
-              Apply to spec
-            </button>
+          <div className="ml-auto flex flex-wrap gap-2 max-[720px]:ml-0 max-[720px]:w-full">
+            {ACTIONS.map((a) => (
+              <button
+                key={a.kind}
+                className={`btn btn-sm ${a.primary ? "btn-brand" : ""}`}
+                onClick={() => job(a.kind, a.extra)}
+                disabled={!path || busy}
+                title={a.title}
+              >
+                {running === a.kind && <Spinner />}
+                {a.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* right: actions + logs + preview */}
-        <div>
-          <div className="card">
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn btn-primary"
-                onClick={() => job("record")}
-                disabled={!path || !!running}
-                title={
-                  summary && summary.variants > 1
-                    ? `Renders ${summary.variants} variants`
-                    : "Drive the app and render the demo"
-                }
-              >
-                {running === "record" ? <Spinner /> : "●"} Record
-              </button>
-              <button
-                className="btn"
-                onClick={() => job("check")}
-                disabled={!path || !!running}
-                title="Re-run headlessly and fail if any step can't complete"
-              >
-                {running === "check" ? <Spinner /> : "✓"} Check drift
-              </button>
-              <button
-                className="btn"
-                onClick={() => job("heal", { write: true })}
-                disabled={!path || !!running}
-                title="Repair broken selectors — works offline, no model required"
-              >
-                {running === "heal" ? <Spinner /> : "✚"} Heal
-              </button>
+        {note && (
+          <div
+            className={`mt-2.5 rounded-lg border px-3 py-2 text-[13px] leading-relaxed ${
+              noteTone === "err"
+                ? "border-err/30 bg-err/[0.07] text-err"
+                : "border-ok/25 bg-ok/[0.07] text-ok"
+            }`}
+          >
+            {note}
+          </div>
+        )}
+      </div>
+
+      {!path ? (
+        <EmptyState
+          icon="M4 5h16v14H4zM4 10h16"
+          title="No spec open"
+          sub="Pick one above to edit and render it, or describe a new demo in plain English and let an agent write the spec for you."
+        >
+          <Link href="/author" className="btn btn-brand">
+            Author a demo
+          </Link>
+        </EmptyState>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] gap-5 max-[1100px]:grid-cols-1">
+          {/* ---- left: the spec ---- */}
+          <div className="flex flex-col gap-5">
+            <div className="card">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex rounded-xl border border-line bg-bg2 p-1">
+                  {(["yaml", "steps", "output"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTab(t)}
+                      className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${
+                        tab === t ? "bg-brand text-[#0a0d13]" : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      {t === "yaml"
+                        ? "YAML"
+                        : t === "steps"
+                          ? `Steps${summary?.valid ? ` · ${summary.stepCount}` : ""}`
+                          : "Output & polish"}
+                    </button>
+                  ))}
+                </div>
+                {tab === "output" ? (
+                  <button className="btn btn-sm btn-ghost" onClick={applyOptions} disabled={!path}>
+                    Apply to spec
+                  </button>
+                ) : (
+                  summary && <SpecChips summary={summary} />
+                )}
+              </div>
+
+              {invalid && (
+                <button
+                  onClick={() => setTab("steps")}
+                  className="mb-3 flex w-full items-center gap-2 rounded-lg border border-err/30 bg-err/[0.07] px-3 py-2 text-left text-[13px] text-err"
+                >
+                  {summary!.errors.length} error{summary!.errors.length > 1 ? "s" : ""} in this spec
+                  — see what&apos;s wrong →
+                </button>
+              )}
+
+              {tab === "steps" ? (
+                <div className="rounded-xl border border-line bg-bg2 p-3">
+                  <p className="mb-2 text-xs leading-relaxed text-faint">
+                    The shape of the demo. A branch shows both paths — only the one marked
+                    <span className="mx-1 text-brand">in video</span> reaches the GIF.
+                  </p>
+                  <SpecOutline summary={summary} />
+                </div>
+              ) : tab === "output" ? (
+                <div className="max-h-[560px] space-y-4 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 gap-3 max-[560px]:grid-cols-1">
+                    <label className="block">
+                      <span className="label">Preset</span>
+                      <select
+                        className="input"
+                        value={preset}
+                        onChange={(e) => setPreset(e.target.value)}
+                      >
+                        {PRESETS.map((p) => (
+                          <option key={p}>{p}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="label">Device frame</span>
+                      <select className="input" value={frame} onChange={(e) => setFrame(e.target.value)}>
+                        {FRAMES.map((f) => (
+                          <option key={f}>{f}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="label">Speed</span>
+                      <select
+                        className="input"
+                        value={speed}
+                        onChange={(e) => setSpeed(Number(e.target.value))}
+                      >
+                        {SPEEDS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}×{s === 1 ? " (as authored)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="label">Fit to duration</span>
+                      <input
+                        className="input"
+                        value={targetDuration}
+                        onChange={(e) => setTargetDuration(e.target.value)}
+                        placeholder="30s — blank for natural"
+                      />
+                    </label>
+                  </div>
+
+                  {summary?.kind === "terminal" && (
+                    <div className="rounded-xl border border-line bg-bg2 p-3.5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-medium">Camera follows output</div>
+                          <div className="text-xs leading-relaxed text-faint">
+                            After each command, ease the shot onto what it printed. Off by default, so
+                            turning it on re-shoots this demo — its rendered media will change.
+                          </div>
+                        </div>
+                        <Toggle checked={zoomOutput} onChange={setZoomOutput} />
+                      </div>
+                      {zoomOutput && (
+                        <label className="mt-3 flex items-center gap-2 border-t border-line pt-3">
+                          <span className="label mb-0" title="Taller output is framed at its tail">
+                            Longest shot
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={120}
+                            className="input !w-20 !py-1.5"
+                            value={zoomRows}
+                            onChange={(e) => setZoomRows(Number(e.target.value))}
+                          />
+                          <span className="text-xs text-faint">rows</span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-4 rounded-xl border border-line bg-bg2 p-3.5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">Reproducible timeline</div>
+                        <div className="text-xs leading-relaxed text-faint">
+                          Renders byte-identical media on any machine, so committed demo media only
+                          changes when the demo does. Turn off to film the app&apos;s own animation in
+                          real time.
+                        </div>
+                      </div>
+                      <Toggle checked={timeline} onChange={setTimeline} />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-line bg-bg2 p-3.5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">Interactive HTML</div>
+                        <div className="text-xs leading-relaxed text-faint">
+                          A self-contained click-through with hotspots and deep links — one file, no
+                          hosting.{" "}
+                          {summary?.branchCount
+                            ? "This spec branches, so it's the only output that carries every path."
+                            : ""}
+                        </div>
+                      </div>
+                      <Toggle checked={interactive} onChange={setInteractive} />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+                    <Toggle checked={subtitles} onChange={setSubtitles} label="Subtitles (SRT/VTT)" />
+                    <label className="flex items-center gap-2">
+                      <span className="label mb-0">Localize</span>
+                      <input
+                        className="input !w-40 !py-1.5"
+                        value={languages}
+                        onChange={(e) => setLanguages(e.target.value)}
+                        placeholder="es, fr"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <span className="label mb-0" title="Retry a step that fails transiently">
+                        Retries
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={5}
+                        className="input !w-20 !py-1.5"
+                        value={retries}
+                        onChange={(e) => setRetries(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                /* Line numbers make a YAML error ("steps.3.click") findable. */
+                <div className="flex overflow-hidden rounded-xl border border-line bg-bg2 focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20">
+                  <pre
+                    aria-hidden
+                    className="select-none border-r border-line px-2.5 py-2.5 text-right font-mono text-[12.5px] leading-relaxed text-faint"
+                  >
+                    {Array.from({ length: lineCount }, (_, i) => i + 1).join("\n")}
+                  </pre>
+                  <textarea
+                    ref={editor}
+                    className="min-h-[520px] flex-1 resize-y bg-transparent px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-faint"
+                    value={raw}
+                    onChange={(e) => {
+                      setRaw(e.target.value);
+                      setDirty(true);
+                    }}
+                    onKeyDown={(e) => {
+                      // Tab indents instead of leaving the editor — YAML is indented.
+                      if (e.key === "Tab") {
+                        e.preventDefault();
+                        const el = e.currentTarget;
+                        const { selectionStart: a, selectionEnd: b } = el;
+                        const next = `${raw.slice(0, a)}  ${raw.slice(b)}`;
+                        setRaw(next);
+                        setDirty(true);
+                        requestAnimationFrame(() => el.setSelectionRange(a + 2, a + 2));
+                      }
+                    }}
+                    spellCheck={false}
+                    placeholder="Select a spec to edit its YAML…"
+                  />
+                </div>
+              )}
+
+              {warnings.length > 0 && (
+                <ul className="mt-3 space-y-1 rounded-lg border border-warn/25 bg-warn/[0.06] p-3 text-[12.5px] text-warn">
+                  {warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <div className="mt-4">
-              <LogConsole lines={logs} running={!!running} />
-            </div>
+
           </div>
 
-          {outputs.length > 0 && (
-            <div className="card">
+          {/* ---- right: the result ----
+              Preview above the log: the render is the point, and the log is
+              only interesting while it is still running or when it failed. */}
+          <div className="flex flex-col gap-5 max-[1100px]:contents">
+            <div className="card lg:sticky lg:top-[92px]">
               <div className="mb-3 flex items-center gap-2.5">
-                <h2 className="text-base font-semibold">Preview</h2>
+                <h2 className="text-[15px] font-semibold">Preview</h2>
                 {stale && (
                   <span className="tag" title="Rendered by an earlier run — record to refresh">
                     last render
                   </span>
                 )}
               </div>
-              <MediaPreview outputs={outputs} />
+              {outputs.length > 0 ? (
+                <MediaPreview outputs={outputs} />
+              ) : (
+                <EmptyState
+                  icon="M5 3l14 9-14 9z"
+                  title={busy ? "Rendering…" : "Nothing rendered yet"}
+                  sub={
+                    busy
+                      ? "The finished media will appear here."
+                      : "Hit Record to drive the app and render this spec. The GIF, video and storyboard land here."
+                  }
+                />
+              )}
             </div>
-          )}
+
+            <div className="card">
+              <h2 className="mb-3 text-[15px] font-semibold">Run log</h2>
+              <LogConsole lines={logs} running={busy} />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
