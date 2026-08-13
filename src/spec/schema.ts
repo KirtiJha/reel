@@ -95,9 +95,15 @@ export const polishSchema = z.object({
    */
   speed: z.number().positive().max(10).default(1),
   /**
-   * Cap any stretch where nothing on screen changes at this many ms. Dead air
-   * — waiting out a slow save, a long declared hold — is what makes a demo
-   * drag; this trims it without touching the moments that move.
+   * Cap any stretch where nothing on screen changes at this many ms.
+   *
+   * Blunt on purpose, and worth understanding before reaching for it: it can't
+   * tell dead air from a deliberate pause, so a 1700ms title card under
+   * `trimIdle: 700` becomes 700ms — too fast to read. On a virtual timeline
+   * real waiting already costs no demo time, so what's left to trim is mostly
+   * what you authored. Use it to rescue a demo full of long waits, not to
+   * tighten one that is already paced. To shorten a paced demo, prefer
+   * `speed` or `output.targetDuration`, which scale everything proportionally.
    */
   trimIdle: z.number().int().positive().optional(),
 });

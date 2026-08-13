@@ -12,7 +12,16 @@ export interface RunningApp {
  * from a cold checkout (and in CI) without a human babysitting a dev server.
  */
 export async function startApp(run: RunConfig): Promise<RunningApp> {
-  log.step(`Booting app: ${run.cmd}`);
+  // A spec is executable: `run.cmd` goes to a shell. That's fine for your own
+  // repo and dangerous for a spec you didn't write — and the CI story invites
+  // running specs from pull requests. This lets a runner refuse outright.
+  if (process.env.REEL_NO_EXEC) {
+    throw new ReelError(
+      "Refusing to run the spec's `run.cmd` because REEL_NO_EXEC is set.",
+      "Start the app yourself and point `url` at it, or unset REEL_NO_EXEC if you trust this spec.",
+    );
+  }
+  log.step(`Booting app (shell): ${run.cmd}`);
   const child: ChildProcess = spawn(run.cmd, {
     cwd: run.cwd,
     shell: true,

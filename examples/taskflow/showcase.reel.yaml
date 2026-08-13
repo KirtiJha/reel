@@ -60,7 +60,13 @@ steps:
 
 output:
   preset: share
-  mp4: out/showcase.mp4
-  gif: out/showcase.gif
+  # This is the README hero. It lives under docs/ (tracked, unlike out/) so CI
+  # can regenerate it and the change shows up as an image diff on the PR.
+  mp4: ../../docs/demo.mp4
+  gif: ../../docs/demo.gif
+  # The README embeds this at 720px, so rendering it wider only costs load time.
+  gifMaxWidth: 720
+  gifColors: 128
+  gifFps: 16
   storyboard: out/showcase-storyboard
   html: out/showcase.html # self-contained interactive click-through

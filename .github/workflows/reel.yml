@@ -1,8 +1,18 @@
 # Reel — keep your demo media honest.
 #
-# On PRs: fail the build if any demo step can't complete (drift detection).
-# On push to main: regenerate the media and commit it back, so README GIFs are
-# always current. Copy this into your own repo's .github/workflows/.
+# On PRs: fail the build if any demo step can't complete (drift detection), and
+# regenerate the README media so the change shows up as an image diff on the PR
+# itself — reviewers see what the demo now looks like without leaving the diff.
+# On push to main: regenerate and commit, so the media is never stale.
+#
+# This only works because Reel's output is deterministic (see driver/timeline.ts):
+# identical app + identical spec produce identical bytes, so a media change in a
+# diff means the demo really changed, not that a runner was slow.
+#
+# SECURITY: `reel record` executes the spec's `run.cmd` in a shell. Never run an
+# untrusted spec (one from a fork's PR) in a job that holds write permissions or
+# secrets. The preview job below is deliberately restricted to same-repo PRs;
+# set REEL_NO_EXEC=1 to refuse to spawn `run.cmd` at all.
 name: reel
 
 on:
@@ -13,11 +23,16 @@ on:
 jobs:
   demo:
     runs-on: ubuntu-latest
-    # The push job commits regenerated media back to the branch.
     permissions:
-      contents: write
+      contents: write # commits regenerated media
+      pull-requests: write # posts the preview comment
     steps:
+      # For same-repo PRs, check out the PR branch itself so regenerated media
+      # can be committed back onto it.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
       - uses: actions/setup-node@v4
         with:
@@ -27,29 +42,63 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
-      # PRs: verify the demo still works, but don't commit anything.
+      - name: Unit tests
+        run: npm test
+
+      # Drift detection: does the demo still run against the app at all?
       - name: Drift check
-        if: github.event_name == 'pull_request'
         run: npx reel check examples/taskflow/demo.reel.yaml
 
-      # main: regenerate and commit refreshed media.
-      - name: Regenerate demo
-        if: github.event_name == 'push'
-        run: npx reel record examples/taskflow/demo.reel.yaml
+      # Regenerate the README media. Deterministic, so this is a no-op unless
+      # the demo genuinely changed.
+      - name: Regenerate demo media
+        run: npx reel record examples/taskflow/showcase.reel.yaml
 
-      - name: Commit refreshed media
-        if: github.event_name == 'push'
+      - name: Detect media change
+        id: media
         run: |
-          # `examples/*/out/` is gitignored so local recordings don't dirty a
-          # contributor's tree — so the media has to be force-added here, and
-          # the change test has to run against the index (a plain `git status`
-          # on an ignored path is always empty, and would never commit).
-          git add -f examples/taskflow/out
-          if git diff --cached --quiet; then
-            echo "Demo media already up to date."
+          if [ -n "$(git status --porcelain docs)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            git config user.name "reel-bot"
-            git config user.email "bot@users.noreply.github.com"
-            git commit -m "chore: regenerate demo media [skip ci]"
-            git push
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Demo media already up to date."
           fi
+
+      # Fork PRs get the drift check but never a write-back: the checkout above
+      # falls back to the base repo, and pushing to a fork isn't possible anyway.
+      - name: Commit refreshed media
+        if: >-
+          steps.media.outputs.changed == 'true' &&
+          (github.event_name == 'push' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          git config user.name "reel-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add docs
+          git commit -m "chore: regenerate demo media [skip ci]"
+          git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      # One comment, so a reviewer knows the media in the diff is the new demo.
+      - name: Comment on the PR
+        if: >-
+          steps.media.outputs.changed == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '### 🎬 Demo updated',
+              '',
+              'This PR changes what the demo looks like. The regenerated media has been',
+              'committed to this branch — open the **Files changed** tab and expand',
+              '`docs/demo.gif` to see the before/after.',
+              '',
+              '<sub>Reel renders deterministically, so the media only changes when the demo does.</sub>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

@@ -249,6 +249,56 @@ mock:
   colour, and label it.
 - **Title cards** — open and close on a card, or use one to separate chapters.
 
+## Reproducible output
+
+The same spec against the same app renders **byte-identical media on any
+machine**. Frame timestamps come from a virtual clock, not the wall clock: a
+step advances the timeline by the duration it *declares*, and real waiting —
+selectors, network, the app settling — costs no demo time at all. A loaded CI
+runner produces exactly what your laptop did.
+
+This is what makes committing demo media from CI worth doing. Without it every
+push rewrites a multi-megabyte GIF whether or not the demo changed, and the diff
+tells a reviewer nothing. With it, **a media change means the demo changed.**
+
+```yaml
+deterministic:
+  timeline: true # default; false films the app's own animation in real time
+```
+
+## Pacing — control how long a demo runs
+
+```yaml
+polish:
+  speed: 1.5              # multiplier over every authored duration
+  trimIdle: 800           # cap still stretches (blunt: it also shortens holds)
+output:
+  targetDuration: 30s     # fit the finished demo to a length
+```
+
+`speed` scales as it records; `targetDuration` and `trimIdle` reshape the
+recorded timeline afterwards, so neither re-runs the demo. Prefer `speed` or
+`targetDuration` for a demo that's already paced — `trimIdle` can't tell dead
+air from a deliberate pause.
+
+## One spec, many variants
+
+A docs page usually needs the same flow at desktop and mobile, in both themes.
+That's one spec, not four:
+
+```yaml
+matrix:
+  viewports:
+    - { name: desktop, width: 1280, height: 800 }
+    - { name: mobile, width: 390, height: 844, scale: 3 }
+  themes: [light, dark]
+output:
+  gif: docs/demo-{viewport}-{theme}.gif
+```
+
+`reel check` walks every variant too — a responsive layout can hide an element
+at one width and not another, and that's exactly the drift worth catching.
+
 ## Commands
 
 | Command | What it does |
@@ -308,14 +358,30 @@ export SSL_VERIFY=false   # for corporate proxies with non-verifying certs
 ## CI / drift detection
 
 Copy [`.github/workflows/reel.yml`](.github/workflows/reel.yml): PRs run
-`reel check` (fail if the demo broke); pushes to `main` regenerate the media and
-commit it back, so your README GIF is never lying.
+`reel check` (fail if the demo broke) **and regenerate the media onto the PR
+branch**, so a reviewer sees the new demo as an image diff in *Files changed*
+without leaving the review. Pushes to `main` do the same, so your README GIF is
+never lying.
 
-**Self-healing.** When the UI drifts and a step breaks, `reel heal --write` sends
-the current page to an agent, which re-resolves the equivalent element, **verifies
-the fix by actually running it**, and rewrites the spec — turning "your demo
-broke" into "your demo fixed itself." Wire it into CI to open a repair PR
-automatically. (Uses the same LiteLLM proxy as `reel author`.)
+That preview only works because output is deterministic — otherwise every PR
+would carry a media change and the signal would be worthless.
+
+**Flaky steps.** `retries: 2` re-runs a step that fails transiently. Retries are
+deliberately narrow: steps that mutate nothing are always safe, while a click or
+a type is retried only when the failure proves the action never landed — so a
+retry can't double-submit a form.
+
+**Self-healing.** When the UI drifts and a step breaks, `reel heal --write`
+repairs the spec. It works through a ladder: candidates derived from what the
+broken selector was reaching for (role, name, id, placeholder) are scored and
+tried first, and every candidate is **verified by actually running the step**
+before it's accepted. An LLM handles what the ladder can't — and is entirely
+optional, so a renamed id or a relabelled button repairs offline with no API key.
+
+> **Security.** `reel record` runs the spec's `run.cmd` in a shell — a
+> `.reel.yaml` is executable code. Never run a spec you didn't write in a job
+> holding secrets or write permissions. Set `REEL_NO_EXEC=1` to refuse to spawn
+> `run.cmd` at all, and start the app yourself instead.
 
 ## Architecture
 
