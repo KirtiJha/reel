@@ -13,6 +13,7 @@ import { record, check } from "./driver/run.js";
 import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
+import { doctor, printReport } from "./commands/doctor.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -138,6 +139,20 @@ program
   .description("Scaffold a starter demo.reel.yaml.")
   .action(async (dir: string, opts: { url: string; name: string }) => {
     await withErrors(() => initSpec(dir, opts));
+  });
+
+program
+  .command("doctor")
+  .description("Check that this machine can record: browser, ffmpeg, image pipeline, temp space.")
+  .action(async () => {
+    await withErrors(async () => {
+      const report = await doctor();
+      printReport(report);
+      emit("doctor", report.ok, { result: { checks: report.checks } });
+      // Non-zero so a CI setup step fails here, where the message is clear,
+      // rather than three minutes later inside Playwright.
+      if (!report.ok) process.exitCode = 1;
+    }, "doctor");
   });
 
 program
