@@ -377,6 +377,13 @@ export const specSchema = z.object({
   redact: redactSchema.optional(),
   /** Pin network responses (HAR replay / route stubs) for clean, stable data. */
   mock: mockSchema.optional(),
+  /**
+   * Retry a step that fails for a transient reason (an element not ready yet,
+   * a slow response). Only steps that provably didn't act are retried — a
+   * timed-out click never clicked — so a retry can't double-submit a form or
+   * type the same text twice.
+   */
+  retries: z.number().int().nonnegative().max(5).default(0),
   steps: z.array(stepSchema).min(1),
   output: outputSchema,
 });

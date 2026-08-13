@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
-import { resolveOutputProfile } from "../spec/schema.js";
+import { resolveOutputProfile, type Step } from "../spec/schema.js";
 import { applyDeterminism } from "./determinism.js";
 import { Timeline } from "./timeline.js";
 import { Recorder } from "./recorder.js";
@@ -12,6 +12,7 @@ import { installOverlay } from "../overlay/overlay.js";
 import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
 import { runStep, type StepContext, type Mode } from "./steps.js";
+import { isRetryable, retryDelayMs } from "./retry.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
 import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
@@ -132,7 +133,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     log.phase(`Recording “${spec.name}” (${spec.steps.length} steps)`);
     for (let i = 0; i < spec.steps.length; i++) {
-      await runStep(spec.steps[i]!, ctx, i);
+      await runStepWithRetries(spec.steps[i]!, ctx, i, spec.retries);
     }
 
     // A closing scene so the interactive build ends on the finished state.
@@ -258,6 +259,32 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Run a step, retrying transient failures when repeating it is provably safe
+ * (see driver/retry.ts). A demo that fails once in twenty on a slow runner is
+ * a broken build signal, not a broken demo.
+ */
+async function runStepWithRetries(
+  step: Step,
+  ctx: StepContext,
+  i: number,
+  retries: number,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await runStep(step, ctx, i);
+      return;
+    } catch (err) {
+      if (attempt >= retries || !isRetryable(step, err)) throw err;
+      const delay = retryDelayMs(attempt);
+      log.warn(
+        `Step ${i + 1} failed (${(err as Error).message.split("\n")[0]}) — retry ${attempt + 1}/${retries} in ${delay}ms`,
+      );
+      await ctx.page.waitForTimeout(delay);
+    }
   }
 }
 

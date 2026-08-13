@@ -14,6 +14,7 @@ import { collectInteractive, formatSnapshot, type Snapshot } from "../ai/agent-t
 import { applyMocks } from "../mock/mock.js";
 import { chat, loadLlmConfig, type LlmConfig } from "../ai/llm.js";
 import { stepSelector, withStepSelector, describeStep } from "./selectors.js";
+import { deterministicCandidates } from "./candidates.js";
 import { log, ReelError } from "../util/log.js";
 
 export interface Fix {
@@ -37,9 +38,16 @@ export interface HealResult {
  * itself."
  */
 export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promise<HealResult> {
-  const cfg = loadLlmConfig(); // requires a configured LiteLLM proxy
   const { spec } = loaded;
-  log.info(`Repair model: ${cfg.model} · via ${cfg.apiBase}`);
+  // The model is a fallback, not a prerequisite: most drift is a renamed id or
+  // a relabelled button, which the deterministic ladder resolves offline.
+  let cfg: LlmConfig | null = null;
+  try {
+    cfg = loadLlmConfig();
+    log.info(`Repair model: ${cfg.model} · via ${cfg.apiBase} (fallback)`);
+  } catch {
+    log.info("No model configured — repairing with the deterministic ladder only.");
+  }
 
   let app: RunningApp | null = null;
   let browser: Browser | null = null;
@@ -102,21 +110,42 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
         }
         log.warn(`Step ${i + 1} broke — repairing: ${describeStep(step)}`);
         const snapshot = await collectInteractive(page);
-        const newSel = await resolveSelector(cfg, step, sel, snapshot);
-        if (!newSel) {
-          unresolved.push({ index: i + 1, label: describeStep(step), reason: "no matching element on the current page" });
+
+        // Try the cheap, offline candidates first; each is proven by actually
+        // running the step, so a wrong guess costs a retry, never a bad fix.
+        const tried: string[] = [];
+        let repaired: string | null = null;
+        for (const candidate of deterministicCandidates(sel, snapshot.elements)) {
+          tried.push(candidate);
+          if (await stepWorks(step, candidate, ctx, i)) {
+            repaired = candidate;
+            log.debug(`resolved offline: ${sel} → ${candidate}`);
+            break;
+          }
+        }
+
+        // Only ask the model about what the ladder couldn't settle.
+        if (!repaired && cfg) {
+          const proposed = await resolveSelector(cfg, step, sel, snapshot);
+          if (proposed && !tried.includes(proposed)) {
+            tried.push(proposed);
+            if (await stepWorks(step, proposed, ctx, i)) repaired = proposed;
+            else log.error(`Proposed fix for step ${i + 1} failed to run: ${proposed}`);
+          }
+        }
+
+        if (!repaired) {
+          const reason = tried.length
+            ? `no working replacement (tried ${tried.length}: ${tried.join(", ")})`
+            : cfg
+              ? "no matching element on the current page"
+              : "no matching element offline — configure a model for harder cases";
+          unresolved.push({ index: i + 1, label: describeStep(step), reason });
           log.error(`Could not find a replacement for step ${i + 1}.`);
           continue;
         }
-        try {
-          await runStep(withStepSelector(step, newSel), ctx, i); // verify the repair works
-        } catch (e) {
-          unresolved.push({ index: i + 1, label: describeStep(step), reason: `candidate "${newSel}" didn't work` });
-          log.error(`Proposed fix for step ${i + 1} failed to run: ${(e as Error).message.split("\n")[0]}`);
-          continue;
-        }
-        fixes.push({ index: i + 1, before: sel, after: newSel, label: describeStep(step) });
-        log.ok(`Repaired step ${i + 1}: ${sel}  →  ${newSel}`);
+        fixes.push({ index: i + 1, before: sel, after: repaired, label: describeStep(step) });
+        log.ok(`Repaired step ${i + 1}: ${sel}  →  ${repaired}`);
       }
     }
 
@@ -127,6 +156,25 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Does the step work with this selector? A repair is only ever accepted after
+ * it has actually run, so neither the ladder nor the model can write a
+ * plausible-looking selector that doesn't resolve.
+ */
+async function stepWorks(
+  step: Step,
+  selector: string,
+  ctx: StepContext,
+  i: number,
+): Promise<boolean> {
+  try {
+    await runStep(withStepSelector(step, selector), ctx, i);
+    return true;
+  } catch {
+    return false;
   }
 }
 
