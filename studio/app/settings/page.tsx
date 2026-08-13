@@ -43,6 +43,14 @@ SSL_VERIFY=false   # corporate proxies`}
               </pre>
             </div>
           )}
+          <p className="mt-4 border-t border-line pt-3 text-[12.5px] text-muted">
+            Only <span className="font-mono text-ink">author</span> and subtitle localization
+            require a model. <span className="font-mono text-ink">record</span>,{" "}
+            <span className="font-mono text-ink">check</span> and{" "}
+            <span className="font-mono text-ink">heal</span> all run offline — heal repairs a
+            renamed id or a relabelled button on its own, and only asks a model about the cases
+            its deterministic ladder can&apos;t settle.
+          </p>
         </div>
 
         <div className="card">

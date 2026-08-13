@@ -10,6 +10,7 @@ import { heal } from "../heal/heal.js";
 import { authorSpec } from "../ai/author.js";
 import { addLogSink, log, ReelError } from "../util/log.js";
 import { loadLlmConfig } from "../ai/llm.js";
+import { summarize } from "./summary.js";
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -65,7 +66,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
     const p = safePath(cwd, u.searchParams.get("path") ?? "");
     if (!p) return sendJson(res, 400, { error: "bad path" });
     try {
-      return sendJson(res, 200, { raw: await readFile(p, "utf8") });
+      const raw = await readFile(p, "utf8");
+      // The summary is derived from the real schema, so the Studio always
+      // reflects what the spec actually says rather than a set of defaults.
+      return sendJson(res, 200, { raw, summary: summarize(raw) });
     } catch {
       return sendJson(res, 404, { error: "not found" });
     }
@@ -162,6 +166,11 @@ export interface GallerySpec {
   name: string;
   url: string;
   outputs: { path: string; kind: string }[];
+  /** At-a-glance facts, so the gallery can show what kind of demo this is. */
+  kind: "web" | "terminal";
+  stepCount: number;
+  branchCount: number;
+  variants: number;
 }
 
 /** Specs plus whichever of their declared outputs actually exist on disk. */
@@ -185,13 +194,26 @@ async function renderedOutputs(
   const o = parsed?.output ?? {};
   const abs = (p: string) => (isAbsolute(p) ? p : join(dir, p));
 
-  const candidates: { p?: string; kind: string }[] = [
-    { p: o.mp4, kind: "mp4" },
-    { p: o.gif, kind: "gif" },
-    { p: o.webm, kind: "webm" },
-    { p: o.storyboard, kind: "storyboard" },
-    { p: o.html, kind: "html" },
-  ];
+  // A matrix spec templates {viewport}/{theme} into its output paths, so the
+  // literal strings never exist on disk — without expanding them, a matrix demo
+  // looks like it rendered nothing at all.
+  const variants = matrixVariants(parsed);
+  const fill = (p: string, v: { viewport: string; theme: string }) =>
+    p.replace(/\{viewport\}/g, v.viewport).replace(/\{theme\}/g, v.theme);
+
+  const candidates: { p?: string; kind: string }[] = [];
+  for (const v of variants) {
+    for (const [key, kind] of [
+      ["mp4", "mp4"],
+      ["gif", "gif"],
+      ["webm", "webm"],
+      ["storyboard", "storyboard"],
+      ["html", "html"],
+    ] as const) {
+      const val = o[key];
+      if (val) candidates.push({ p: fill(String(val), v), kind });
+    }
+  }
 
   // Subtitles land beside the video, named after it (or at an explicit base).
   let subBase: string | undefined;
@@ -203,8 +225,11 @@ async function renderedOutputs(
   }
   if (subBase) {
     const langs: string[] = Array.isArray(o.languages) ? o.languages : [];
-    for (const base of [subBase, ...langs.map((l) => `${subBase}.${l}`)]) {
-      candidates.push({ p: `${base}.srt`, kind: "srt" }, { p: `${base}.vtt`, kind: "vtt" });
+    for (const v of variants) {
+      const b = fill(subBase, v);
+      for (const base of [b, ...langs.map((l) => `${b}.${l}`)]) {
+        candidates.push({ p: `${base}.srt`, kind: "srt" }, { p: `${base}.vtt`, kind: "vtt" });
+      }
     }
   }
 
@@ -222,22 +247,41 @@ async function renderedOutputs(
   return outputs;
 }
 
+/** Every {viewport, theme} pair a spec renders; one neutral entry without a matrix. */
+function matrixVariants(parsed: any): { viewport: string; theme: string }[] {
+  const m = parsed?.matrix;
+  const viewports: string[] = Array.isArray(m?.viewports)
+    ? m.viewports.map((v: any) => String(v?.name ?? "default"))
+    : ["default"];
+  const themes: string[] = Array.isArray(m?.themes)
+    ? m.themes.map(String)
+    : [String(parsed?.theme ?? "light")];
+  const out: { viewport: string; theme: string }[] = [];
+  for (const viewport of viewports) for (const theme of themes) out.push({ viewport, theme });
+  return out;
+}
+
 async function gallery(cwd: string): Promise<GallerySpec[]> {
   const paths = await listSpecs(cwd);
   const out: GallerySpec[] = [];
   for (const rp of paths) {
     const full = join(cwd, rp);
-    let parsed: any;
+    let raw: string;
     try {
-      parsed = parseYaml(await readFile(full, "utf8"));
+      raw = await readFile(full, "utf8");
     } catch {
       continue;
     }
+    const s = summarize(raw);
     out.push({
       path: rp,
-      name: parsed?.name ?? rp,
-      url: parsed?.url ?? "",
+      name: s.name || rp,
+      url: s.url,
       outputs: await renderedOutputs(full, cwd),
+      kind: s.kind,
+      stepCount: s.stepCount,
+      branchCount: s.branchCount,
+      variants: s.variants,
     });
   }
   return out;

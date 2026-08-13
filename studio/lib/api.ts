@@ -13,6 +13,57 @@ export interface GallerySpec {
   name: string;
   url: string;
   outputs: { path: string; kind: string }[];
+  kind: "web" | "terminal";
+  stepCount: number;
+  branchCount: number;
+  variants: number;
+}
+
+export interface OutlineStep {
+  index: number;
+  kind: string;
+  label: string;
+  branch?: {
+    prompt: string;
+    paths: { label: string; isDefault: boolean; steps: OutlineStep[] }[];
+  };
+}
+
+/**
+ * A structured read of a spec, built server-side from the same schema the
+ * driver uses — so the Studio can't drift from the spec grammar, and the
+ * options form shows what the spec actually says instead of defaults that
+ * would silently overwrite it.
+ */
+export interface SpecSummary {
+  name: string;
+  url: string;
+  kind: "web" | "terminal";
+  valid: boolean;
+  errors: string[];
+  stepCount: number;
+  outline: OutlineStep[];
+  branchCount: number;
+  variants: number;
+  matrix?: { viewports: string[]; themes: string[] };
+  options: {
+    preset: string;
+    frame: string;
+    speed: number;
+    trimIdle?: number;
+    targetDuration?: string;
+    retries: number;
+    timeline: boolean;
+    captions: boolean;
+    zoom: boolean;
+    subtitles: boolean;
+    languages: string[];
+    html?: string;
+    gif?: string;
+    mp4?: string;
+    webm?: string;
+    storyboard?: string;
+  };
 }
 
 export async function getJSON<T>(url: string): Promise<T> {

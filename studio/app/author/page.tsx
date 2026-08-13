@@ -42,14 +42,15 @@ export default function AuthorPage() {
       <PageHead
         eyebrow="AI authoring"
         title="Describe it. Reel drives your app."
-        sub="An agent opens your running app, works out the selectors, performs the story, and verifies each step — then emits a spec you own and edit."
+        sub="An agent opens your running app, works out the selectors, performs the story, and verifies each step — then emits a spec you own and edit. Add branches, terminal steps or a viewport matrix afterwards in Studio."
       />
 
       {cfg?.llm.configured === false && (
         <div className="card mb-5 border-warn/30 bg-warn/5">
           <div className="text-sm text-warn">No LLM configured.</div>
           <div className="mt-1 text-sm text-muted">
-            Set a LiteLLM proxy to enable authoring — see{" "}
+            Authoring is the one feature that needs a model. Recording, drift checks and
+            self-healing all work without one — see{" "}
             <Link href="/settings" className="text-brand2">
               Settings
             </Link>
