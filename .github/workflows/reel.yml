@@ -110,6 +110,23 @@ jobs:
           npm run reel -- record examples/taskflow/branching.reel.yaml
           npm run test:branch
 
+      # A failed step writes a screenshot, a clip of the seconds leading up to
+      # it, and the page's DOM — then the runner is destroyed and takes them
+      # with it. Uploading them is what makes a red build debuggable without
+      # reproducing it locally, which for a timing-sensitive recording is
+      # sometimes not possible at all.
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-failure-${{ github.run_id }}
+          path: "**/.reel-failures/**"
+          # Nothing to collect when the failure was a unit test rather than a
+          # step; that is not itself worth a warning.
+          if-no-files-found: ignore
+          # Debug evidence goes stale fast, and the default is three months.
+          retention-days: 7
+
       - name: Detect media change
         id: media
         run: |
