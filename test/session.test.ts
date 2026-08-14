@@ -4,6 +4,13 @@ import { runCommand } from "../src/terminal/session.js";
 
 const opts = { cols: 80, timeoutMs: 15_000 };
 
+// `cat` and `sleep` are POSIX; node is the one interpreter guaranteed present
+// wherever Reel runs, so the fixtures are written with it rather than skipping
+// the behaviour on Windows — where the process-group kill is weakest and these
+// are worth exercising most.
+const ECHO_STDIN = 'node -e "process.stdin.pipe(process.stdout)"';
+const SLEEP_5S = 'node -e "setTimeout(() => {}, 5000)"';
+
 describe("runCommand", () => {
   test("captures stdout and the exit code", async () => {
     const r = await runCommand("echo hello", opts);
@@ -29,18 +36,25 @@ describe("runCommand", () => {
   });
 
   test("pipes stdin to commands that read it", async () => {
-    const r = await runCommand("cat", { ...opts, input: "piped input\n" });
+    const r = await runCommand(ECHO_STDIN, { ...opts, input: "piped input\n" });
     assert.match(r.output, /piped input/);
   });
 
   test("closes stdin so a reader doesn't hang forever", async () => {
-    const r = await runCommand("cat", opts);
+    const r = await runCommand(ECHO_STDIN, opts);
     assert.equal(r.code, 0);
   });
 
   test("kills a command that overruns its budget", async () => {
-    const r = await runCommand("sleep 30", { ...opts, timeoutMs: 300 });
+    // The elapsed assertion is the point. Setting `timedOut` was never the bug:
+    // the kill reached the shell and not the command it started, so the call
+    // blocked until the command finished on its own and the budget bounded
+    // nothing. That failure passed this test for as long as it existed.
+    const started = Date.now();
+    const r = await runCommand(SLEEP_5S, { ...opts, timeoutMs: 300 });
+    const elapsed = Date.now() - started;
     assert.equal(r.timedOut, true);
+    assert.ok(elapsed < 3_000, `waited ${elapsed}ms for a 300ms budget`);
   });
 
   test("exports COLUMNS so output wraps to the terminal width", async () => {

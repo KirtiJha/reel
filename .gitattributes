@@ -1,0 +1,19 @@
+# Line endings are part of the contract here, not a preference.
+#
+# Windows checks out CRLF by default, and several things in this repo compare
+# bytes rather than lines: the JSON Schema is regenerated and diffed against the
+# committed file, specs are emitted and re-parsed, and the whole project rests
+# on the same inputs producing the same output everywhere. A checkout that
+# rewrote line endings would fail those comparisons on Windows alone, for a
+# reason that has nothing to do with the code.
+* text=auto eol=lf
+
+# Media is committed by CI and must never be touched by any filter.
+*.gif binary
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.webm binary
+*.woff binary
+*.woff2 binary
+*.ico binary

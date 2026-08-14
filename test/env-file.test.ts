@@ -118,7 +118,10 @@ describe("writeEnvFile", () => {
     delete process.env.REEL_TEST_NEW;
   });
 
-  test("leaves the file readable only by its owner", async () => {
+  // Windows has no POSIX mode bits — chmod there only toggles read-only — so
+  // this asserts a property the platform doesn't offer rather than one Reel
+  // failed to provide.
+  test("leaves the file readable only by its owner", { skip: process.platform === "win32" }, async () => {
     // The file holds an API key.
     const p = await tmpEnv();
     await writeEnvFile(p, { REEL_TEST_PERM: "1" });

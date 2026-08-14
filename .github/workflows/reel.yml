@@ -21,6 +21,35 @@ on:
     branches: [main]
 
 jobs:
+  # Reel is published to npm with no OS constraint, so "works on Linux" is not
+  # the promise being made. Windows is where that promise is thinnest: the app
+  # and terminal teardown both signal a process group, which Windows does not
+  # have, so a command's children can outlive the command there. This job is
+  # what turns that from an assumption into a result.
+  #
+  # Unit tests only — recording needs a browser and ffmpeg, and the demo job
+  # below covers that on the platform CI actually renders media with.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should still report the other, or a Windows-only
+      # break looks like a break everywhere.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Types are checked nowhere else in CI; a build that only breaks at
+      # publish time breaks for whoever runs `npm install` first.
+      - run: npm run typecheck
+      - run: npm test
+
   demo:
     runs-on: ubuntu-latest
     permissions:

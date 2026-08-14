@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { parse } from "yaml";
 import { fingerprint, isUpToDate, declaredOutputs, RENDER_EPOCH } from "../src/spec/fingerprint.js";
 import { specSchema } from "../src/spec/schema.js";
@@ -145,6 +145,7 @@ describe("declaredOutputs", () => {
     const f = await fixture(yaml);
     const outs = declaredOutputs(f);
     assert.equal(outs.length, 3);
-    assert.ok(outs.every((p) => p.startsWith("/")));
+    // `isAbsolute`, not a leading slash: an absolute path on Windows is `C:\…`.
+    assert.ok(outs.every((p) => isAbsolute(p)));
   });
 });
