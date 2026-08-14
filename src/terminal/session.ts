@@ -46,6 +46,11 @@ export async function runCommand(cmd: string, opts: RunOptions): Promise<Command
     const child = spawn(cmd, {
       cwd: opts.cwd,
       shell: true,
+      // Own process group, so the timeout can reach what the shell started.
+      // Without this `kill` reaps `/bin/sh` and leaves the actual command
+      // running with the inherited pipes open — `close` then waits for it, and
+      // the timeout bounds nothing at all.
+      detached: process.platform !== "win32",
       env: {
         ...process.env,
         // Ask for colour explicitly: without a tty most CLIs strip it, and a
@@ -67,25 +72,63 @@ export async function runCommand(cmd: string, opts: RunOptions): Promise<Command
     child.stdout?.on("data", cap);
     child.stderr?.on("data", cap);
 
+    // `close` fires only once every inherited pipe is closed, which a surviving
+    // grandchild can hold open indefinitely. Settling once, from whichever
+    // path gets there first, is what makes the timeout a real bound.
+    let settled = false;
+    const settle = (r: CommandResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(grace);
+      resolve(r);
+    };
+
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killTree(child);
+      // A process that ignores SIGKILL is not a thing, but one that has already
+      // detached itself from the group is; give the normal path a moment, then
+      // stop waiting either way.
+      grace = setTimeout(() => settle({ output, code: 124, timedOut }), 500);
     }, opts.timeoutMs);
+    let grace: NodeJS.Timeout | undefined;
 
     if (opts.input !== undefined) child.stdin?.write(opts.input);
     child.stdin?.end();
 
     child.on("error", (err) => {
-      clearTimeout(timer);
       // A missing binary is output the viewer should see, not a crash.
-      resolve({ output: output + `${err.message}\n`, code: 127, timedOut });
+      settle({ output: output + `${err.message}\n`, code: 127, timedOut });
     });
 
     child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ output, code: code ?? 0, timedOut });
+      settle({ output, code: code ?? 0, timedOut });
     });
   });
+}
+
+/**
+ * Kill the shell and everything it started.
+ *
+ * The negative pid signals the whole process group, which only works because
+ * the child was spawned detached. Windows has no process groups to signal, and
+ * the plain kill is the best available there.
+ */
+function killTree(child: import("node:child_process").ChildProcess): void {
+  if (child.pid && process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      /* already gone, or never became a group leader */
+    }
+  }
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    /* already gone */
+  }
 }
 
 /**
