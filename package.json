@@ -35,7 +35,7 @@
     "dev": "tsx src/cli.ts",
     "reel": "tsx src/cli.ts",
     "typecheck": "tsc -p tsconfig.test.json",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx scripts/run-tests.mts",
     "example": "tsx src/cli.ts record examples/taskflow/demo.reel.yaml",
     "test:author": "tsx scripts/author-selftest.ts",
     "test:player": "tsx scripts/player-selftest.ts",
