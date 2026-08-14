@@ -83,6 +83,19 @@ jobs:
       - name: Drift check
         run: npm run reel -- check examples/taskflow/demo.reel.yaml
 
+      # Keep the committed render so the new one can be compared against it.
+      # It has to be saved before recording overwrites the file, and from git
+      # rather than the working tree — that is the version a reviewer is
+      # looking at in the diff.
+      - name: Save the current demo
+        run: |
+          if git cat-file -e HEAD:docs/demo.gif 2>/dev/null; then
+            git show HEAD:docs/demo.gif > "$RUNNER_TEMP/before.gif"
+            echo "Saved the committed render for comparison."
+          else
+            echo "No committed render yet — nothing to compare against."
+          fi
+
       # Regenerate the README media. Deterministic, so this is a no-op unless
       # the demo genuinely changed.
       - name: Regenerate demo media
@@ -151,6 +164,20 @@ jobs:
           git commit -m "chore: regenerate demo media [skip ci]"
           git push origin HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}
 
+      # Say *what* moved, not just that something did. Without this a reviewer
+      # has to scrub a twenty-second video looking for the difference.
+      - name: Describe what changed
+        if: >-
+          steps.media.outputs.changed == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        run: |
+          if [ -f "$RUNNER_TEMP/before.gif" ]; then
+            npx tsx scripts/diff-comment.mts \
+              "$RUNNER_TEMP/before.gif" docs/demo.gif "$RUNNER_TEMP/comment.md" docs/demo.gif
+          fi
+
       # One comment, so a reviewer knows the media in the diff is the new demo.
       - name: Comment on the PR
         if: >-
@@ -160,15 +187,22 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = [
-              '### 🎬 Demo updated',
-              '',
-              'This PR changes what the demo looks like. The regenerated media has been',
-              'committed to this branch — open the **Files changed** tab and expand',
-              '`docs/demo.gif` to see the before/after.',
-              '',
-              '<sub>Reel renders deterministically, so the media only changes when the demo does.</sub>',
-            ].join('\n');
+            const { readFileSync, existsSync } = require('node:fs');
+            const detailed = `${process.env.RUNNER_TEMP}/comment.md`;
+            // The comparison is a bonus, not a precondition: a first render has
+            // nothing to compare against, and a diff that failed should still
+            // leave the reviewer told that the demo moved.
+            const body = existsSync(detailed)
+              ? readFileSync(detailed, 'utf8')
+              : [
+                  '### 🎬 Demo updated',
+                  '',
+                  'This PR changes what the demo looks like. The regenerated media has been',
+                  'committed to this branch — open the **Files changed** tab and expand',
+                  '`docs/demo.gif` to see the before/after.',
+                  '',
+                  '<sub>Reel renders deterministically, so the media only changes when the demo does.</sub>',
+                ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

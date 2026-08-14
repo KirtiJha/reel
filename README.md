@@ -627,6 +627,26 @@ before/after/difference strip with the changed pixels burned magenta. Two
 renders differing is a result, not a failure, so the exit code stays 0 unless
 you pass `--exit-code`.
 
+**The workflow does this for you.** When a PR changes the demo, the comment it
+leaves is the diff rather than a notification — a table of when each change
+happens, how much moved, and which beat it belongs to. So the reviewer knows
+where to look instead of scrubbing a twenty-second video:
+
+> ### 🎬 Demo updated
+>
+> `docs/demo.gif` — **3 changes**, 27% of the running time. Length 15.4s → 15.2s (-0.2s).
+>
+> | When | How much | Where |
+> |---|---|---|
+> | `8.0s–9.8s` | 2.4% of pixels | hero |
+> | `10.4s–11.4s` | 5.7% of pixels | hero |
+> | `15.0s–15.4s` | 50% of pixels | outro, only in one render |
+
+**When a step breaks in CI**, the screenshot, clip and DOM are uploaded as a
+build artifact, so a red build can be diagnosed from the evidence rather than
+reproduced locally — which for a timing-sensitive recording is sometimes not
+possible at all.
+
 **Flaky steps.** `retries: 2` re-runs a step that fails transiently. Retries are
 deliberately narrow: steps that mutate nothing are always safe, while a click or
 a type is retried only when the failure proves the action never landed — so a

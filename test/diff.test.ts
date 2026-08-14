@@ -10,7 +10,10 @@ import {
   CHANNEL_TOLERANCE,
   DEFAULT_THRESHOLD,
   type Sample,
+  type Range,
+  type DiffReport,
 } from "../src/diff/compare.js";
+import { markdownSummary } from "../src/commands/diff.js";
 
 /** A raw RGB buffer of `n` pixels, all the same colour. */
 function flat(n: number, r: number, g = r, b = r): Buffer {
@@ -188,5 +191,89 @@ describe("formatting", () => {
     assert.equal(formatShare(0.0004), "0.04%");
     assert.equal(formatShare(0.032), "3.2%");
     assert.equal(formatShare(0.42), "42%");
+  });
+});
+
+describe("the pull-request comment", () => {
+  const range = (over: Partial<Range> = {}): Range => ({
+    startMs: 8000,
+    endMs: 9800,
+    peak: 0.09,
+    mean: 0.024,
+    samples: 8,
+    truncated: false,
+    beats: ["hero"],
+    ...over,
+  });
+
+  const report = (over: Partial<DiffReport> = {}): DiffReport => ({
+    identical: false,
+    samples: 77,
+    changedSamples: 21,
+    changedFraction: 0.27,
+    ranges: [range()],
+    durationBeforeMs: 15400,
+    durationAfterMs: 15200,
+    fps: 5,
+    ...over,
+  });
+
+  test("names the moment, the size and the beat", () => {
+    // The three things a reviewer needs to decide whether to look: where in the
+    // demo, how much moved, and which part of the story it belongs to.
+    const md = markdownSummary(report(), { file: "docs/demo.gif" });
+    assert.match(md, /8\.0s–9\.8s/);
+    assert.match(md, /2\.4% of pixels/);
+    assert.match(md, /hero/);
+  });
+
+  test("reports a length change, and says so when there isn't one", () => {
+    assert.match(markdownSummary(report(), { file: "d.gif" }), /15\.4s → 15\.2s \(-0\.2s\)/);
+    assert.match(
+      markdownSummary(report({ durationBeforeMs: 15200 }), { file: "d.gif" }),
+      /15\.2s, unchanged/,
+    );
+  });
+
+  test("is a table GitHub will render", () => {
+    const md = markdownSummary(report(), { file: "d.gif" });
+    assert.match(md, /\| When \| How much \| Where \|/);
+    assert.match(md, /\|---\|---\|---\|/);
+  });
+
+  test("counts the changes in the summary line", () => {
+    assert.match(markdownSummary(report(), { file: "d.gif" }), /\*\*1 change\*\*/);
+    assert.match(
+      markdownSummary(report({ ranges: [range(), range()] }), { file: "d.gif" }),
+      /\*\*2 changes\*\*/,
+    );
+  });
+
+  test("says how many rows it left out rather than stopping silently", () => {
+    // A table that ends at the cap without saying so reads as the whole story.
+    const many = Array.from({ length: 12 }, () => range());
+    const md = markdownSummary(report({ ranges: many }), { file: "d.gif", maxRows: 8 });
+    assert.match(md, /4 further changes not listed/);
+  });
+
+  test("flags a range that exists in only one render", () => {
+    const md = markdownSummary(report({ ranges: [range({ truncated: true, beats: [] })] }), {
+      file: "d.gif",
+    });
+    assert.match(md, /only in one render/);
+  });
+
+  test("explains a rewrite that changed nothing visible", () => {
+    // The bytes can differ while every frame matches — a re-encode, container
+    // metadata. Saying that beats an empty table.
+    const md = markdownSummary(report({ identical: true, ranges: [] }), { file: "docs/demo.gif" });
+    assert.match(md, /nothing visible changed/);
+    assert.doesNotMatch(md, /\| When \|/);
+  });
+
+  test("always names the file a reviewer should open", () => {
+    for (const r of [report(), report({ identical: true, ranges: [] })]) {
+      assert.match(markdownSummary(r, { file: "docs/demo.gif" }), /docs\/demo\.gif/);
+    }
   });
 });

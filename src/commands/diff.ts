@@ -209,6 +209,76 @@ export function printDiff(report: DiffReport & { strips: string[] }): void {
   }
 }
 
+/**
+ * The same report as a pull-request comment.
+ *
+ * "The demo changed, go and look" is a notification, not a review — a reviewer
+ * still has to scrub a twenty-second video hunting for the difference. Naming
+ * the moments, and the beats they fall in, is what makes the comment worth
+ * reading.
+ *
+ * Pure and separate from the terminal renderer, so the wording can be tested
+ * without rendering anything and the workflow doesn't grow a formatter in YAML.
+ */
+export function markdownSummary(
+  report: DiffReport,
+  opts: { file: string; maxRows?: number } = { file: "the demo" },
+): string {
+  const lines: string[] = ["### 🎬 Demo updated", ""];
+
+  if (report.identical) {
+    // Reachable: the file's bytes can differ while every sampled frame matches
+    // — container metadata, a re-encode. Saying so is more useful than an empty
+    // table, and stops a reviewer hunting for a change that isn't visible.
+    lines.push(
+      `\`${opts.file}\` was rewritten, but nothing visible changed — every sampled frame matches.`,
+      "",
+      FOOTER,
+    );
+    return lines.join("\n");
+  }
+
+  const before = (report.durationBeforeMs / 1000).toFixed(1);
+  const after = (report.durationAfterMs / 1000).toFixed(1);
+  const delta = (report.durationAfterMs - report.durationBeforeMs) / 1000;
+  const length =
+    report.durationBeforeMs === report.durationAfterMs
+      ? `${after}s, unchanged`
+      : `${before}s → ${after}s (${delta > 0 ? "+" : ""}${delta.toFixed(1)}s)`;
+
+  const n = report.ranges.length;
+  lines.push(
+    `\`${opts.file}\` — **${n} ${n === 1 ? "change" : "changes"}**, ` +
+      `${formatShare(report.changedFraction)} of the running time. Length ${length}.`,
+    "",
+    "| When | How much | Where |",
+    "|---|---|---|",
+  );
+
+  const max = opts.maxRows ?? 8;
+  for (const r of report.ranges.slice(0, max)) {
+    const where = [...r.beats, ...(r.truncated ? ["only in one render"] : [])];
+    lines.push(`| \`${formatRange(r)}\` | ${formatShare(r.mean)} of pixels | ${where.join(", ") || "—"} |`);
+  }
+  if (n > max) {
+    // Never silently truncate: a table that stops at eight without saying so
+    // reads as "that was all of them".
+    lines.push(`| … | | ${n - max} further ${n - max === 1 ? "change" : "changes"} not listed |`);
+  }
+
+  lines.push(
+    "",
+    "The regenerated media is committed to this branch — open the **Files changed** tab",
+    `and expand \`${opts.file}\` to see it.`,
+    "",
+    FOOTER,
+  );
+  return lines.join("\n");
+}
+
+const FOOTER =
+  "<sub>Reel renders deterministically, so the media only changes when the demo does.</sub>";
+
 export const DIFF_DEFAULTS = {
   fps: DEFAULT_SAMPLE_FPS,
   threshold: DEFAULT_THRESHOLD,
