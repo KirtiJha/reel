@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { RunConfig } from "../spec/schema.js";
+import { killTree } from "../util/kill.js";
 import { log, ReelError } from "../util/log.js";
 
 export interface RunningApp {
@@ -42,17 +43,10 @@ export async function startApp(run: RunConfig): Promise<RunningApp> {
 
   const stop = async () => {
     if (exited || !child.pid) return;
-    // Kill the whole process group (shell + children like dev servers). The
-    // negative-pid signal requires the child to be a group leader (detached).
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch {
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        /* already gone */
-      }
-    }
+    // The shell plus everything it started — a dev server that outlives the
+    // recording keeps its port bound and breaks the *next* run, which is a far
+    // more confusing failure than a slow teardown.
+    killTree(child, "SIGTERM");
     await sleep(300);
   };
 

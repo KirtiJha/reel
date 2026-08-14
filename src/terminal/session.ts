@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { killTree } from "../util/kill.js";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -106,29 +107,6 @@ export async function runCommand(cmd: string, opts: RunOptions): Promise<Command
       settle({ output, code: code ?? 0, timedOut });
     });
   });
-}
-
-/**
- * Kill the shell and everything it started.
- *
- * The negative pid signals the whole process group, which only works because
- * the child was spawned detached. Windows has no process groups to signal, and
- * the plain kill is the best available there.
- */
-function killTree(child: import("node:child_process").ChildProcess): void {
-  if (child.pid && process.platform !== "win32") {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-      return;
-    } catch {
-      /* already gone, or never became a group leader */
-    }
-  }
-  try {
-    child.kill("SIGKILL");
-  } catch {
-    /* already gone */
-  }
 }
 
 /**
