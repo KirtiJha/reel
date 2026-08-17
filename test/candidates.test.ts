@@ -1,6 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { parseIntent, deterministicCandidates, scoreCandidate } from "../src/heal/candidates.js";
+import { toPlaywrightSelector } from "../src/overlay/overlay.js";
 import type { ElementInfo } from "../src/ai/agent-tools.js";
 
 const el = (name: string, role: string, selector: string, ref = "e0"): ElementInfo => ({
@@ -43,6 +44,32 @@ describe("parseIntent", () => {
 
   test("returns nothing useful for an opaque selector", () => {
     assert.deepEqual(parseIntent("div > span:nth-child(3)"), {});
+  });
+
+  test("reads through a scope to what was wanted", () => {
+    // The nav says which Tutorial link, not what it was. A repair that finds
+    // the link elsewhere is still the repair — heal replaces the selector whole.
+    assert.deepEqual(parseIntent("nav >> role=link[name=Tutorial]"), {
+      role: "link",
+      name: "Tutorial",
+    });
+    assert.equal(parseIntent('[data-testid="rows"] >> text=Delete').name, "Delete");
+  });
+});
+
+describe("toPlaywrightSelector", () => {
+  test("normalises each half of a scoped selector", () => {
+    // Scoping is Playwright's own chaining operator; the role half still needs
+    // its name quoting the way an unscoped one would.
+    assert.equal(
+      toPlaywrightSelector("nav >> role=link[name=Tutorial - Basics]"),
+      'nav >> role=link[name="Tutorial - Basics"]',
+    );
+  });
+
+  test("leaves an unscoped selector exactly as it was", () => {
+    assert.equal(toPlaywrightSelector("#add"), "#add");
+    assert.equal(toPlaywrightSelector("role=button[name=Add]"), 'role=button[name="Add"]');
   });
 });
 

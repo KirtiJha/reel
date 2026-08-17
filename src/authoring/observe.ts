@@ -111,11 +111,20 @@ export const OBSERVER_SCRIPT = `
     return norm(el.innerText || el.textContent) || norm(title);
   };
 
+  /**
+   * Every count takes the region to count in.
+   *
+   * A name that matches twice in the page usually matches once in the part of
+   * the page it belongs to, and that is the difference between a selector and a
+   * CSS path. The root is the document unless a caller is asking "how many, in
+   * here?" — which is the whole of the scoping machinery below.
+   */
+
   /** Elements matching a role+name pair, the way Playwright role= resolves. */
-  const countRole = (role, name) => {
+  const countRole = (role, name, root) => {
     const wanted = name.toLowerCase();
     let n = 0;
-    for (const el of document.querySelectorAll("*")) {
+    for (const el of (root || document).querySelectorAll("*")) {
       if (roleOf(el) !== role) continue;
       if (name && nameOf(el).toLowerCase() !== wanted) continue;
       n++;
@@ -127,10 +136,10 @@ export const OBSERVER_SCRIPT = `
    * Playwright text= takes the smallest element containing the string, so a
    * parent that merely wraps the match is not another match.
    */
-  const countText = (text) => {
+  const countText = (text, root) => {
     const wanted = text.toLowerCase();
     let n = 0;
-    for (const el of document.querySelectorAll("*")) {
+    for (const el of (root || document).querySelectorAll("*")) {
       if (!norm(el.textContent).toLowerCase().includes(wanted)) continue;
       let deeper = false;
       for (const child of el.children) {
@@ -141,8 +150,8 @@ export const OBSERVER_SCRIPT = `
     return n;
   };
 
-  const countCss = (selector) => {
-    try { return document.querySelectorAll(selector).length; } catch { return 0; }
+  const countCss = (selector, root) => {
+    try { return (root || document).querySelectorAll(selector).length; } catch { return 0; }
   };
 
   /** A short structural path — the fallback when nothing names the element. */
@@ -165,42 +174,103 @@ export const OBSERVER_SCRIPT = `
 
   const TEST_ATTRS = ["data-testid", "data-test-id", "data-test", "data-cy", "data-qa"];
 
+  /**
+   * Regions a page is already divided into, in the app's own terms.
+   *
+   * Scoping is only worth doing to a container the app itself treats as one —
+   * a nav, a dialog, a row. An arbitrary wrapper div would be the CSS path
+   * problem again with extra steps, so those are not on the list.
+   */
+  const CONTAINERS = "main,nav,header,footer,aside,form,dialog,section,article,li,tr," +
+    "[role=navigation],[role=main],[role=banner],[role=contentinfo],[role=complementary]," +
+    "[role=dialog],[role=search],[role=form],[role=region],[role=listitem],[role=row]," +
+    "[role=tabpanel],[role=menu],[role=toolbar]";
+
+  /**
+   * A selector for the region itself, which must be unique on its own terms.
+   *
+   * If it takes an nth-of-type to say which nav, the scope is no more stable
+   * than the path it was meant to replace — better to report the ambiguity.
+   */
+  const scopeSelector = (el) => {
+    for (const attr of TEST_ATTRS) {
+      const value = el.getAttribute(attr);
+      if (value) {
+        const sel = "[" + attr + '="' + value.replace(/"/g, '\\\\"') + '"]';
+        if (countCss(sel) === 1) return sel;
+      }
+    }
+    // Only a plain id: one that needs escaping buys ambiguity, and Node checks
+    // whether it looks generated, which it can only do on the raw text.
+    if (el.id && /^[A-Za-z][\\w-]*$/.test(el.id) && countCss("#" + el.id) === 1) return "#" + el.id;
+    const tag = el.tagName.toLowerCase();
+    if (countCss(tag) === 1) return tag;
+    const role = el.getAttribute("role");
+    if (role && countCss("[role=" + role + "]") === 1) return "[role=" + role + "]";
+    return "";
+  };
+
   const candidatesFor = (el) => {
     const out = [];
+    /** count(root) answers "how many in here?", for the scoping pass below. */
+    const add = (kind, selector, count) => {
+      out.push({ kind: kind, selector: selector, matches: count(document), count: count });
+    };
 
     for (const attr of TEST_ATTRS) {
       const value = el.getAttribute(attr);
       if (value) {
         const sel = "[" + attr + '="' + value.replace(/"/g, '\\\\"') + '"]';
-        out.push({ kind: "testid", selector: sel, matches: countCss(sel) });
+        add("testid", sel, (root) => countCss(sel, root));
         break;
       }
     }
 
-    if (el.id) out.push({ kind: "id", selector: "#" + el.id, matches: countCss("#" + CSS.escape(el.id)) });
+    if (el.id) add("id", "#" + el.id, (root) => countCss("#" + CSS.escape(el.id), root));
 
     const role = roleOf(el);
     const name = nameOf(el);
     if (role && name) {
       const quoted = /[\\s\\]"']/.test(name) ? JSON.stringify(name) : name;
-      out.push({ kind: "role", selector: "role=" + role + "[name=" + quoted + "]", matches: countRole(role, name) });
+      add("role", "role=" + role + "[name=" + quoted + "]", (root) => countRole(role, name, root));
     } else if (role) {
-      out.push({ kind: "role", selector: "role=" + role, matches: countRole(role, "") });
+      add("role", "role=" + role, (root) => countRole(role, "", root));
     }
 
     const placeholder = el.getAttribute && el.getAttribute("placeholder");
     if (placeholder) {
       const sel = '[placeholder="' + placeholder.replace(/"/g, '\\\\"') + '"]';
-      out.push({ kind: "placeholder", selector: sel, matches: countCss(sel) });
+      add("placeholder", sel, (root) => countCss(sel, root));
     }
 
     const text = norm(el.innerText || el.textContent);
-    if (text) out.push({ kind: "text", selector: "text=" + text, matches: countText(text) });
+    if (text) add("text", "text=" + text, (root) => countText(text, root));
 
     const path = cssPath(el);
-    if (path) out.push({ kind: "css", selector: path, matches: countCss(path) });
+    if (path) add("css", path, (root) => countCss(path, root));
 
-    return out;
+    /*
+     * A name that matches twice is not a bad name — it is a name that has not
+     * said which part of the page it means. A docs site has a Tutorial link in
+     * the nav and another in the hero; discarding both leaves a CSS path, while
+     * "the Tutorial link in the nav" is exactly what the person meant and stays
+     * true through a redesign of either one.
+     *
+     * The nearest region that makes the name unique wins, so the scope stays as
+     * small as the ambiguity requires.
+     */
+    const ambiguous = out.filter((c) => c.matches > 1 && c.kind !== "css");
+    for (let node = el.parentElement; node && ambiguous.length; node = node.parentElement) {
+      if (!node.matches || !node.matches(CONTAINERS)) continue;
+      const scope = scopeSelector(node);
+      if (!scope) continue;
+      const resolved = ambiguous.filter((c) => c.count(node) === 1);
+      for (const c of resolved) out.push({ kind: "scoped", selector: scope + " >> " + c.selector, matches: 1 });
+      if (resolved.length) break;
+    }
+
+    // The counters are closures over the page; only the reading travels.
+    return out.map((c) => ({ kind: c.kind, selector: c.selector, matches: c.matches }));
   };
 
   const ours = (node) => !!(node && node.closest && node.closest("#" + UI_ID));

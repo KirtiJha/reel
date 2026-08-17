@@ -9,6 +9,8 @@ import {
   textSelector,
   MAX_ROLE_NAME,
   MAX_TEXT_SELECTOR,
+  kindOf,
+  unscope,
   type Candidate,
 } from "../src/authoring/selector.js";
 import { relativeUrl, toSteps, type CaptureEvent } from "../src/authoring/steps.js";
@@ -78,6 +80,52 @@ describe("choosing a selector", () => {
   test("still rejects an accessible name that is a whole paragraph", () => {
     const essay = roleSelector("button", "x".repeat(MAX_ROLE_NAME + 1));
     assert.equal(chooseSelector([c("role", essay)]), null);
+  });
+});
+
+describe("scoping an ambiguous name", () => {
+  const tutorial = "role=link[name=Tutorial]";
+
+  test("says where, in preference to a CSS path", () => {
+    // A docs site with a Tutorial link in the nav and another in the hero. Both
+    // names are good; neither is unique. "The one in the nav" is what the person
+    // meant, and it survives a redesign of either half.
+    assert.equal(
+      chooseSelector([c("role", tutorial, 2), c("css", "nav > div > a:nth-of-type(2)"), c("scoped", `nav >> ${tutorial}`)]),
+      `nav >> ${tutorial}`,
+    );
+  });
+
+  test("but an unqualified name always wins", () => {
+    // Scoping asks two things to stay true instead of one. It is a fallback,
+    // not an improvement.
+    assert.equal(
+      chooseSelector([c("scoped", `nav >> ${tutorial}`), c("text", "text=Tutorial")]),
+      "text=Tutorial",
+    );
+  });
+
+  test("holds both halves to the same standard", () => {
+    // A region pinned by a framework-minted id is no more durable than an
+    // element pinned by one — and the scope is the half nobody reads closely.
+    assert.equal(chooseSelector([c("scoped", `#mui-4821 >> ${tutorial}`)]), null);
+    assert.equal(chooseSelector([c("scoped", 'nav >> [data-testid="css-1x2y3z4a"]')]), null);
+    assert.equal(chooseSelector([c("scoped", "nav >> text=" + "x".repeat(200))]), null);
+  });
+
+  test("reads a selector's flavour back out of its syntax", () => {
+    assert.equal(kindOf("nav >> role=link[name=Tutorial]"), "scoped");
+    assert.equal(kindOf("role=button[name=Add]"), "role");
+    assert.equal(kindOf("text=Add"), "text");
+    assert.equal(kindOf("#add"), "id");
+    assert.equal(kindOf('[placeholder="Email"]'), "placeholder");
+    assert.equal(kindOf('[data-testid="add"]'), "testid");
+    assert.equal(kindOf("div > button"), "css");
+  });
+
+  test("unscope drops the region and keeps the name", () => {
+    assert.equal(unscope(`nav >> ${tutorial}`), tutorial);
+    assert.equal(unscope(tutorial), tutorial);
   });
 });
 

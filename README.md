@@ -109,9 +109,14 @@ The interesting part is which selector each step gets, and it's ranked by
 *stability of meaning*, not convenience: a test id is a contract, an accessible
 name is a promise to users, a CSS path is neither. Two rules do most of the work:
 
-- **Anything ambiguous is discarded, not indexed.** `text=Delete` matching four
-  rows isn't "the first Delete" — it's a selector that will act on whichever row
-  the layout puts first tomorrow.
+- **Ambiguity is resolved by saying where, never by index.** A docs site has a
+  Tutorial link in the nav and another in the hero, so `role=link[name=Tutorial]`
+  is qualified to `nav >> role=link[name=Tutorial]` — Playwright's own chaining
+  operator, and the region has to be one the app already treats as a region
+  (a nav, a dialog, a row) and be unique on its own terms. When nothing makes
+  the name unique it is discarded: `text=Delete` matching four rows isn't "the
+  first Delete", it's a selector that will act on whichever row the layout puts
+  first tomorrow.
 - **Framework-minted names are rejected.** `:r3:`, `mui-4821`, `css-1x2y3z4a` are
   stable within a page load and worthless across one, which is the worst kind of
   failure to debug.

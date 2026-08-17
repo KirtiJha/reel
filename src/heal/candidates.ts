@@ -1,4 +1,5 @@
 import type { ElementInfo } from "../ai/agent-tools.js";
+import { unscope } from "../authoring/selector.js";
 
 /**
  * Deterministic selector repair.
@@ -27,7 +28,10 @@ export interface Intent {
 
 /** Pull the human-meaningful part out of a selector of any supported flavour. */
 export function parseIntent(selector: string): Intent {
-  const s = selector.trim();
+  // `nav >> role=link[name=Tutorial]` wanted the Tutorial link; the nav says
+  // which one, not what. A repair that finds the element somewhere else is
+  // still the repair — heal replaces the whole selector, scope included.
+  const s = unscope(selector.trim()).trim();
 
   // role=button[name=Add] / role=textbox[name="Email address"]
   const role = /^role=([a-z]+)(?:\[name=(?:"([^"]*)"|'([^']*)'|([^\]]*))\])?$/i.exec(s);

@@ -15,7 +15,7 @@
 
 /** One way of naming an element, as observed in the page. */
 export interface Candidate {
-  kind: "testid" | "id" | "role" | "placeholder" | "label" | "text" | "css";
+  kind: "testid" | "id" | "role" | "placeholder" | "label" | "text" | "scoped" | "css";
   selector: string;
   /** How many elements in the document this matches. Only 1 is usable. */
   matches: number;
@@ -24,6 +24,10 @@ export interface Candidate {
 /**
  * Preference order. Everything above `css` describes the element in the app's
  * own terms; `css` is what's left when nothing does.
+ *
+ * `scoped` sits just above it: a name qualified by the region it lives in is
+ * still a name, but it now depends on two things holding rather than one, so
+ * any unqualified name is preferred to it.
  */
 const RANK: Record<Candidate["kind"], number> = {
   testid: 0,
@@ -32,8 +36,41 @@ const RANK: Record<Candidate["kind"], number> = {
   label: 3,
   placeholder: 4,
   text: 5,
-  css: 6,
+  scoped: 6,
+  css: 7,
 };
+
+/**
+ * Playwright's chaining operator, and the whole of Reel's scoping grammar.
+ *
+ * `nav >> role=link[name=Tutorial]` means "the Tutorial link in the nav" and is
+ * resolved by Playwright itself — there is no Reel-specific syntax to learn, or
+ * to reimplement in the driver.
+ */
+export const SCOPE = " >> ";
+
+/** The part of a scoped selector that names the element, minus its region. */
+export function unscope(selector: string): string {
+  const at = selector.indexOf(SCOPE);
+  return at === -1 ? selector : selector.slice(at + SCOPE.length);
+}
+
+/**
+ * Which flavour a selector is written in, read back from its own syntax.
+ *
+ * The page reports a kind alongside every candidate, so this exists for the
+ * halves of a scoped selector — which arrive as one string — and for `heal`,
+ * which is handed selectors out of a spec a person may have edited.
+ */
+export function kindOf(selector: string): Candidate["kind"] {
+  if (selector.includes(SCOPE)) return "scoped";
+  if (selector.startsWith("role=")) return "role";
+  if (selector.startsWith("text=")) return "text";
+  if (selector.startsWith("#")) return "id";
+  if (/^\[placeholder=/.test(selector)) return "placeholder";
+  if (/^\[data-/.test(selector)) return "testid";
+  return "css";
+}
 
 /**
  * Ids and names that a framework generated rather than a person chose.
@@ -76,7 +113,9 @@ function hashLike(segment: string): boolean {
  *
  * Ambiguous candidates are discarded rather than disambiguated with an index:
  * `text=Delete` matching four rows is not "the first Delete", it is a selector
- * that will act on whichever one the layout puts first tomorrow.
+ * that will act on whichever one the layout puts first tomorrow. The page may
+ * offer a `scoped` alternative that resolves the ambiguity by saying *where*
+ * instead — that one is unique, so it arrives here as an ordinary candidate.
  */
 export function chooseSelector(candidates: Candidate[]): string | null {
   const usable = candidates
@@ -94,6 +133,15 @@ export function chooseSelector(candidates: Candidate[]): string | null {
  * tested against the real shapes frameworks produce.
  */
 function usableSelector(c: Candidate): boolean {
+  if (c.kind === "scoped") {
+    const at = c.selector.indexOf(SCOPE);
+    if (at === -1) return false;
+    // Both halves have to hold, so both are held to the same standard: a region
+    // pinned by a generated id is no more durable than an element pinned by one.
+    return [c.selector.slice(0, at), c.selector.slice(at + SCOPE.length)].every(
+      (part) => usableSelector({ kind: kindOf(part), selector: part, matches: 1 }),
+    );
+  }
   if (c.kind === "id") return idSelector(c.selector.replace(/^#/, "")) !== null;
   if (c.kind === "testid" || c.kind === "placeholder") {
     const value = /=(?:"([^"]*)"|'([^']*)')\]$/.exec(c.selector);

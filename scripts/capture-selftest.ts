@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { BINDING, OBSERVER_SCRIPT, type ObservedEvent } from "../src/authoring/observe.js";
 import { toSteps, type CaptureEvent } from "../src/authoring/steps.js";
 import { chooseSelector, roleSelector, type Candidate } from "../src/authoring/selector.js";
+import { toPlaywrightSelector } from "../src/overlay/overlay.js";
 import { emitSpec } from "../src/authoring/emit.js";
 import { startApp } from "../src/driver/app.js";
 import { loadSpec } from "../src/spec/load.js";
@@ -108,33 +109,53 @@ try {
   }
   ok("the captured spec replays against the app", replayed, why);
 
-  // An icon button, which the example app doesn't have and real apps all do.
-  // The click lands on the <path> inside the <svg>: no role, no name, no text,
-  // so before the observer walked up to the button this came out as
-  // `div > button > svg:nth-of-type(3) > path`. Served over http rather than
-  // set with setContent so the init script installs the way it does in a
+  // Two shapes the example app doesn't have and real apps all do, taken from a
+  // Docusaurus site: an icon button whose click lands on the <path> inside its
+  // <svg>, and the same link name in two regions. Served over http rather than
+  // set with setContent so the init script installs the way it does in a real
   // capture.
   const probe = await context.newPage();
   const label = "Switch between dark and light mode (currently system mode)";
   await probe.route("**/__probe", (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><button aria-label="${label}">
-        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L15 15"/></svg>
-      </button>`,
+      body: `<!doctype html>
+        <nav><a href="#docs">Tutorial</a></nav>
+        <main>
+          <a href="#docs">Tutorial</a>
+          <button aria-label="${label}">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L15 15"/></svg>
+          </button>
+        </main>`,
     }),
   );
-  const seen = events.length;
   await probe.goto(`${URL_}/__probe`, { waitUntil: "domcontentloaded" });
-  await probe.click("svg path");
-  await probe.waitForTimeout(300);
 
-  const click = events.slice(seen).find((e): e is ObservedEvent => e.type === "click");
-  ok("a click on an icon is reported as a click on its button", click?.tag === "button", click?.tag);
+  const clicked = async (target: string): Promise<Candidate[]> => {
+    const seen = events.length;
+    await probe.click(target);
+    await probe.waitForTimeout(250);
+    const event = events.slice(seen).find((e): e is ObservedEvent => e.type === "click");
+    return (event?.candidates ?? []) as Candidate[];
+  };
+
+  const icon = await clicked("svg path");
   ok(
-    "and it is named, not path-selected",
-    chooseSelector((click?.candidates ?? []) as Candidate[]) === roleSelector("button", label),
-    JSON.stringify(chooseSelector((click?.candidates ?? []) as Candidate[])),
+    "a click on an icon is named after its button, not path-selected",
+    chooseSelector(icon) === roleSelector("button", label),
+    JSON.stringify(chooseSelector(icon)),
+  );
+
+  const link = await clicked("nav a");
+  const scoped = chooseSelector(link);
+  ok("an ambiguous name is qualified by its region", scoped === "nav >> role=link[name=Tutorial]", String(scoped));
+  // The point of the whole exercise: Playwright has to agree that this names
+  // one element. A scope that reads well and resolves to two is worse than the
+  // CSS path it replaced.
+  ok(
+    "and Playwright resolves it to exactly one element",
+    scoped !== null && (await probe.locator(toPlaywrightSelector(scoped)).count()) === 1,
+    scoped ? `${await probe.locator(toPlaywrightSelector(scoped)).count()} matches` : "no selector",
   );
 } finally {
   await browser.close().catch(() => {});

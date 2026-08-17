@@ -1,4 +1,5 @@
 import type { Page } from "playwright-core";
+import { SCOPE } from "../authoring/selector.js";
 
 /**
  * The overlay layer draws Reel's presentation furniture INTO the page, in a
@@ -541,9 +542,13 @@ export async function measureText(page: Page, text: string): Promise<TextMetrics
  * selectors:
  *   text=Foo            → text locator
  *   role=button[name=X] → getByRole-style engine selector
+ *   nav >> role=link[…] → each half translated, chained by Playwright
  *   anything else       → passed through (CSS / Playwright selector)
  */
 export function toPlaywrightSelector(sel: string): string {
+  // Scoping is Playwright's own chaining operator, so the only work here is to
+  // make sure a role or text half is normalised the same as an unscoped one.
+  if (sel.includes(SCOPE)) return sel.split(SCOPE).map(toPlaywrightSelector).join(SCOPE);
   if (sel.startsWith("text=")) return `text=${sel.slice(5)}`;
   if (sel.startsWith("role=")) {
     const m = /^role=([a-z]+)(?:\[name=(.+?)\])?$/i.exec(sel);
