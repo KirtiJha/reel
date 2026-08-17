@@ -1,4 +1,4 @@
-import type { ChatResult, OaiMessage, OaiToolCall, OaiToolSpec } from "./llm.js";
+import type { ChatResult, ContentPart, OaiMessage, OaiToolCall, OaiToolSpec } from "./llm.js";
 
 /**
  * Translation between Reel's canonical (OpenAI-shaped) chat format and
@@ -30,6 +30,30 @@ interface AnthropicBlock {
   input?: unknown;
   tool_use_id?: string;
   content?: unknown;
+  source?: { type: "base64"; media_type: string; data: string };
+}
+
+/**
+ * A multipart content array → Anthropic blocks.
+ *
+ * The only structural difference is images: OpenAI takes a URL (which Reel
+ * always fills with a data: URL, since the bytes were just produced locally),
+ * Anthropic takes the media type and the base64 payload as separate fields. A
+ * part that isn't a data: URL is dropped rather than forwarded — Anthropic has
+ * no way to fetch it, and a silently half-sent request is worse than a missing
+ * image.
+ */
+function toBlocks(parts: ContentPart[]): AnthropicBlock[] {
+  const out: AnthropicBlock[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      if (part.text !== "") out.push({ type: "text", text: part.text });
+      continue;
+    }
+    const m = /^data:([^;,]+);base64,(.*)$/s.exec(part.image_url.url);
+    if (m) out.push({ type: "image", source: { type: "base64", media_type: m[1]!, data: m[2]! } });
+  }
+  return out;
 }
 
 export interface AnthropicRequest {
@@ -79,6 +103,8 @@ export function toAnthropicRequest(
     const content: AnthropicBlock[] = [];
     if (typeof m.content === "string" && m.content !== "") {
       content.push({ type: "text", text: m.content });
+    } else if (Array.isArray(m.content)) {
+      content.push(...toBlocks(m.content));
     }
     for (const call of m.tool_calls ?? []) {
       content.push({

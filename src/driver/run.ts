@@ -45,6 +45,12 @@ export interface RunResult {
    * about the demo in its own terms rather than in raw seconds.
    */
   timeline: { label: string; t: number }[];
+  /**
+   * The caption timeline, for the same reason as `timeline`: `reel review` has
+   * to know what the demo was claiming at the moment a frame changed, and
+   * re-deriving that from the spec would mean re-running the spec.
+   */
+  captions: { t: number; text: string }[];
 }
 
 /**
@@ -261,7 +267,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         });
       }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
-      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats };
+      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats, captions };
     }
 
     // Encode deliverables.
@@ -367,7 +373,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       outputs.push(...narrated);
     }
 
-    return { frames: frames.length, beats: beats.length, durationMs, outputs, timeline: beats };
+    return { frames: frames.length, beats: beats.length, durationMs, outputs, timeline: beats, captions };
   } finally {
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});

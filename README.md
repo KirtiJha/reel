@@ -550,6 +550,7 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel record <spec>` | Drive the app and render GIF / MP4 / WebM / storyboard. |
 | `reel check <spec>` | Re-run headlessly; **exit 1 if any step can't complete** (CI drift). |
 | `reel diff <before> <after>` | Compare two renders and report **which parts of the demo changed**. |
+| `reel review <before> <after>` | Say **what** changed and whether the demo is still true — including captions the UI no longer matches. |
 | `reel heal <spec> [--write]` | Re-run; when a step breaks (UI drift), an agent re-resolves it, verifies the fix, and repairs the spec. |
 | `reel schema [--out <file>]` | Print the JSON Schema for a spec (editor autocomplete). |
 | `reel ui` | Launch **Reel Studio**, the local web UI. |
@@ -564,6 +565,7 @@ Useful flags:
 | `record --if-changed` | Skip the render when the spec, its inputs and its outputs are all unchanged. |
 | `record --app-revision <sha>` | Identify the app being demoed, so a changed app forces a re-render. |
 | `diff --exit-code` | Exit 1 when the two renders differ, like `git diff --exit-code`. |
+| `review --fail-on <verdict>` | Exit 1 at `stale-caption` (default), `content`, `cosmetic`, or never. |
 | `-v, --verbose` | Per-step detail, including the ffmpeg invocations. |
 
 ## Why it's reliable (and the plan's three hard problems)
@@ -683,6 +685,49 @@ where to look instead of scrubbing a twenty-second video:
 > | `10.4s–11.4s` | 5.7% of pixels | hero |
 > | `15.0s–15.4s` | 50% of pixels | outro, only in one render |
 
+**Is the demo still *true*?** That's a different question, and it's the one that
+scales badly. `reel check` proves every step ran. `reel diff` proves pixels
+moved. A demo can pass both and be wrong: rename a button from *Start free
+trial* to *Get started* and the flow still completes, the diff is a fraction of
+a percent, and the caption over it now names a control that no longer exists.
+At one demo somebody watches the GIF and catches that. At forty, regenerated
+weekly, nobody does.
+
+```
+$ reel review before.gif out/demo.gif
+
+  ✗ 1.6s–5.2s
+    The primary button now reads "Create"; it read "Add". The caption
+    "Press Add to save it" names a button that no longer exists.
+    caption: “Press Add to save it”
+
+  0 needing a look · 1 stale captions · 0 cosmetic
+```
+
+The pixel pass still decides **where**; the model only judges **what**, looking
+at the before/after/difference strip for one moment at a time, told which
+captions were on screen for it. Which captions those are is computed from the
+recorded timeline, not asked — the model is never given a job that arithmetic
+can do. Verdicts are `cosmetic`, `content` and `stale-caption`, and
+`--fail-on` decides which of them stops a pipeline (`stale-caption` by
+default). A reply it can't parse becomes `unreviewed`, which ranks *above*
+cosmetic: "we couldn't tell" must never be quieter than "we looked and it was
+fine".
+
+It needs a model (any of the providers below — the same `REEL_LLM_*`
+configuration `heal` and `author` use). Without one you get the pixel report
+and a line saying nothing judged it, never a green tick. Set `REEL_LLM_API_KEY`
+as a repository secret and the PR comment upgrades itself from the table above
+to a review:
+
+> ### 🎬 Demo review
+>
+> `docs/demo.gif` — **A caption no longer matches the screen.**
+>
+> | | When | What changed |
+> |---|---|---|
+> | 🔴 | `1.6s–5.2s` | The primary button now reads "Create"; it read "Add". The caption "Press Add to save it" names a button that no longer exists. |
+
 **When a step breaks in CI**, the screenshot, clip and DOM are uploaded as a
 build artifact, so a red build can be diagnosed from the evidence rather than
 reproduced locally — which for a timing-sensitive recording is sometimes not
@@ -737,7 +782,7 @@ drift repair**, **subtitles + localization**, and **PII redaction + mock data**
 — the model-backed parts provider-agnostic via a LiteLLM proxy, and optional.
 
 Around them, the things that make it usable day to day: `reel doctor`,
-failure artifacts, `--json`, `--if-changed`, `reel diff`, and a JSON Schema for
+failure artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, and a JSON Schema for
 editor autocomplete.
 
 ## License

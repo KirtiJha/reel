@@ -145,6 +145,11 @@ async function beatsFor(after: string, before: string): Promise<{ label: string;
  *
  * The peak rather than the midpoint: a change that fades in is most legible at
  * its strongest, and a strip sampled mid-fade understates what happened.
+ *
+ * Aligned with `report.ranges`, with an empty string where a range exists in
+ * only one render and so has nothing to compare against. `reel review` reads
+ * these by index, and a list that quietly closed its gaps would hand the model
+ * the wrong moment.
  */
 async function writeStrips(
   a: string[],
@@ -161,10 +166,14 @@ async function writeStrips(
   for (let i = 0; i < report.ranges.length; i++) {
     const r = report.ranges[i]!;
     const inRange = samples.filter((s) => s.t >= r.startMs && s.t <= r.endMs && !s.missing);
-    if (inRange.length === 0) continue; // range exists in only one render
-    const peak = inRange.reduce((best, s) => (s.score > best.score ? s : best), inRange[0]!);
-    const index = samples.indexOf(peak);
-    if (index >= a.length || index >= b.length) continue;
+    const peak = inRange.length
+      ? inRange.reduce((best, s) => (s.score > best.score ? s : best), inRange[0]!)
+      : null;
+    const index = peak ? samples.indexOf(peak) : -1;
+    if (index < 0 || index >= a.length || index >= b.length) {
+      written.push("");
+      continue;
+    }
 
     const out = join(dir, `${String(i + 1).padStart(2, "0")}-${(r.startMs / 1000).toFixed(1)}s.png`);
     await writeComparisonStrip(a[index]!, b[index]!, geo, out);
@@ -203,9 +212,10 @@ export function printDiff(report: DiffReport & { strips: string[] }): void {
     console.error(`  ${pc.cyan(when)} ${size} of pixels${where}${only}`);
   }
 
-  if (report.strips.length) {
+  const strips = report.strips.filter(Boolean);
+  if (strips.length) {
     log.info(`\nBefore / after / difference:`);
-    for (const s of report.strips) log.info(`  ${s}`);
+    for (const s of strips) log.info(`  ${s}`);
   }
 }
 

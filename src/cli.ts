@@ -23,6 +23,8 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
 import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
+import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
+import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
 import { authorSpec } from "./ai/author.js";
@@ -98,6 +100,7 @@ program
       const outputs: string[] = [];
       const rendered: Record<string, unknown>[] = [];
       let timeline: { label: string; t: number }[] = [];
+      let captions: { t: number; text: string }[] = [];
       let durationMs = 0;
       for (const v of variants) {
         if (variants.length > 1) log.phase(`Variant: ${v.label}`);
@@ -110,6 +113,7 @@ program
         // same script at several sizes, so its beats are the same beats.
         if (!timeline.length) {
           timeline = res.timeline;
+          captions = res.captions;
           durationMs = res.durationMs;
         }
         rendered.push({
@@ -124,7 +128,7 @@ program
       for (const o of outputs) log.info(o);
       // Written after a successful render only: a stamp for media that failed
       // to encode would skip the retry that fixes it.
-      await writeStamp(stamp, fp, outputs, { beats: timeline, durationMs });
+      await writeStamp(stamp, fp, outputs, { beats: timeline, captions, durationMs });
       emit("record", true, {
         result: {
           spec: loaded.path,
@@ -275,6 +279,58 @@ program
         // changing the app — it is a result, not a failure.
         if (opts.exitCode && !report.identical) process.exitCode = 1;
       }, "diff");
+    },
+  );
+
+program
+  .command("review")
+  .argument("<before>", "the earlier render (gif, mp4 or webm)")
+  .argument("<after>", "the newer render")
+  .description("Say what changed between two renders, and whether the demo is still true.")
+  .option("--fps <n>", "samples per second to compare at", String(REVIEW_DEFAULTS.fps))
+  .option(
+    "--threshold <pct>",
+    "percentage of changed pixels before a moment counts as changed",
+    String(REVIEW_DEFAULTS.threshold * 100),
+  )
+  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
+  .option(
+    "--fail-on <verdict>",
+    "exit 1 at this verdict or worse: cosmetic, content, stale-caption, never",
+    REVIEW_DEFAULTS.failOn,
+  )
+  .option("--model <name>", "model to review with (defaults to the configured one)")
+  .action(
+    async (
+      before: string,
+      after: string,
+      opts: {
+        fps: string;
+        threshold: string;
+        out: string | false;
+        failOn: string;
+        model?: string;
+      },
+    ) => {
+      await withErrors(async () => {
+        const failOn = opts.failOn as Verdict | "never";
+        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
+          throw new ReelError(
+            `Unknown --fail-on value: ${opts.failOn}`,
+            "One of: cosmetic, content, stale-caption, never.",
+          );
+        }
+        const outcome = await runReview(before, after, {
+          fps: Number(opts.fps),
+          threshold: Number(opts.threshold) / 100,
+          out: opts.out,
+          failOn,
+          model: opts.model,
+        });
+        printReview(outcome);
+        emit("review", !outcome.failed, { result: outcome });
+        if (outcome.failed) process.exitCode = 1;
+      }, "review");
     },
   );
 

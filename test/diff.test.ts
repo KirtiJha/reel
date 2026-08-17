@@ -181,7 +181,7 @@ describe("summarize", () => {
 describe("formatting", () => {
   test("ranges print as seconds a viewer can scrub to", () => {
     assert.equal(
-      formatRange({ startMs: 2400, endMs: 4200, peak: 1, mean: 1, samples: 9, truncated: false, beats: [] }),
+      formatRange({ startMs: 2400, endMs: 4200 }),
       "2.4s–4.2s",
     );
   });

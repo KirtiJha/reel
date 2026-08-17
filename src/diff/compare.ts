@@ -183,7 +183,7 @@ export function summarize(
 }
 
 /** `2.4s–4.2s`, the form a reader can scrub to. */
-export function formatRange(r: Range): string {
+export function formatRange(r: { startMs: number; endMs: number }): string {
   return `${(r.startMs / 1000).toFixed(1)}s–${(r.endMs / 1000).toFixed(1)}s`;
 }
 

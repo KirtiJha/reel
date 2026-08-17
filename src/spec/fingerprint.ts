@@ -109,6 +109,12 @@ export interface Stamp {
    * all, costs labels and nothing else.
    */
   beats?: { label: string; t: number }[];
+  /**
+   * What the demo was claiming, and when. `reel review` needs this to tell a
+   * changed frame from a changed frame the captions no longer match; deriving
+   * it any other way would mean re-running the spec against the old build.
+   */
+  captions?: { t: number; text: string }[];
   durationMs?: number;
 }
 
@@ -162,7 +168,11 @@ export async function writeStamp(
   path: string,
   fp: Fingerprint,
   outputs: string[],
-  render?: { beats?: { label: string; t: number }[]; durationMs?: number },
+  render?: {
+    beats?: { label: string; t: number }[];
+    captions?: { t: number; text: string }[];
+    durationMs?: number;
+  },
 ): Promise<void> {
   const stamp: Stamp = {
     hash: fp.hash,
@@ -171,6 +181,12 @@ export async function writeStamp(
     at: new Date().toISOString(),
     outputs,
     ...(render?.beats?.length ? { beats: render.beats } : {}),
+    // Only the text and the timing: a CaptionCue also carries measured word
+    // advances, which are large, meaningless outside the renderer, and would
+    // churn the stamp on every font change.
+    ...(render?.captions?.length
+      ? { captions: render.captions.map((c) => ({ t: c.t, text: c.text })) }
+      : {}),
     ...(render?.durationMs ? { durationMs: render.durationMs } : {}),
   };
   try {

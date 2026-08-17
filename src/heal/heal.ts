@@ -12,7 +12,7 @@ import { Timeline } from "../driver/timeline.js";
 import { Recorder } from "../driver/recorder.js";
 import { collectInteractive, formatSnapshot, type Snapshot } from "../ai/agent-tools.js";
 import { applyMocks } from "../mock/mock.js";
-import { chat, loadLlmConfig, type LlmConfig } from "../ai/llm.js";
+import { chat, loadLlmConfig, messageText, type LlmConfig } from "../ai/llm.js";
 import { stepSelector, withStepSelector, describeStep } from "./selectors.js";
 import { deterministicCandidates } from "./candidates.js";
 import { log, ReelError } from "../util/log.js";
@@ -199,7 +199,7 @@ async function resolveSelector(
     { role: "system", content: system },
     { role: "user", content: user },
   ]);
-  const text = (res.message.content ?? "").trim();
+  const text = messageText(res.message).trim();
   const m = /\be(\d+)\b/i.exec(text);
   if (!m) return null; // NONE or unparseable
   const ref = `e${m[1]}`;

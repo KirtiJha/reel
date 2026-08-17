@@ -166,12 +166,22 @@ jobs:
 
       # Say *what* moved, not just that something did. Without this a reviewer
       # has to scrub a twenty-second video looking for the difference.
+      #
+      # With REEL_LLM_API_KEY set as a repository secret this becomes a review —
+      # what changed in the product's terms, and whether any caption now
+      # contradicts the screen. Without it, the pixel summary, and nothing here
+      # needs changing to switch between them.
       - name: Describe what changed
         if: >-
           steps.media.outputs.changed == 'true' &&
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name == github.repository
         continue-on-error: true
+        env:
+          REEL_LLM_API_KEY: ${{ secrets.REEL_LLM_API_KEY }}
+          REEL_LLM_PROVIDER: ${{ vars.REEL_LLM_PROVIDER }}
+          REEL_LLM_MODEL: ${{ vars.REEL_LLM_MODEL }}
+          REEL_LLM_BASE_URL: ${{ vars.REEL_LLM_BASE_URL }}
         run: |
           if [ -f "$RUNNER_TEMP/before.gif" ]; then
             npx tsx scripts/diff-comment.mts \

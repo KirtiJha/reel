@@ -1,4 +1,4 @@
-import { chat, type LlmConfig } from "../ai/llm.js";
+import { chat, messageText, type LlmConfig } from "../ai/llm.js";
 import type { Cue } from "./subtitles.js";
 
 const LANG_NAMES: Record<string, string> = {
@@ -26,7 +26,7 @@ export async function translateCues(cfg: LlmConfig, cues: Cue[], lang: string): 
     { role: "system", content: system },
     { role: "user", content: JSON.stringify(texts) },
   ]);
-  const raw = res.message.content ?? "";
+  const raw = messageText(res.message);
   const match = /\[[\s\S]*\]/.exec(raw);
   if (!match) return cues;
   try {

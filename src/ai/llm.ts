@@ -69,12 +69,44 @@ export interface OaiToolCall {
   type: "function";
   function: { name: string; arguments: string };
 }
+/**
+ * A message part, for turns that carry an image as well as text.
+ *
+ * The OpenAI multipart shape, because it is what nearly every provider already
+ * accepts; Anthropic's block form is translated in `anthropic-wire.ts` like the
+ * rest of its differences. Reel only ever sends images it just produced, so the
+ * URL is always a `data:` one — nothing here fetches from the network.
+ */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface OaiMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: OaiToolCall[];
   tool_call_id?: string;
   name?: string;
+}
+
+/** An image part from raw bytes, inlined as a data URL. */
+export function imagePart(image: Buffer, mime = "image/png"): ContentPart {
+  return { type: "image_url", image_url: { url: `data:${mime};base64,${image.toString("base64")}` } };
+}
+
+/**
+ * The text of a message, whichever shape it arrived in.
+ *
+ * Requests can now be multipart; replies are still text, but the type says
+ * "either" and callers reading `.content` directly would be reading a union.
+ */
+export function messageText(m: Pick<OaiMessage, "content">): string {
+  if (typeof m.content === "string") return m.content;
+  if (!Array.isArray(m.content)) return "";
+  return m.content
+    .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
+    .map((p) => p.text)
+    .join("");
 }
 export interface ChatResult {
   message: OaiMessage;
