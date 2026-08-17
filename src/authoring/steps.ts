@@ -41,22 +41,34 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
     typing = null;
   };
 
-  let navigations = 0;
+  // A navigation only means something once the user has done something to cause
+  // it. Before that it is the app routing itself — a single-page app commonly
+  // boots through two or three URLs (`/` → `/dashboard` → `/setup`) before it
+  // settles, and recording those as waits opens the draft with waits for pages
+  // the demo has not navigated to yet.
+  let acted = false;
+  // Held rather than emitted, because one action often causes a chain of
+  // redirects and only where it came to rest is worth waiting for.
+  let pendingNav: string | null = null;
+  const settle = (): void => {
+    if (pendingNav && lastStep(steps) !== `waitForUrl:${pendingNav}`) {
+      steps.push({ waitForUrl: pendingNav });
+    }
+    pendingNav = null;
+  };
 
   for (const event of events) {
     if (event.type === "nav") {
-      navigations++;
       flush();
-      // The first navigation is the spec's own `url:` — recording a wait for
-      // the page the demo opens on would be waiting for something that has
-      // already happened.
-      if (navigations === 1) continue;
-      const target = relativeUrl(event.url, baseUrl);
-      if (target && lastStep(steps) !== `waitForUrl:${target}`) steps.push({ waitForUrl: target });
+      if (!acted) continue;
+      pendingNav = relativeUrl(event.url, baseUrl);
       continue;
     }
 
     if (event.type === "finish") break;
+
+    // Anything the user does closes off the navigation the last one caused.
+    settle();
 
     if (event.type === "caption") {
       flush();
@@ -69,6 +81,10 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
       steps.push({ beat: true });
       continue;
     }
+
+    // Captions and beats are annotations, not actions: they neither cause a
+    // navigation nor prove the user has started.
+    acted = true;
 
     const selector = event.candidates ? chooseSelector(event.candidates as Candidate[]) : null;
 
@@ -107,6 +123,7 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
   }
 
   flush();
+  settle();
   return { steps, skipped };
 }
 

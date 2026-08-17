@@ -186,6 +186,59 @@ describe("turning events into steps", () => {
     assert.match(skipped[0]!, /6 elements/);
   });
 
+  test("a single-page app's boot routing is not a step", () => {
+    // Found on Uptime Kuma: it boots through `/` → `/dashboard` → `/setup`
+    // before the user touches anything. Dropping only the first navigation left
+    // the draft opening with waits for pages the demo had not navigated to, and
+    // the spec failed on replay.
+    const { steps } = toSteps(
+      [
+        { type: "nav", url: base + "/" },
+        { type: "nav", url: base + "/dashboard" },
+        { type: "nav", url: base + "/setup" },
+        on("click", "#go"),
+      ],
+      base,
+    );
+    assert.deepEqual(steps, [{ click: "#go" }]);
+  });
+
+  test("a redirect chain settles into one wait, not three", () => {
+    // One click, three navigations. Only where it came to rest is worth
+    // waiting for; the intermediate hops are gone before the next step runs.
+    const { steps } = toSteps(
+      [
+        { type: "nav", url: base + "/" },
+        on("click", "#login"),
+        { type: "nav", url: base + "/setup" },
+        { type: "nav", url: base + "/" },
+        { type: "nav", url: base + "/dashboard" },
+        on("click", "#new"),
+      ],
+      base,
+    );
+    assert.deepEqual(steps, [
+      { click: "#login" },
+      { waitForUrl: "/dashboard" },
+      { click: "#new" },
+    ]);
+  });
+
+  test("a caption does not count as having acted", () => {
+    // Annotations come from the toolbar, not the app, so they cannot be what
+    // caused a navigation.
+    const { steps } = toSteps(
+      [
+        { type: "nav", url: base + "/" },
+        { type: "caption", text: "Watch this" } as CaptureEvent,
+        { type: "nav", url: base + "/dashboard" },
+        on("click", "#go"),
+      ],
+      base,
+    );
+    assert.deepEqual(steps, [{ caption: "Watch this" }, { click: "#go" }]);
+  });
+
   test("an empty field is not written as an empty type step", () => {
     const { steps } = toSteps([on("input", "#a", { value: "" })], base);
     assert.deepEqual(steps, []);
