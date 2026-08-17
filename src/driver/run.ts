@@ -25,7 +25,7 @@ import { describeStep } from "../heal/selectors.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
 import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
-import { framingEnabled } from "../polish/frame.js";
+import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
 import { buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
@@ -294,7 +294,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // otherwise the fast concat encoder suffices.
     if (!needsEncode) {
       /* nothing to encode */
-    } else if (spec.polish.zoom === "auto" || framingEnabled(spec.polish)) {
+    } else if (compositesCaptions(spec.polish)) {
       await renderWithZoom(
         frames,
         framesDir,

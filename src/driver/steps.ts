@@ -13,6 +13,7 @@ import {
 import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
+import { compositesCaptions } from "../polish/frame.js";
 import type { Rect, ZoomKey } from "../polish/zoom.js";
 import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../terminal/grid.js";
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
@@ -235,9 +236,13 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       // real word boundaries instead of guessing an average glyph width.
       const measure = await measureText(page, cue.text);
       ctx.captions.push({ t: ctx.now(), text: cue.text, ms: cue.ms, position: cue.position, measure });
-      // When auto-zoom is on, captions are composited in post (so a zoomed
-      // crop can't clip them). Otherwise draw them into the page.
-      const inPage = ctx.spec.polish.zoom !== "auto";
+      // Draw into the page only when nothing will composite the caption later,
+      // and decide that with the *same* test the renderer uses. These had drifted
+      // apart: this checked auto-zoom alone while the renderer also runs for a
+      // device frame, padding or a background — so `zoom: false` with a frame
+      // drew the caption in the page and composited it again on top, at a
+      // different size. Two captions, in every frame, in the shipped encoder.
+      const inPage = !compositesCaptions(ctx.spec.polish);
       if (inPage) await setCaption(page, cue.text);
       await ctx.rec.hold(cue.ms ?? HOLD.caption);
       if (inPage && cue.ms) await setCaption(page, "");

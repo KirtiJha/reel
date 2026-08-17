@@ -30,6 +30,19 @@ export function framingEnabled(p: Polish): boolean {
   return p.frame !== "none" || p.padding > 0 || p.radius > 0;
 }
 
+/**
+ * Whether the sharp render path runs — and therefore whether captions are drawn
+ * in post rather than into the page.
+ *
+ * The driver and the encoder both need this answer and must never disagree: if
+ * the driver thinks the caption will be composited it leaves the page alone, and
+ * if it thinks otherwise it draws one. Getting that backwards yields either no
+ * caption or two, so the question is asked in exactly one place.
+ */
+export function compositesCaptions(p: Polish): boolean {
+  return p.zoom === "auto" || framingEnabled(p);
+}
+
 export function computeFrameLayout(
   p: Polish,
   contentW: number,
