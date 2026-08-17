@@ -205,11 +205,28 @@ export const OBSERVER_SCRIPT = `
 
   const ours = (node) => !!(node && node.closest && node.closest("#" + UI_ID));
 
+  /**
+   * The thing that was actually clicked, rather than the node under the cursor.
+   *
+   * A click on an icon button reports the <path> inside its <svg>; a click on a
+   * label inside a link reports the <span>. Neither has a role, a name or any
+   * text, so both fall through to a CSS path — which is how a theme toggle came
+   * out as div > button > svg:nth-of-type(3) > path. The element a person
+   * means is the nearest one that can be interacted with.
+   */
+  const ACTIONABLE = "a[href],button,input,select,textarea,label,summary,[role=button]," +
+    "[role=link],[role=menuitem],[role=tab],[role=checkbox],[role=switch],[onclick],[tabindex]";
+  const actionable = (el) => {
+    if (!el || !el.closest) return el;
+    // SVG elements support closest() too, so this walks out of the icon.
+    return el.closest(ACTIONABLE) || el;
+  };
+
   /** The field currently being typed into, so a run of keystrokes counts once. */
   let lastTyped = null;
 
   document.addEventListener("click", (e) => {
-    const el = e.target;
+    const el = actionable(e.target);
     if (!el || ours(el)) return;
     lastTyped = null;
     steps++;
@@ -257,7 +274,7 @@ export const OBSERVER_SCRIPT = `
     parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
     steps++;
     render();
-    send({ type: "key", key: parts.join("+"), candidates: candidatesFor(e.target), url: location.href });
+    send({ type: "key", key: parts.join("+"), candidates: candidatesFor(actionable(e.target)), url: location.href });
   }, true);
 
   /* --- The toolbar: state, and the two things only a human can supply. --- */

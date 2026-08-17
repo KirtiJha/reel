@@ -106,7 +106,7 @@ function usableSelector(c: Candidate): boolean {
     const inner = name?.[1] ?? name?.[2];
     // A role with no name is a description of a shape, not of a thing — usable
     // only because uniqueness was already checked in the page.
-    return inner ? inner.length <= MAX_TEXT_SELECTOR : true;
+    return inner ? inner.length <= MAX_ROLE_NAME : true;
   }
   return true;
 }
@@ -126,6 +126,18 @@ export function roleSelector(role: string, name?: string): string {
  * person maintains.
  */
 export const MAX_TEXT_SELECTOR = 40;
+
+/**
+ * The same cap does not belong on an accessible name.
+ *
+ * Visible text is prose: a long run of it identifies the element today and
+ * nothing tomorrow. An `aria-label` is the opposite — authored deliberately,
+ * for assistive technology, and no less stable for being wordy. Docusaurus
+ * labels its theme toggle "Switch between dark and light mode (currently system
+ * mode)"; at 40 characters that perfectly good selector was thrown away in
+ * favour of a CSS path through an SVG.
+ */
+export const MAX_ROLE_NAME = 120;
 
 export function textSelector(text: string): string | null {
   const clean = text.replace(/\s+/g, " ").trim();

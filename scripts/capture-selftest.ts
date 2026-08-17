@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { BINDING, OBSERVER_SCRIPT, type ObservedEvent } from "../src/authoring/observe.js";
 import { toSteps, type CaptureEvent } from "../src/authoring/steps.js";
+import { chooseSelector, roleSelector, type Candidate } from "../src/authoring/selector.js";
 import { emitSpec } from "../src/authoring/emit.js";
 import { startApp } from "../src/driver/app.js";
 import { loadSpec } from "../src/spec/load.js";
@@ -106,6 +107,35 @@ try {
     why = (err as Error).message.split("\n")[0] ?? "";
   }
   ok("the captured spec replays against the app", replayed, why);
+
+  // An icon button, which the example app doesn't have and real apps all do.
+  // The click lands on the <path> inside the <svg>: no role, no name, no text,
+  // so before the observer walked up to the button this came out as
+  // `div > button > svg:nth-of-type(3) > path`. Served over http rather than
+  // set with setContent so the init script installs the way it does in a
+  // capture.
+  const probe = await context.newPage();
+  const label = "Switch between dark and light mode (currently system mode)";
+  await probe.route("**/__probe", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><button aria-label="${label}">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L15 15"/></svg>
+      </button>`,
+    }),
+  );
+  const seen = events.length;
+  await probe.goto(`${URL_}/__probe`, { waitUntil: "domcontentloaded" });
+  await probe.click("svg path");
+  await probe.waitForTimeout(300);
+
+  const click = events.slice(seen).find((e): e is ObservedEvent => e.type === "click");
+  ok("a click on an icon is reported as a click on its button", click?.tag === "button", click?.tag);
+  ok(
+    "and it is named, not path-selected",
+    chooseSelector((click?.candidates ?? []) as Candidate[]) === roleSelector("button", label),
+    JSON.stringify(chooseSelector((click?.candidates ?? []) as Candidate[])),
+  );
 } finally {
   await browser.close().catch(() => {});
   await app.stop().catch(() => {});

@@ -7,6 +7,8 @@ import {
   looksGenerated,
   roleSelector,
   textSelector,
+  MAX_ROLE_NAME,
+  MAX_TEXT_SELECTOR,
   type Candidate,
 } from "../src/authoring/selector.js";
 import { relativeUrl, toSteps, type CaptureEvent } from "../src/authoring/steps.js";
@@ -59,6 +61,23 @@ describe("choosing a selector", () => {
   test("rejects a paragraph as a text selector", () => {
     const long = "text=" + "x".repeat(200);
     assert.equal(chooseSelector([c("text", long)]), null);
+  });
+
+  test("keeps a wordy accessible name", () => {
+    // Docusaurus labels its theme toggle this way. It is long because a screen
+    // reader needs the state, not because it is prose — throwing it away left
+    // a CSS path through an <svg> as the only thing on offer.
+    const label = "Switch between dark and light mode (currently system mode)";
+    assert.ok(label.length > MAX_TEXT_SELECTOR, "the name is long enough to matter");
+    assert.equal(
+      chooseSelector([c("css", "div > button > svg > path"), c("role", roleSelector("button", label))]),
+      `role=button[name=${JSON.stringify(label)}]`,
+    );
+  });
+
+  test("still rejects an accessible name that is a whole paragraph", () => {
+    const essay = roleSelector("button", "x".repeat(MAX_ROLE_NAME + 1));
+    assert.equal(chooseSelector([c("role", essay)]), null);
   });
 });
 
