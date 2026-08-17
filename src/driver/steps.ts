@@ -214,6 +214,17 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("waitForUrl" in step) {
     await page.waitForURL(step.waitForUrl.includes("*") ? step.waitForUrl : `**${step.waitForUrl}**`);
+    // A URL change is a new page, so the camera has to let go of what it was
+    // holding: that box belonged to the page that just went away. `goto` has
+    // always done this; `waitForUrl` did not, and the two are the same event
+    // arrived at differently — one navigates, the other waits for a click to.
+    //
+    // The result was a demo that clicked a link and then filmed the new page
+    // through a crop shaped around a button on the old one. On a narrow centred
+    // layout the crop happened to contain everything and it never showed; on a
+    // full-width app it cut off the half of the page the click had just
+    // revealed.
+    zoomOut(ctx);
     return;
   }
 

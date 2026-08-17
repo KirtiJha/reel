@@ -211,8 +211,8 @@ export async function renderWithZoom(
   if (targets.storyboard) {
     await mkdir(abspath(targets.storyboard), { recursive: true });
     let n = 0;
-    for (const beat of beats) {
-      const idx = Math.min(cfrFiles.length - 1, Math.max(0, Math.round((beat.t / 1000) * opts.fps)));
+    for (const [b, beat] of beats.entries()) {
+      const idx = storyboardFrame(beats, b, opts.fps, cfg.transitionMs, cfrFiles.length);
       const file = cfrFiles[idx];
       if (!file) continue;
       const safe = beat.label.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || `beat-${n}`;
@@ -220,6 +220,32 @@ export async function renderWithZoom(
     }
     log.ok(`storyboard → ${targets.storyboard} (${n} frames)`);
   }
+}
+
+/**
+ * Which rendered frame stands for a beat in the storyboard.
+ *
+ * A beat marks where the camera *starts* moving, not where it arrives. Sampled
+ * at that instant the still catches the shot mid-glide — a wide `hero` beat came
+ * out as the tight crop the camera was in the act of leaving, which is the one
+ * frame that misrepresents the demo it exists to summarise.
+ *
+ * So it waits out the camera move, but never past the beat's own span: a still
+ * that showed the shot after it would be a different kind of wrong.
+ */
+export function storyboardFrame(
+  beats: { t: number }[],
+  index: number,
+  fps: number,
+  settleMs: number,
+  frameCount: number,
+): number {
+  const beat = beats[index]!;
+  const next = beats[index + 1]?.t ?? Infinity;
+  // Stop one frame short of the next beat, so the still belongs to this one.
+  const latest = next - 1000 / fps;
+  const at = Math.max(beat.t, Math.min(beat.t + settleMs, latest));
+  return Math.min(frameCount - 1, Math.max(0, Math.round((at / 1000) * fps)));
 }
 
 /** Load sharp lazily so a missing native binary degrades gracefully. */
