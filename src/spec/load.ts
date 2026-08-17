@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { resolve, dirname, isAbsolute } from "node:path";
+import { resolve, dirname, isAbsolute, join } from "node:path";
+import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { specSchema, type Spec } from "./schema.js";
 import { ReelError } from "../util/log.js";
@@ -44,7 +45,20 @@ export async function loadSpec(specPath: string): Promise<LoadedSpec> {
   return { spec: result.data, path: abs, dir: dirname(abs) };
 }
 
-/** Resolve an output path from the spec file's directory. */
+/**
+ * Resolve a path written in a spec, relative to the spec file.
+ *
+ * `~` is expanded first. Only a shell does that expansion, so a path written by
+ * hand into YAML arrives here literally — and joining it to the spec's own
+ * directory produced `…/demos/~/auth.json`, a path that cannot exist and whose
+ * error names a directory the author never typed. `~` belongs in a config file
+ * that a person edits, and the alternative is an absolute path that stops
+ * working on anyone else's machine.
+ *
+ * `~user` is left alone: resolving it needs a passwd lookup, and quietly
+ * treating it as a relative path would be worse than the error you get.
+ */
 export function resolveOutput(loaded: LoadedSpec, p: string): string {
-  return isAbsolute(p) ? p : resolve(loaded.dir, p);
+  const expanded = p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
+  return isAbsolute(expanded) ? expanded : resolve(loaded.dir, expanded);
 }

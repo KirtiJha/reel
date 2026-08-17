@@ -11,6 +11,7 @@ coverage/
 scripts/out/
 scripts/authored.reel.yaml
 examples/*/out/
+demos/out/
 # Planning notes kept alongside the code but not published with it: the
 # positioning, competitive read and roadmap are working documents, not docs.
 /demosascodeproductplan*.md
@@ -36,3 +37,4 @@ examples/*/out/
 *.storagestate.json
 storage-state*.json
 auth.json
+*-auth.json

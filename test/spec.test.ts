@@ -1,6 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { specSchema, resolveOutputProfile, outputSchema, PRESETS } from "../src/spec/schema.js";
+import { resolveOutput } from "../src/spec/load.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const minimal = {
   steps: [{ goto: "/" }],
@@ -77,5 +80,33 @@ describe("resolveOutputProfile", () => {
     assert.equal(p.fps, 12);
     assert.equal(p.gif.colors, 32);
     assert.equal(p.maxWidth, PRESETS.hq.maxWidth, "untouched fields keep the preset value");
+  });
+});
+
+describe("resolveOutput", () => {
+  const loaded = { spec: {} as never, path: "/w/demos/d.reel.yaml", dir: "/w/demos" };
+
+  test("a relative path resolves against the spec's directory", () => {
+    assert.equal(resolveOutput(loaded, "out/a.mp4"), "/w/demos/out/a.mp4");
+  });
+
+  test("an absolute path is left alone", () => {
+    assert.equal(resolveOutput(loaded, "/tmp/a.mp4"), "/tmp/a.mp4");
+  });
+
+  test("~ expands to the home directory", () => {
+    // Without this, `~/auth.json` resolved to `/w/demos/~/auth.json` — a path
+    // that cannot exist, reported as a directory the spec's author never wrote.
+    assert.equal(resolveOutput(loaded, "~/auth.json"), join(homedir(), "auth.json"));
+    assert.equal(resolveOutput(loaded, "~"), homedir());
+  });
+
+  test("~user is not expanded — it needs a passwd lookup", () => {
+    const out = resolveOutput(loaded, "~someone/auth.json");
+    assert.equal(out, "/w/demos/~someone/auth.json");
+  });
+
+  test("a tilde anywhere but the start is an ordinary character", () => {
+    assert.equal(resolveOutput(loaded, "out/a~b.mp4"), "/w/demos/out/a~b.mp4");
   });
 });
