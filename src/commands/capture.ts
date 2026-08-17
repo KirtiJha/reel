@@ -1,9 +1,10 @@
-import { access, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 import { BINDING, OBSERVER_SCRIPT, type ObservedEvent } from "../authoring/observe.js";
 import { toSteps, type CaptureEvent } from "../authoring/steps.js";
 import { emitSpec } from "../authoring/emit.js";
+import { warnAboutCredentials } from "../util/secrets.js";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -27,6 +28,16 @@ export interface CaptureOptions {
   name?: string;
   /** Overwrite an existing spec instead of refusing. */
   force?: boolean;
+  /**
+   * Start the session already signed in, from a saved Playwright storage state.
+   *
+   * Without this, capturing anything behind a login means logging in on camera
+   * every time — filming the slowest, most fragile part of the app, and putting
+   * a password into a file that gets committed.
+   */
+  auth?: string;
+  /** Write the session out when the capture ends, for `record` to replay with. */
+  saveAuth?: string;
 }
 
 export async function capture(opts: CaptureOptions): Promise<{ file: string; steps: number }> {
@@ -47,7 +58,16 @@ export async function capture(opts: CaptureOptions): Promise<{ file: string; ste
         "Run `reel doctor` — capture needs a Chromium that can open a window.",
       );
     });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    if (opts.auth && !(await exists(resolve(process.cwd(), opts.auth)))) {
+      throw new ReelError(
+        `No saved session at ${opts.auth}.`,
+        "Capture one with --save-auth, or drop --auth to start signed out.",
+      );
+    }
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      storageState: opts.auth ? resolve(process.cwd(), opts.auth) : undefined,
+    });
 
     let finish: () => void = () => {};
     const finished = new Promise<void>((r) => {
@@ -88,6 +108,18 @@ export async function capture(opts: CaptureOptions): Promise<{ file: string; ste
 
     await finished;
 
+    // Saved before the browser closes, and before anything else can fail: the
+    // session is the part that cost a human their time.
+    let savedAuth: string | undefined;
+    if (opts.saveAuth) {
+      savedAuth = resolve(process.cwd(), opts.saveAuth);
+      await mkdir(dirname(savedAuth), { recursive: true }).catch(() => {});
+      await context.storageState({ path: savedAuth });
+      log.phase("Session");
+      log.ok(`Saved the signed-in session → ${savedAuth}`);
+      warnAboutCredentials(opts.saveAuth);
+    }
+
     const { steps, skipped } = toSteps(events, opts.url);
     log.phase("Draft");
     for (const s of skipped) log.warn(`Skipped: ${s}`);
@@ -103,6 +135,10 @@ export async function capture(opts: CaptureOptions): Promise<{ file: string; ste
         steps,
         gif: "out/demo.gif",
         mp4: "out/demo.mp4",
+        // A spec captured from a signed-in session has to replay from one, or
+        // the first `reel record` lands on a login page and every selector in
+        // the draft is missing.
+        storageState: opts.saveAuth ?? opts.auth,
       }),
       "utf8",
     );

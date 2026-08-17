@@ -275,3 +275,34 @@ describe("the emitted spec", () => {
     assert.doesNotThrow(() => specSchema.parse(parse(empty)));
   });
 });
+
+describe("a spec captured from a signed-in session", () => {
+  const authed = emitSpec({
+    name: "Behind a login",
+    url: "https://app.example.com",
+    steps: [{ click: "#new" }],
+    gif: "out/demo.gif",
+    storageState: ".auth/demo.json",
+  });
+
+  test("replays from the saved session", () => {
+    // Without this the first `record` lands on a login page and every selector
+    // in the draft is missing — the draft looks wrong when what is wrong is
+    // that it forgot it was authenticated.
+    const parsed = specSchema.parse(parse(authed));
+    assert.equal(parsed.storageState, ".auth/demo.json");
+  });
+
+  test("says in the file itself that the session is a credential", () => {
+    assert.match(authed, /live session cookies/);
+    assert.match(authed, /never commit|out of version control/i);
+  });
+
+  test("a signed-out capture carries no storageState key at all", () => {
+    // Not an empty string — an empty path would resolve to the spec's own
+    // directory and fail in a way that reads like a Playwright bug.
+    const plain = emitSpec({ name: "X", url: "http://x.test", steps: [], gif: "o.gif" });
+    assert.doesNotMatch(plain, /storageState/);
+    assert.equal(specSchema.parse(parse(plain)).storageState, undefined);
+  });
+});

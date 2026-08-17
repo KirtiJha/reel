@@ -120,6 +120,41 @@ What comes out is a **draft**, and it says so in a comment at the top. Capture
 sees what you clicked; it can't see which moment was the point. Anything it
 couldn't write down is reported rather than dropped in silence.
 
+## Demos behind a login
+
+Don't film the sign-in. It's the slowest, most fragile part of any app, it may
+involve 2FA or an email link, and nobody watching your demo wants to see it.
+Sign in once, off camera, and replay that session:
+
+```bash
+# Log in by hand in the window that opens, then press Finish.
+reel capture --url https://app.example.com --save-auth .auth/demo.json
+```
+
+The captured spec comes back already pointing at the session, so it replays
+authenticated from the first `reel record`:
+
+```yaml
+url: https://app.example.com
+storageState: .auth/demo.json
+```
+
+Re-capture with `--auth .auth/demo.json` to start signed in and keep authoring
+from there. Any spec can use `storageState:` on its own — the file is Playwright's
+format, so `npx playwright-core codegen --save-storage=.auth/demo.json <url>`
+produces one too.
+
+> **That file is a credential, not config.** It holds live session cookies:
+> anyone who gets it is signed in as you until the session expires. Reel checks
+> `git check-ignore` after writing one and tells you if git can still see it,
+> and this repo's `.gitignore` covers `.auth/` and `auth.json`. Never commit one,
+> and re-capture when it expires.
+
+There is deliberately **no way to put a password in a spec** — no `${ENV}`
+interpolation, so a typed credential would have to be committed in plaintext.
+If you must script the login itself, drive it once with `capture --save-auth`
+and let the saved session stand in for it from then on.
+
 ## Editor support
 
 Every spec `reel init` or `reel capture` writes opens with a schema line, so
@@ -506,6 +541,7 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel doctor` | Check this machine can record: browser, ffmpeg, image pipeline, temp space. |
 | `reel init [dir]` | Scaffold a starter `demo.reel.yaml`. |
 | `reel capture --url <url>` | **Author by doing** — drive the app in a browser and get a spec back. |
+| `reel capture --save-auth <file>` | Save the signed-in session, so demos behind a login replay without one. |
 | `reel record <spec>` | Drive the app and render GIF / MP4 / WebM / storyboard. |
 | `reel check <spec>` | Re-run headlessly; **exit 1 if any step can't complete** (CI drift). |
 | `reel diff <before> <after>` | Compare two renders and report **which parts of the demo changed**. |

@@ -57,6 +57,11 @@ polish:
 #   cmd: npm run dev
 #   readyOn: ${opts.url}
 
+# Behind a login? Don't film the sign-in — replay one instead. Capture a
+# session once, then point at it. The file holds live cookies: never commit it.
+#   reel capture --url ${opts.url} --save-auth .auth/demo.json
+# storageState: .auth/demo.json
+
 steps:
   - goto: /
   - card: { title: "${opts.name}", subtitle: "What it does, in one line" }

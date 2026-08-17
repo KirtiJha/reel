@@ -204,8 +204,10 @@ program
   .option("-o, --out <file>", "spec output path", "demo.reel.yaml")
   .option("--name <name>", "demo name", "Captured demo")
   .option("--force", "overwrite the output file if it exists", false)
+  .option("--auth <file>", "start signed in, from a session saved by --save-auth")
+  .option("--save-auth <file>", "write the signed-in session out, so `record` can replay it")
   .description("Author by doing — drive your app in a browser and get a spec back.")
-  .action(async (opts: { url: string; out: string; name: string; force: boolean }) => {
+  .action(async (opts: { url: string; out: string; name: string; force: boolean; auth?: string; saveAuth?: string }) => {
     await withErrors(async () => {
       const res = await capture(opts);
       emit("capture", true, { result: { spec: res.file, steps: res.steps } });

@@ -28,3 +28,11 @@ examples/*/out/
 
 # Before/after strips from `reel diff` — a review aid, not an artifact.
 .reel-diff/
+
+# Saved sign-ins. A Playwright storage state holds live session cookies — a
+# bearer credential, not config — so committing one signs everybody in as you.
+# `reel capture --save-auth` writes these, and warns when git can still see them.
+.auth/
+*.storagestate.json
+storage-state*.json
+auth.json

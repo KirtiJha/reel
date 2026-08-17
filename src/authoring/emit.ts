@@ -22,6 +22,15 @@ export interface EmitOptions {
   /** Output paths, relative to the spec. */
   gif: string;
   mp4?: string;
+  /**
+   * Saved session the demo replays from.
+   *
+   * Emitted whenever the capture itself was signed in. Without it the first
+   * `reel record` opens a login page and every selector in the draft is
+   * missing — the draft would look wrong when what is actually wrong is that
+   * it forgot it was authenticated.
+   */
+  storageState?: string;
 }
 
 export function emitSpec(opts: EmitOptions): string {
@@ -29,11 +38,16 @@ export function emitSpec(opts: EmitOptions): string {
     ? opts.steps.map((s) => `  ${renderStep(s)}`).join("\n")
     : "  # Nothing was captured — record again and interact with the app.\n  - goto: /";
 
+  const auth = opts.storageState
+    ? `\n# Replays from a saved sign-in. That file holds live session cookies —\n` +
+      `# keep it out of version control, and re-capture it when it expires.\nstorageState: ${scalar(opts.storageState)}\n`
+    : "";
+
   return `${schemaDirective()}
 # Captured with \`reel capture\`. This is a draft: rename it, add captions and
 # beats where the demo should breathe, and delete anything incidental.
 name: ${scalar(opts.name)}
-url: ${scalar(opts.url)}
+url: ${scalar(opts.url)}${auth}
 viewport: { width: 1280, height: 800, scale: 2 }
 theme: light
 
