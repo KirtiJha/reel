@@ -551,6 +551,7 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel check <spec>` | Re-run headlessly; **exit 1 if any step can't complete** (CI drift). |
 | `reel diff <before> <after>` | Compare two renders and report **which parts of the demo changed**. |
 | `reel review <before> <after>` | Say **what** changed and whether the demo is still true — including captions the UI no longer matches. |
+| `reel ci [specs...]` | Run **every demo in the repository**, one exit code — what the GitHub Action calls. |
 | `reel heal <spec> [--write]` | Re-run; when a step breaks (UI drift), an agent re-resolves it, verifies the fix, and repairs the spec. |
 | `reel schema [--out <file>]` | Print the JSON Schema for a spec (editor autocomplete). |
 | `reel ui` | Launch **Reel Studio**, the local web UI. |
@@ -615,14 +616,90 @@ export SSL_VERIFY=false   # for corporate proxies with non-verifying certs
 
 ## CI / drift detection
 
-Copy [`.github/workflows/reel.yml`](.github/workflows/reel.yml): PRs run
-`reel check` (fail if the demo broke) **and regenerate the media onto the PR
-branch**, so a reviewer sees the new demo as an image diff in *Files changed*
-without leaving the review. Pushes to `main` do the same, so your README GIF is
-never lying.
+### The GitHub Action
 
-That preview only works because output is deterministic — otherwise every PR
-would carry a media change and the signal would be worthless.
+```yaml
+- uses: KirtiJha/reel@v1
+  with:
+    specs: "**/*.reel.yaml"   # the default
+    mode: check               # fail the build if any demo can't run
+```
+
+That's drift detection for every demo in the repository, in one step, on a
+fork's pull request safely — `mode: check` renders nothing and runs no
+`run.cmd` write-back.
+
+> `@v1` needs the tag and the matching npm release to exist. Until they do,
+> pin `KirtiJha/reel@main` with `version: local`, which builds Reel from the
+> checkout instead of installing it — the same thing Reel's own CI does.
+
+The version that keeps your README honest does more:
+
+```yaml
+- uses: KirtiJha/reel@v1
+  with:
+    specs: docs/demo.reel.yaml
+    mode: record        # regenerate the media
+    review: true        # …and say what changed in it
+    comment: true       # one PR comment, updated in place
+    commit: true        # push the regenerated media back onto the branch
+    commit-paths: docs
+    fail-on: stale-caption
+    llm-api-key: ${{ secrets.REEL_LLM_API_KEY }}   # optional; see below
+```
+
+It needs `permissions: { contents: write, pull-requests: write }` for the last
+two, and a `actions/checkout` before it.
+
+| Input | Default | What it does |
+|---|---|---|
+| `specs` | `**/*.reel.yaml` | Paths or globs, whitespace separated. |
+| `mode` | `check` | `check` renders nothing; `record` regenerates media. |
+| `review` | `false` | Compare each re-render against what it replaced. |
+| `fail-on` | `stale-caption` | Verdict that fails the build: `cosmetic`, `content`, `stale-caption`, `never`. |
+| `if-changed` | `false` | Skip a render whose spec, inputs and outputs are unchanged. |
+| `app-revision` | — | A commit SHA, so a changed app forces a re-render. |
+| `comment` / `commit` | `false` | Post one comment; push the media back. |
+| `version` | this tag's | Which `@kirti_jha/reel` to install, or `local` to build from the checkout. |
+| `browser` / `node-version` | `chromium` / `20` | Set either to empty to use what the job already has. |
+
+Outputs: `specs`, `failed`, `changed`, `verdict`, `outputs` (JSON array of every
+file rendered) — so later steps can branch without grepping a log.
+
+**The action is deliberately thin.** Every decision it makes — which specs to
+run, what "changed" means, whether a verdict should fail the build — is
+`reel ci`, a normal command with unit tests that you can run on your laptop and
+get the same answer:
+
+```bash
+reel ci "examples/**/*.reel.yaml" --mode check
+```
+```
+Summary
+  ✓ examples/cli/demo.reel.yaml — unchanged
+  ✓ examples/taskflow/branching.reel.yaml — unchanged
+  ✓ examples/taskflow/demo.reel.yaml — unchanged
+  ✓ examples/taskflow/showcase.reel.yaml — unchanged
+  ✓ examples/taskflow/subtitled.reel.yaml — unchanged
+✓ 5 demos — all current, all honest.
+```
+
+Logic embedded in workflow YAML is typechecked by nothing, tested by nothing,
+and only ever runs on a machine you can't attach a debugger to. What's left in
+`action.yml` is the part that genuinely belongs to a runner: Node, a browser, a
+cache, and moving files afterwards. Reel's own CI runs this action with
+`version: local`, so the action is exercised by every pull request rather than
+only by its users.
+
+Without a model configured, `review: true` still locates every change and says
+plainly that nothing judged it. It never reports a green tick it didn't earn.
+
+### Rolling your own
+
+Prefer to write the workflow yourself? Copy
+[`.github/workflows/reel.yml`](.github/workflows/reel.yml). Either way the
+preview only works because output is deterministic — otherwise every PR would
+carry a media change and the signal would be worthless.
 
 **Don't re-render what didn't change.** Recording is the slowest thing Reel
 does, and CI regenerates on every push. Because identical inputs produce
@@ -782,7 +859,8 @@ drift repair**, **subtitles + localization**, and **PII redaction + mock data**
 — the model-backed parts provider-agnostic via a LiteLLM proxy, and optional.
 
 Around them, the things that make it usable day to day: `reel doctor`,
-failure artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, and a JSON Schema for
+failure artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, `reel ci`
+and its **GitHub Action**, and a JSON Schema for
 editor autocomplete.
 
 ## License

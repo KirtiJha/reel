@@ -9,21 +9,15 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { loadSpec } from "./spec/load.js";
 import { expandMatrix } from "./spec/matrix.js";
-import {
-  declaredOutputs,
-  fingerprint,
-  isUpToDate,
-  readStamp,
-  stampPath,
-  writeStamp,
-} from "./spec/fingerprint.js";
-import { record, check } from "./driver/run.js";
+import { check } from "./driver/run.js";
 import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
 import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
 import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
+import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
+import { recordOne } from "./commands/record.js";
 import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
@@ -33,8 +27,9 @@ import { emit, useJson } from "./util/report.js";
 import { StepFailure } from "./driver/run.js";
 import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
+import { VERSION } from "./version.js";
 
-const VERSION = "0.1.0";
+
 const program = new Command();
 
 /** Truecolour background escape, for printing a theme's palette as swatches. */
@@ -78,65 +73,20 @@ program
   .action(async (specPath: string, opts: { ifChanged: boolean; appRevision?: string }) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
-
-      // Skipping is only sound because the output is deterministic: identical
-      // inputs would produce identical bytes, so the render is pure cost.
-      const fp = await fingerprint(loaded, VERSION, opts.appRevision);
-      const stamp = stampPath(loaded);
-      const outputs0 = declaredOutputs(loaded);
-      if (opts.ifChanged) {
-        const state = await isUpToDate(await readStamp(stamp), fp, outputs0);
-        if (state.upToDate) {
-          log.ok(`Up to date — ${state.reason}. Skipping.`);
-          emit("record", true, {
-            result: { spec: loaded.path, skipped: true, reason: state.reason, outputs: outputs0 },
-          });
-          return;
-        }
-        log.info(`Re-recording: ${state.reason}.`);
+      const res = await recordOne(loaded, { ...opts, version: VERSION });
+      if (!res.skipped) {
+        log.phase("Done");
+        for (const o of res.outputs) log.info(o);
       }
-
-      const variants = expandMatrix(loaded);
-      const outputs: string[] = [];
-      const rendered: Record<string, unknown>[] = [];
-      let timeline: { label: string; t: number }[] = [];
-      let captions: { t: number; text: string }[] = [];
-      let durationMs = 0;
-      for (const v of variants) {
-        if (variants.length > 1) log.phase(`Variant: ${v.label}`);
-        const res = await record(v.loaded, "record");
-        log.ok(
-          `${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`,
-        );
-        outputs.push(...res.outputs);
-        // The first variant's beats stand for the demo: a matrix renders the
-        // same script at several sizes, so its beats are the same beats.
-        if (!timeline.length) {
-          timeline = res.timeline;
-          captions = res.captions;
-          durationMs = res.durationMs;
-        }
-        rendered.push({
-          variant: v.label,
-          frames: res.frames,
-          beats: res.beats,
-          durationMs: res.durationMs,
-          outputs: res.outputs,
-        });
-      }
-      log.phase("Done");
-      for (const o of outputs) log.info(o);
-      // Written after a successful render only: a stamp for media that failed
-      // to encode would skip the retry that fixes it.
-      await writeStamp(stamp, fp, outputs, { beats: timeline, captions, durationMs });
       emit("record", true, {
         result: {
           spec: loaded.path,
           name: loaded.spec.name,
-          skipped: false,
-          fingerprint: fp.hash,
-          variants: rendered,
-          outputs,
+          skipped: Boolean(res.skipped),
+          ...(res.skipped ? { reason: res.skipped } : {}),
+          fingerprint: res.fingerprint,
+          variants: res.variants,
+          outputs: res.outputs,
         },
       });
     }, "record");
@@ -279,6 +229,68 @@ program
         // changing the app — it is a result, not a failure.
         if (opts.exitCode && !report.identical) process.exitCode = 1;
       }, "diff");
+    },
+  );
+
+program
+  .command("ci")
+  .argument("[specs...]", "spec paths or globs (default: **/*.reel.yaml)")
+  .description("Run every demo in the repository and report one result — what the Action calls.")
+  .option("--mode <mode>", "check (drift only) or record (regenerate media)", CI_DEFAULTS.mode)
+  .option("--review", "compare each re-render against the media it replaced", false)
+  .option(
+    "--fail-on <verdict>",
+    "exit 1 at this review verdict or worse: cosmetic, content, stale-caption, never",
+    CI_DEFAULTS.failOn,
+  )
+  .option("--if-changed", "skip a render when its spec, inputs and outputs are unchanged", false)
+  .option("--app-revision <id>", "identifier for the app being demoed (a commit SHA)")
+  .option("-C, --dir <dir>", "directory to resolve specs from", ".")
+  .option("--comment <file>", "write a pull-request comment for the whole run")
+  .action(
+    async (
+      specs: string[],
+      opts: {
+        mode: string;
+        review: boolean;
+        failOn: string;
+        ifChanged: boolean;
+        appRevision?: string;
+        dir: string;
+        comment?: string;
+      },
+    ) => {
+      await withErrors(async () => {
+        if (opts.mode !== "check" && opts.mode !== "record") {
+          throw new ReelError(`Unknown --mode: ${opts.mode}`, "One of: check, record.");
+        }
+        const failOn = opts.failOn as Verdict | "never";
+        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
+          throw new ReelError(
+            `Unknown --fail-on value: ${opts.failOn}`,
+            "One of: cosmetic, content, stale-caption, never.",
+          );
+        }
+        if (opts.review && opts.mode !== "record") {
+          throw new ReelError(
+            "--review needs --mode record.",
+            "A drift check renders nothing, so there is no new media to compare.",
+          );
+        }
+        const report = await ci(opts.dir, specs, {
+          mode: opts.mode,
+          review: opts.review,
+          failOn,
+          ifChanged: opts.ifChanged,
+          appRevision: opts.appRevision,
+          version: VERSION,
+          comment: opts.comment,
+        });
+        printCi(report);
+        await writeGithubOutputs(report);
+        emit("ci", !report.failed, { result: report });
+        if (report.failed) process.exitCode = 1;
+      }, "ci");
     },
   );
 
