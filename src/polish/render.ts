@@ -168,14 +168,27 @@ export async function renderWithZoom(
     await ensureDir(targets.gif);
     // GIF params come from the resolved output preset (camera motion defeats
     // frame dedup, so GIFs are typically capped smaller than the video).
-    // Single-pass split palette: decimate → scale → split → palettegen/use. This
-    // avoids the separate-palette-image filtergraph that breaks on image
-    // sequences ("Error marking filters as finished").
     const gifFps = Math.min(opts.gif.fps, opts.fps);
     const gifW = even(Math.min(opts.gif.maxWidth, seqW));
+
+    // The palette filtergraph is fed from a video, not from the PNG sequence.
+    //
+    // palettegen/paletteuse and the image2 demuxer do not cooperate: on some
+    // sequences ffmpeg exits 0 having written a single frame, and the same graph
+    // reading a video file produces the full animation. It is silent and
+    // input-dependent — the identical command that worked for one demo emitted
+    // one frame for the next, which is what makes it worth the extra pass rather
+    // than a documented caveat.
+    //
+    // ffv1 because the intermediate must be lossless (a GIF quantises to a few
+    // hundred colours; feeding it h264 artifacts wastes palette entries) and
+    // deterministic, which BITEXACT keeps. It lives in the temp frames dir and
+    // goes away with it.
+    const mid = "gif-source.mkv";
+    await ffmpeg(["-y", ...seqInput, "-c:v", "ffv1", "-level", "3", ...BITEXACT, mid], framesDir);
     await ffmpeg(
       [
-        "-y", ...seqInput,
+        "-y", "-i", mid,
         "-vf",
         `fps=${gifFps},scale=${gifW}:-2:flags=lanczos,split[a][b];` +
           `[a]palettegen=stats_mode=diff:max_colors=${opts.gif.colors}[p];` +

@@ -5,8 +5,9 @@
 # looks like real software, and it should never be a third party's product: that
 # implies an endorsement nobody gave, and their next redesign breaks your hero.
 #
-# MP4 only. This render is the one that trips ffmpeg's palettegen (see
-# src/encode/verify.ts), so asking for a GIF here fails the whole record.
+# MP4 only because the landing page embeds a video, not because a GIF fails —
+# this spec used to trip the palettegen truncation fixed in polish/render.ts,
+# and now renders a complete GIF if you ask for one.
 #
 #   npm run reel -- record hero.reel.yaml
 #   cp out/hero.mp4 studio/public/demo/hero.mp4
