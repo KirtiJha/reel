@@ -35,8 +35,8 @@ export function LocalOnly() {
             <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
           </div>
           <pre className="overflow-x-auto p-5 font-mono text-[13px] leading-[1.9] text-muted">
-            <span className="text-faint">$ </span>npx @kirtijha/reel init{"\n"}
-            <span className="text-faint">$ </span>npx @kirtijha/reel ui
+            <span className="text-faint">$ </span>npx @kirti_jha/reel init{"\n"}
+            <span className="text-faint">$ </span>npx @kirti_jha/reel ui
           </pre>
         </div>
 

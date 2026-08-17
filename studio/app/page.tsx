@@ -158,7 +158,7 @@ output:
  * already has the app one click away.
  */
 const PUBLIC_SITE = process.env.NEXT_PUBLIC_REEL_SITE === "1";
-const INSTALL = "npx @kirtijha/reel init && npx @kirtijha/reel ui";
+const INSTALL = "npx @kirti_jha/reel init && npx @kirti_jha/reel ui";
 
 function PrimaryCta({ size = "" }: { size?: string }) {
   const [copied, setCopied] = useState(false);
@@ -273,7 +273,7 @@ export default function Landing() {
               )}
             </div>
             <div className="mt-5 font-mono text-[13px] text-faint">
-              <span className="text-muted">$</span> npx @kirtijha/reel record demo.reel.yaml
+              <span className="text-muted">$</span> npx @kirti_jha/reel record demo.reel.yaml
             </div>
           </div>
         </div>
@@ -510,7 +510,7 @@ export default function Landing() {
               {
                 n: "1",
                 t: "Scaffold a spec",
-                cmd: "npx @kirtijha/reel init",
+                cmd: "npx @kirti_jha/reel init",
                 b: "Writes a starter demo.reel.yaml you can read in one sitting.",
               },
               {
@@ -522,7 +522,7 @@ export default function Landing() {
               {
                 n: "3",
                 t: "Render it",
-                cmd: "npx @kirtijha/reel record demo.reel.yaml",
+                cmd: "npx @kirti_jha/reel record demo.reel.yaml",
                 b: "GIF, MP4 and a storyboard land in out/, ready to commit.",
               },
             ].map((s) => (

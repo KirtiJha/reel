@@ -45,7 +45,7 @@ and in CI.
 ## Quick start
 
 ```bash
-npm i -D @kirtijha/reel        # or: npm i -g @kirtijha/reel
+npm i -D @kirti_jha/reel        # or: npm i -g @kirti_jha/reel
 npx playwright install chromium
 npx reel doctor                # confirm this machine can record
 
@@ -68,7 +68,7 @@ each one by using it, and tells you the command that fixes it.
 
 Once it's a dependency, `npx reel` resolves to the local binary. To try it
 without installing anything, use the scoped name directly —
-`npx @kirtijha/reel init`.
+`npx @kirti_jha/reel init`.
 
 Working in a clone of this repo instead? The package's own binary isn't linked
 into `node_modules/.bin`, so go through the script:
