@@ -137,6 +137,7 @@ export async function recordAlternatePaths(opts: AlternateOptions): Promise<Alte
           rec,
           term,
           scenes: [],
+          specDir: loaded.dir,
         };
 
         for (const step of trunk) await runStep(step as Step, ctx, -1);

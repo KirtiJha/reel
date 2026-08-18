@@ -479,6 +479,40 @@
               {
                 "type": "object",
                 "properties": {
+                  "signIn": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "description": "Path to a Playwright storage state, relative to the spec."
+                          },
+                          "goto": {
+                            "type": "string",
+                            "description": "Where to land afterwards. Omit to reload wherever the demo is."
+                          }
+                        },
+                        "required": [
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "signIn"
+                ],
+                "additionalProperties": false,
+                "description": "Become signed in, mid-demo, without filming the sign-in.\n\n`storageState` authenticates a whole run, which is the right answer when\nthe demo starts inside the product. It is the wrong answer when the demo\nopens on a marketing page, a logged-out home screen or a paywall — the\nstory needs to begin signed *out* and cross over.\n\nThis applies a session saved by `reel capture --save-auth` to the running\nbrowser and reloads, so one continuous demo can show the logged-out page,\ncover the transition with a card, and carry on inside the product. No\njump cut between two renders, one camera path, one caption timeline.\n\nDeliberately a saved session rather than a scripted login: filming a real\nsign-in means a password in the spec, and there is no way to put one there\nfor exactly that reason."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "click": {
                     "type": "string",
                     "minLength": 1
@@ -1053,6 +1087,40 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "signIn": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "state": {
+                                            "type": "string",
+                                            "description": "Path to a Playwright storage state, relative to the spec."
+                                          },
+                                          "goto": {
+                                            "type": "string",
+                                            "description": "Where to land afterwards. Omit to reload wherever the demo is."
+                                          }
+                                        },
+                                        "required": [
+                                          "state"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "signIn"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Become signed in, mid-demo, without filming the sign-in.\n\n`storageState` authenticates a whole run, which is the right answer when\nthe demo starts inside the product. It is the wrong answer when the demo\nopens on a marketing page, a logged-out home screen or a paywall — the\nstory needs to begin signed *out* and cross over.\n\nThis applies a session saved by `reel capture --save-auth` to the running\nbrowser and reloads, so one continuous demo can show the logged-out page,\ncover the transition with a card, and carry on inside the product. No\njump cut between two renders, one camera path, one caption timeline.\n\nDeliberately a saved session rather than a scripted login: filming a real\nsign-in means a password in the spec, and there is no way to put one there\nfor exactly that reason."
                               },
                               {
                                 "type": "object",

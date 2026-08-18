@@ -59,6 +59,17 @@ export async function loadSpec(specPath: string): Promise<LoadedSpec> {
  * treating it as a relative path would be worse than the error you get.
  */
 export function resolveOutput(loaded: LoadedSpec, p: string): string {
+  return resolveFrom(loaded.dir, p);
+}
+
+/**
+ * The same rule, given only the directory.
+ *
+ * A step that resolves a path has the spec's directory but not the loaded spec
+ * — and duplicating the tilde handling in a second place is how two answers to
+ * "where is this file" start to disagree.
+ */
+export function resolveFrom(dir: string, p: string): string {
   const expanded = p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
-  return isAbsolute(expanded) ? expanded : resolve(loaded.dir, expanded);
+  return isAbsolute(expanded) ? expanded : resolve(dir, expanded);
 }

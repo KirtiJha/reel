@@ -19,6 +19,9 @@ import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../termi
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
 import type { ScreenshotCapture } from "../capture/screenshot.js";
 import type { Scene } from "../encode/html.js";
+import { applyStorageState, loadStorageState } from "./auth.js";
+import { resolveFrom } from "../spec/load.js";
+import { isGitIgnored, warnAboutCredentials } from "../util/secrets.js";
 import { log, ReelError } from "../util/log.js";
 
 export type Mode = "record" | "check" | "stills";
@@ -43,6 +46,17 @@ export interface StepContext {
   term?: TerminalController | null;
   /** Click-through scenes for the interactive HTML build. */
   scenes: Scene[];
+  /** The spec's own directory, for steps that name a file relative to it. */
+  specDir: string;
+  /**
+   * Resolves once the overlay has been re-installed after a navigation.
+   *
+   * A step that navigates must wait for this before it lets the clock advance:
+   * the overlay is what draws the cursor and captions, so a frame sampled while
+   * it is missing is a different frame, and whether that happens depends on
+   * real-world timing rather than on the spec.
+   */
+  overlayReady?: () => Promise<void>;
   /** Branch path these steps belong to, stamped onto every scene they produce. */
   currentPath?: string;
   /** When the last title card appeared — a card resets the narration context. */
@@ -119,7 +133,38 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const target = resolveUrl(ctx.spec.url, step.goto);
     await page.goto(target, { waitUntil: "domcontentloaded" });
     await settle(page);
+    await ctx.overlayReady?.();
     zoomOut(ctx); // new page → establishing wide shot
+    await ctx.rec.hold(HOLD.afterGoto);
+    return;
+  }
+
+  if ("signIn" in step) {
+    const cfg = typeof step.signIn === "string" ? { state: step.signIn } : step.signIn;
+    const file = resolveFrom(ctx.specDir, cfg.state);
+    // Loud only when git can actually see the file. A warning that fires on
+    // every render is a warning people learn to scroll past.
+    if (isGitIgnored(file) === false) warnAboutCredentials(file);
+
+    const applied = await applyStorageState(page.context(), page, await loadStorageState(file));
+    const restored = [
+      `${applied.cookies} cookie${applied.cookies === 1 ? "" : "s"}`,
+      ...(applied.origins.length ? [`local storage for ${applied.origins.join(", ")}`] : []),
+    ].join(", ");
+    log.info(`Signed in off-camera: ${restored}.`);
+    for (const origin of applied.offCamera) {
+      // The camera films one page; another origin needs a page of its own, and
+      // "a page was opened that you will not see" is worth saying out loud.
+      log.debug(`${origin} was restored from an off-camera page.`);
+    }
+
+    // Nothing has changed on screen until the app is asked again. Reloading is
+    // what turns a restored cookie into the signed-in view.
+    if (cfg.goto) await page.goto(resolveUrl(ctx.spec.url, cfg.goto), { waitUntil: "domcontentloaded" });
+    else await page.reload({ waitUntil: "domcontentloaded" });
+    await settle(page);
+    await ctx.overlayReady?.();
+    zoomOut(ctx); // a different app is on screen now — establishing wide shot
     await ctx.rec.hold(HOLD.afterGoto);
     return;
   }
@@ -592,6 +637,7 @@ function describe(step: Step): string {
   if (typeof val === "object" && val) {
     const v = val as Record<string, unknown>;
     if ("cmd" in v) return `${key} ${v.cmd}`;
+    if ("state" in v) return `${key} ${v.state}`;
     if ("selector" in v) return `${key} ${v.selector}${"text" in v ? ` "${v.text}"` : ""}`;
     if ("title" in v) return `${key} “${v.title}”`;
     if ("text" in v) return `${key} “${v.text}”`;

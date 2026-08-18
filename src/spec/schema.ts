@@ -306,6 +306,36 @@ const durationMs = z.number().int().nonnegative();
 const baseStepSchema = z.union([
   /** Navigate. A path is resolved against `url`; a full URL is used as given. */
   z.object({ goto: z.string() }).strict(),
+  /**
+   * Become signed in, mid-demo, without filming the sign-in.
+   *
+   * `storageState` authenticates a whole run, which is the right answer when
+   * the demo starts inside the product. It is the wrong answer when the demo
+   * opens on a marketing page, a logged-out home screen or a paywall — the
+   * story needs to begin signed *out* and cross over.
+   *
+   * This applies a session saved by `reel capture --save-auth` to the running
+   * browser and reloads, so one continuous demo can show the logged-out page,
+   * cover the transition with a card, and carry on inside the product. No
+   * jump cut between two renders, one camera path, one caption timeline.
+   *
+   * Deliberately a saved session rather than a scripted login: filming a real
+   * sign-in means a password in the spec, and there is no way to put one there
+   * for exactly that reason.
+   */
+  z
+    .object({
+      signIn: z.union([
+        z.string(),
+        z.object({
+          /** Path to a Playwright storage state, relative to the spec. */
+          state: z.string(),
+          /** Where to land afterwards. Omit to reload wherever the demo is. */
+          goto: z.string().optional(),
+        }),
+      ]),
+    })
+    .strict(),
   /** Click an element. The cursor glides to it first, and the click ripples. */
   z.object({ click: selector }).strict(),
   /** Double-click an element. */

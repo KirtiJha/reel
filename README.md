@@ -160,6 +160,37 @@ interpolation, so a typed credential would have to be committed in plaintext.
 If you must script the login itself, drive it once with `capture --save-auth`
 and let the saved session stand in for it from then on.
 
+### Starting signed out, and crossing over
+
+`storageState:` authenticates the *whole* run, which is right when the demo
+begins inside the product and wrong when it opens on a marketing page, a
+logged-out home screen or a paywall — the story needs to start signed out.
+`signIn` is that crossing:
+
+```yaml
+url: https://app.example.com
+steps:
+  - caption: "Everyone starts here — signed out"
+  - card: { title: "Sign in", subtitle: "off camera" }
+  - signIn: .auth/demo.json        # or: { state: .auth/demo.json, goto: /dashboard }
+  - caption: "…and you're straight into the product"
+```
+
+It applies the saved session to the browser that is already running and
+reloads, so **one** continuous demo shows the logged-out page and then the
+product. No jump cut between two renders, one camera path, one caption
+timeline. Cookies go to the context; local storage is written on the page
+already on screen, and any *other* origin the session covers (an auth server,
+say) is restored from a page the camera never films.
+
+It is still a saved session rather than a scripted login, for the reason
+above — the demo never types a password because there is nowhere to put one.
+
+Two things it will tell you rather than let you find out from the render: a
+session file whose cookies have **expired** (the app would quietly render
+logged out and every step would still pass), and one that holds no session at
+all — what you get when Finish is pressed before the sign-in completes.
+
 ## Editor support
 
 Every spec `reel init` or `reel capture` writes opens with a schema line, so

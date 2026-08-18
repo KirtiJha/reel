@@ -3,7 +3,8 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { LoadedSpec } from "./load.js";
 import { resolveOutput } from "./load.js";
-import type { Spec } from "./schema.js";
+import type { Spec, Step } from "./schema.js";
+import { isBranch } from "./schema.js";
 
 /**
  * Deciding whether a demo needs re-recording.
@@ -38,6 +39,29 @@ function referencedFiles(spec: Spec, loaded: LoadedSpec): string[] {
   const out: string[] = [];
   if (spec.storageState) out.push(resolveOutput(loaded, spec.storageState));
   if (spec.mock?.har) out.push(resolveOutput(loaded, spec.mock.har));
+  for (const p of signInStates(spec.steps)) out.push(resolveOutput(loaded, p));
+  return out;
+}
+
+/**
+ * Every session a `signIn` step restores, branches included.
+ *
+ * A `signIn` file decides what the app renders from that step onward, exactly
+ * as `storageState` does for the whole run — so a re-saved session is a changed
+ * input, and `--if-changed` must not skip past one.
+ */
+export function signInStates(steps: Step[]): string[] {
+  const out: string[] = [];
+  for (const step of steps) {
+    if (isBranch(step)) {
+      // Alternate paths are recorded too, so their sign-ins are inputs as well.
+      for (const path of step.branch.paths) out.push(...signInStates(path.steps as Step[]));
+      continue;
+    }
+    if ("signIn" in step) {
+      out.push(typeof step.signIn === "string" ? step.signIn : step.signIn.state);
+    }
+  }
   return out;
 }
 

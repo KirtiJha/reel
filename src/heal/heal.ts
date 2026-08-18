@@ -93,6 +93,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
         cinematic: false,
         animationsDisabled: spec.deterministic.disableAnimations,
       }),
+          specDir: loaded.dir,
     };
 
     log.phase(`Healing “${spec.name}” (${spec.steps.length} steps)`);

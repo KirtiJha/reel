@@ -156,6 +156,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       await term.show("terminal"); // a terminal spec opens on the terminal
     }
 
+    // Reassigned by the framenavigated handler below; a step that navigates
+    // awaits whatever it points at before sampling another frame.
+    let overlayPending: Promise<void> = Promise.resolve();
+
     const ctx: StepContext = {
       page,
       spec,
@@ -169,23 +173,34 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       rec,
       term,
       scenes,
+      specDir: loaded.dir,
+      overlayReady: () => overlayPending,
     };
     // The opening frame: without it the timeline starts at the first thing that
     // moves, and the lead-in has to be reconstructed at encode time.
     await rec.frame();
 
     // Re-install overlay on every navigation (new document wipes it).
+    //
+    // The handler can't be async — Playwright doesn't await event listeners —
+    // so the work it starts is tracked instead, and a step that navigates waits
+    // for it before letting the clock advance. Otherwise the reinstall lands
+    // somewhere between two sampled frames, and *which* two depends on how
+    // quickly the machine got there: one extra deduped frame, on some runs and
+    // not others, in a renderer whose whole promise is byte-identical output.
     if (mode === "record") {
       page.on("framenavigated", (frame) => {
         if (frame === page.mainFrame()) {
-          installOverlay(page, {
-            cursor: spec.polish.cursor !== "none",
-            captions: spec.polish.captions,
-            accent: spec.polish.accent,
-            animate: !deterministic,
-          }).catch(() => {});
-          // A new document wipes the terminal layer along with the overlay.
-          term?.install().catch(() => {});
+          overlayPending = Promise.all([
+            installOverlay(page, {
+              cursor: spec.polish.cursor !== "none",
+              captions: spec.polish.captions,
+              accent: spec.polish.accent,
+              animate: !deterministic,
+            }).catch(() => {}),
+            // A new document wipes the terminal layer along with the overlay.
+            term?.install().catch(() => {}) ?? Promise.resolve(),
+          ]).then(() => {});
         }
       });
     }
