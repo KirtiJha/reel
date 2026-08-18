@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { specSchema, resolveOutputProfile, outputSchema, PRESETS } from "../src/spec/schema.js";
 import { resolveOutput } from "../src/spec/load.js";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const minimal = {
   steps: [{ goto: "/" }],
@@ -84,10 +84,17 @@ describe("resolveOutputProfile", () => {
 });
 
 describe("resolveOutput", () => {
-  const loaded = { spec: {} as never, path: "/w/demos/d.reel.yaml", dir: "/w/demos" };
+  // Absolute in this platform's own terms. On Windows a bare "/w/demos" has no
+  // drive letter, so the resolved answer picks up the current drive and no
+  // hand-written POSIX string can match it — which is exactly how these tests
+  // passed everywhere except the platform half of Reel's users are on.
+  const dir = resolve("/w/demos");
+  const loaded = { spec: {} as never, path: join(dir, "d.reel.yaml"), dir };
 
   test("a relative path resolves against the spec's directory", () => {
-    assert.equal(resolveOutput(loaded, "out/a.mp4"), "/w/demos/out/a.mp4");
+    // Built with `join` rather than `resolve`, so this asserts *where* the path
+    // was resolved from instead of restating the implementation.
+    assert.equal(resolveOutput(loaded, "out/a.mp4"), join(dir, "out", "a.mp4"));
   });
 
   test("an absolute path is left alone", () => {
@@ -102,11 +109,10 @@ describe("resolveOutput", () => {
   });
 
   test("~user is not expanded — it needs a passwd lookup", () => {
-    const out = resolveOutput(loaded, "~someone/auth.json");
-    assert.equal(out, "/w/demos/~someone/auth.json");
+    assert.equal(resolveOutput(loaded, "~someone/auth.json"), join(dir, "~someone", "auth.json"));
   });
 
   test("a tilde anywhere but the start is an ordinary character", () => {
-    assert.equal(resolveOutput(loaded, "out/a~b.mp4"), "/w/demos/out/a~b.mp4");
+    assert.equal(resolveOutput(loaded, "out/a~b.mp4"), join(dir, "out", "a~b.mp4"));
   });
 });
