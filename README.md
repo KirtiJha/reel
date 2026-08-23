@@ -880,19 +880,19 @@ and per-frame timestamps keep playback at the intended speed.
 
 ## Status
 
-Alpha (v0.1). Working and dogfooded (the GIF above): the core runner,
+Alpha (v0.2). Working and dogfooded (the GIF above): the core runner,
 determinism, retina capture, auto-zoom, device frames + padding/background,
 polish (synthetic cursor + composited captions), the **scene grammar** (title
 cards, spotlight callouts, rendered scrolling, explicit camera, assertions),
 delivery presets, encoders (GIF/MP4/WebM/storyboard), **interactive HTML**,
-**branching**, **terminal demos**, **capture** and AI authoring, **self-healing
-drift repair**, **subtitles + localization**, and **PII redaction + mock data**
+**branching**, **terminal demos**, **capture** and AI authoring, **demos behind
+a login** (including signing in mid-demo), **self-healing drift repair**,
+**subtitles + localization**, and **PII redaction + mock data**
 — the model-backed parts provider-agnostic via a LiteLLM proxy, and optional.
 
-Around them, the things that make it usable day to day: `reel doctor`,
-failure artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, `reel ci`
-and its **GitHub Action**, and a JSON Schema for
-editor autocomplete.
+Around them, the things that make it usable day to day: `reel doctor`, failure
+artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, `reel ci` and
+its **GitHub Action**, and a JSON Schema for editor autocomplete.
 
 ## License
 
