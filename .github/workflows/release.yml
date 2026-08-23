@@ -13,12 +13,23 @@
 # Publish, so it works without a 2FA prompt in CI.
 name: release
 
+# Two ways in, and the tag is written by the *end* of the job either way.
+#
+# Tagging first and publishing second is the obvious order and the wrong one: a
+# publish that fails leaves a version tag on a commit that was never released,
+# and the fix is to delete a tag people may already have fetched. Publishing
+# first means the tag only ever marks something that actually exists on npm.
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish. Must match package.json."
+        required: true
   push:
     tags: ["v*.*.*"]
 
 permissions:
-  contents: write # moves the major alias tag and creates the release
+  contents: write # writes the version tag, moves the major alias, cuts the release
   id-token: write # provenance is signed with this; publishing works without it
 
 jobs:
@@ -39,19 +50,31 @@ jobs:
 
       - run: npm ci
 
-      # The tag is the claim; package.json is the fact. Tagging v0.3.0 against a
-      # package.json that still says 0.2.0 would publish 0.2.0 under a name
-      # nobody can find, or fail deep inside npm with a message about neither.
-      - name: The tag must be the version being published
+      # The tag (or the typed input) is the claim; package.json is the fact.
+      # Asking for v0.3.0 against a package.json that still says 0.2.0 would
+      # publish 0.2.0 under a version nobody can find, or fail deep inside npm
+      # with a message about neither.
+      - name: The version asked for must be the version in the tree
+        id: version
+        env:
+          ASKED: ${{ inputs.version || github.ref_name }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME#v}"
+          WANT="${ASKED#v}"
           PKG="$(node -p "require('./package.json').version")"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG."
-            echo "Bump package.json (and src/version.ts) or retag."
+          if [ "$WANT" != "$PKG" ]; then
+            echo "::error::Asked for $WANT but package.json says $PKG."
+            echo "Bump package.json and src/version.ts, or ask for $PKG."
             exit 1
           fi
+          # Guards against publishing over a version that already exists, which
+          # npm refuses anyway — but here it fails before the tests spend four
+          # minutes earning a 403.
+          if npm view "@kirti_jha/reel@$PKG" version >/dev/null 2>&1; then
+            echo "::error::@kirti_jha/reel@$PKG is already published."
+            exit 1
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
           echo "Publishing $PKG"
 
       # Run separately rather than leaving it to prepublishOnly: a failure here
@@ -65,22 +88,29 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # The Action's interface version is deliberately not the package version:
-      # `uses: KirtiJha/reel@v1` is a promise about inputs and outputs, which
-      # survives a package bump, and moving the alias is what makes that pin
-      # resolve to the newest release rather than to a frozen one.
-      - name: Move the v1 alias to this release
+      # Only now, with the package actually on npm.
+      #
+      # The `v1` alias is deliberately not the package version: `uses:
+      # KirtiJha/reel@v1` is a promise about the Action's inputs and outputs,
+      # which survives a package bump, and moving it is what makes that pin
+      # resolve to the newest release rather than a frozen one.
+      - name: Tag what was published
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           git config user.name "reel-bot"
           git config user.email "bot@users.noreply.github.com"
+          git tag -f "v$VERSION"
+          git push -f origin "v$VERSION"
           git tag -f v1
           git push -f origin v1
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
-          # A tag with a prerelease part (v0.3.0-rc.1) should not become the
+          # A version with a prerelease part (0.3.0-rc.1) should not become the
           # release people land on from the repository's front page.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
