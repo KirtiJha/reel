@@ -1,5 +1,5 @@
 import type { StepInput } from "../spec/schema.js";
-import { chooseSelector, type Candidate } from "./selector.js";
+import { chooseSelector, looksGenerated, type Candidate } from "./selector.js";
 import type { ObservedEvent } from "./observe.js";
 
 /**
@@ -148,10 +148,51 @@ export function relativeUrl(url: string, baseUrl: string): string | null {
     const target = new URL(url);
     const base = new URL(baseUrl);
     if (target.origin !== base.origin) return target.toString();
-    return target.pathname + target.search + target.hash;
+    return generalizeUrl(target.pathname) + target.search + target.hash;
   } catch {
     return null;
   }
+}
+
+/**
+ * A path segment the app minted is a wildcard, not a value to wait for.
+ *
+ * Creating something in an app usually lands you on it, at a URL containing
+ * its brand-new id — n8n's "Build a workflow" goes to
+ * `/workflow/xOKY1J9Z2cJ40cBe?new=true`. Recorded literally, that step waits
+ * for a workflow that will never be created again, and the spec fails on its
+ * first replay rather than on some later drift.
+ *
+ * The same judgement that rejects a generated selector applies here, and for
+ * the same reason: what the demo means is "wait until we are looking at a
+ * workflow", not "wait for that one".
+ */
+export function generalizeUrl(pathname: string): string {
+  return pathname
+    .split("/")
+    .map((segment) => (segment && (looksGenerated(segment) || opaqueSegment(segment)) ? "*" : segment))
+    .join("/");
+}
+
+/**
+ * An opaque token, as URL path segments go.
+ *
+ * `looksGenerated` is tuned for DOM ids, where a scattering of digits is the
+ * tell. The ids apps mint for URLs are often nanoid-shaped — long, mixed case,
+ * and with as little as one digit — so n8n's `xOKY1J9Z2cJ40cBe` is caught by
+ * that rule and `HlrOEDBVg5crbhQY`, from the very next run, is not. Detection
+ * that depends on how many digits the random generator happened to pick is not
+ * detection.
+ *
+ * Deliberately narrow, because a rule that eats real paths is worse than one
+ * that misses: all three of long, mixed case and at least one digit have to
+ * hold. `userProfileSettings` has no digit, `mainNavigation` is too short, and
+ * `tutorial---basics` is neither.
+ */
+function opaqueSegment(segment: string): boolean {
+  if (segment.length < 16) return false;
+  if (!/^[A-Za-z0-9_-]+$/.test(segment)) return false;
+  return /[a-z]/.test(segment) && /[A-Z]/.test(segment) && /\d/.test(segment);
 }
 
 /**

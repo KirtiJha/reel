@@ -91,7 +91,21 @@ export const OBSERVER_SCRIPT = `
     return wrapping ? norm(wrapping.textContent) : "";
   };
 
-  const nameOf = (el) => {
+  /**
+   * Roles whose accessible name may come from the text inside them.
+   *
+   * ARIA is explicit about this and the difference is not cosmetic: a group,
+   * a region or a dialog full of text has *no* accessible name unless the
+   * author labelled it. Taking the text anyway produces a selector that looks
+   * exactly right, passes the uniqueness check in this page, and resolves to
+   * nothing at all in Playwright — n8n's canvas offers a role=group reading
+   * "Add first step…", and the captured spec failed on its first replay.
+   */
+  var NAME_FROM_CONTENT = ["button","cell","checkbox","columnheader","gridcell",
+    "heading","link","menuitem","menuitemcheckbox","menuitemradio","option","radio",
+    "row","rowheader","switch","tab","tooltip","treeitem"];
+
+  const nameOf = (el, role) => {
     const aria = el.getAttribute("aria-label");
     if (aria) return norm(aria);
     const by = el.getAttribute("aria-labelledby");
@@ -108,6 +122,9 @@ export const OBSERVER_SCRIPT = `
       return norm(el.getAttribute("placeholder"));
     }
     const title = el.getAttribute("title");
+    // A role that cannot be named by its content is named by the author or not
+    // at all. A title attribute still counts — that is authored, not content.
+    if (role !== undefined && NAME_FROM_CONTENT.indexOf(role) === -1) return norm(title);
     return norm(el.innerText || el.textContent) || norm(title);
   };
 
@@ -126,7 +143,7 @@ export const OBSERVER_SCRIPT = `
     let n = 0;
     for (const el of (root || document).querySelectorAll("*")) {
       if (roleOf(el) !== role) continue;
-      if (name && nameOf(el).toLowerCase() !== wanted) continue;
+      if (name && nameOf(el, role).toLowerCase() !== wanted) continue;
       n++;
     }
     return n;
@@ -229,7 +246,7 @@ export const OBSERVER_SCRIPT = `
     if (el.id) add("id", "#" + el.id, (root) => countCss("#" + CSS.escape(el.id), root));
 
     const role = roleOf(el);
-    const name = nameOf(el);
+    const name = nameOf(el, role);
     if (role && name) {
       const quoted = /[\\s\\]"']/.test(name) ? JSON.stringify(name) : name;
       add("role", "role=" + role + "[name=" + quoted + "]", (root) => countRole(role, name, root));

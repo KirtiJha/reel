@@ -126,6 +126,7 @@ try {
           <button aria-label="${label}">
             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1 L15 15"/></svg>
           </button>
+          <div role="group" tabindex="0"><span>Add first step</span></div>
         </main>`,
     }),
   );
@@ -144,6 +145,25 @@ try {
     "a click on an icon is named after its button, not path-selected",
     chooseSelector(icon) === roleSelector("button", label),
     JSON.stringify(chooseSelector(icon)),
+  );
+
+  // A role that cannot take its name from its content. n8n's canvas has exactly
+  // this: a div with role=group and tabindex=0, so the walk up from the click
+  // lands on it — and the observer then named it after the text inside. The
+  // selector looked perfect, passed the uniqueness check in the page, and
+  // resolved to nothing at all. The tabindex is load-bearing here: without it
+  // the walk stops short and the case never arises.
+  const group = await clicked('[role="group"] span');
+  const groupSel = chooseSelector(group);
+  ok(
+    "a role that cannot be named by its content is not named by its content",
+    !/^role=group\[name=/.test(String(groupSel)),
+    String(groupSel),
+  );
+  ok(
+    "and whatever it is named, Playwright finds exactly one",
+    groupSel !== null && (await probe.locator(toPlaywrightSelector(groupSel)).count()) === 1,
+    String(groupSel),
   );
 
   const link = await clicked("nav a");

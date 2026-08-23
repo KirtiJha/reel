@@ -258,7 +258,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("waitForUrl" in step) {
-    await page.waitForURL(step.waitForUrl.includes("*") ? step.waitForUrl : `**${step.waitForUrl}**`);
+    await page.waitForURL(urlPattern(step.waitForUrl));
     // A URL change is a new page, so the camera has to let go of what it was
     // holding: that box belonged to the page that just went away. `goto` has
     // always done this; `waitForUrl` did not, and the two are the same event
@@ -627,6 +627,21 @@ async function settle(page: Page): Promise<void> {
 function resolveUrl(base: string, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   return new URL(path, base).toString();
+}
+
+/**
+ * What `waitForUrl` actually waits for.
+ *
+ * A spec says `/settings`, meaning "the address contains this" — so a bare path
+ * is padded at both ends. A path that already carries a wildcard is a different
+ * request: `/workflow/*` means that path with any id, and padding its tail
+ * would let it match anything that merely began that way. It still needs a head,
+ * though, or it never matches the scheme and host in front of it — which is the
+ * bug that made a captured `/workflow/*` silently wait forever.
+ */
+export function urlPattern(url: string): string {
+  if (url.startsWith("*") || /^https?:\/\//.test(url)) return url;
+  return url.includes("*") ? `**${url}` : `**${url}**`;
 }
 
 function describe(step: Step): string {

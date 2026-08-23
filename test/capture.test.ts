@@ -13,7 +13,8 @@ import {
   unscope,
   type Candidate,
 } from "../src/authoring/selector.js";
-import { relativeUrl, toSteps, type CaptureEvent } from "../src/authoring/steps.js";
+import { generalizeUrl, relativeUrl, toSteps, type CaptureEvent } from "../src/authoring/steps.js";
+import { urlPattern } from "../src/driver/steps.js";
 import { emitSpec, renderStep, scalar } from "../src/authoring/emit.js";
 import { specSchema } from "../src/spec/schema.js";
 
@@ -80,6 +81,58 @@ describe("choosing a selector", () => {
   test("still rejects an accessible name that is a whole paragraph", () => {
     const essay = roleSelector("button", "x".repeat(MAX_ROLE_NAME + 1));
     assert.equal(chooseSelector([c("role", essay)]), null);
+  });
+});
+
+describe("a URL with an id the app just minted", () => {
+  test("the generated segment becomes a wildcard", () => {
+    // n8n's "Build a workflow" lands on a workflow that will never exist
+    // again. Recorded literally, the step waits forever on the next run.
+    assert.equal(generalizeUrl("/workflow/xOKY1J9Z2cJ40cBe"), "/workflow/*");
+    assert.equal(relativeUrl("http://x/workflow/HlrOEDBVg5crbhQY?new=true", "http://x"), "/workflow/*?new=true");
+  });
+
+  test("caught whether or not the generator picked many digits", () => {
+    // Two consecutive real n8n ids. The first is digit-rich and the old rule
+    // caught it; the second has a single digit and slipped straight through.
+    assert.equal(generalizeUrl("/workflow/xOKY1J9Z2cJ40cBe"), "/workflow/*");
+    assert.equal(generalizeUrl("/workflow/HlrOEDBVg5crbhQY"), "/workflow/*");
+  });
+
+  test("a path a person wrote is left alone", () => {
+    for (const path of [
+      "/docs/intro",
+      "/settings/profile",
+      "/",
+      "/docs/tutorial---basics",
+      "/userProfileSettings", // long and mixed case, but no digit
+      "/mainNavigation", // mixed case with a digit would still be too short
+    ]) {
+      assert.equal(generalizeUrl(path), path);
+    }
+  });
+
+  test("only the generated segment is replaced", () => {
+    assert.equal(generalizeUrl("/team/a1b2c3d4e5f6/settings"), "/team/*/settings");
+  });
+});
+
+describe("what waitForUrl waits for", () => {
+  test("a bare path matches anywhere in the address", () => {
+    // Unchanged behaviour: `/docs` still has to find `/docs/intro`.
+    assert.equal(urlPattern("/docs"), "**/docs**");
+  });
+
+  test("a path with a wildcard keeps its head but not its tail", () => {
+    // The head is what lets it match past the scheme and host; leaving the tail
+    // off is what stops `/workflow/*` matching anything merely starting that
+    // way. Without the head it matched nothing at all, silently.
+    assert.equal(urlPattern("/workflow/*"), "**/workflow/*");
+  });
+
+  test("an explicit glob or full URL is passed through", () => {
+    assert.equal(urlPattern("**/anything"), "**/anything");
+    assert.equal(urlPattern("https://example.com/x"), "https://example.com/x");
   });
 });
 
