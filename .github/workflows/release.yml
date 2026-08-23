@@ -1,0 +1,86 @@
+# Publishing Reel.
+#
+# Triggered by pushing a version tag, so a release is `git tag v0.2.0 &&
+# git push --tags` rather than a command run from somebody's laptop. That
+# matters for more than convenience: a laptop publish is unattested, ships
+# whatever happened to be in the working tree, and can only be done by whoever
+# holds the token. This publishes from a clean checkout of the tagged commit,
+# with npm provenance, which records publicly which workflow run produced the
+# tarball and from which source.
+#
+# Setup, once: add an npm automation token as the NPM_TOKEN repository secret
+# (npmjs.com → Access Tokens → Generate → Automation). Automation rather than
+# Publish, so it works without a 2FA prompt in CI.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write # moves the major alias tag and creates the release
+  id-token: write # provenance is signed with this; publishing works without it
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the alias tag below needs the history
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          # Required for NODE_AUTH_TOKEN to reach npm — without it the publish
+          # fails with ENEEDAUTH despite the secret being set.
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # The tag is the claim; package.json is the fact. Tagging v0.3.0 against a
+      # package.json that still says 0.2.0 would publish 0.2.0 under a name
+      # nobody can find, or fail deep inside npm with a message about neither.
+      - name: The tag must be the version being published
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG."
+            echo "Bump package.json (and src/version.ts) or retag."
+            exit 1
+          fi
+          echo "Publishing $PKG"
+
+      # Run separately rather than leaving it to prepublishOnly: a failure here
+      # names the step that failed, instead of surfacing as a publish that died
+      # for reasons the log makes you go hunting for.
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # The Action's interface version is deliberately not the package version:
+      # `uses: KirtiJha/reel@v1` is a promise about inputs and outputs, which
+      # survives a package bump, and moving the alias is what makes that pin
+      # resolve to the newest release rather than to a frozen one.
+      - name: Move the v1 alias to this release
+        run: |
+          set -euo pipefail
+          git config user.name "reel-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git tag -f v1
+          git push -f origin v1
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          # A tag with a prerelease part (v0.3.0-rc.1) should not become the
+          # release people land on from the repository's front page.
+          prerelease: ${{ contains(github.ref_name, '-') }}
