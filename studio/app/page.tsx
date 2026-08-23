@@ -69,6 +69,21 @@ const FEATURES = [
     icon: "M12 3l2.2 6.2L21 11l-6.8 1.8L12 19l-2.2-6.2L3 11l6.8-1.8z",
   },
   {
+    title: "Or author by doing",
+    body: "reel capture opens your app in a real browser. Demo it the way you would to a customer, press Finish, and you have a spec that already replays — with selectors ranked by how stable their meaning is, not by convenience.",
+    icon: "M9 5l10 7-10 7V5z",
+  },
+  {
+    title: "Is the demo still true?",
+    body: "check proves the steps ran; diff proves pixels moved. reel review reads the frames that changed and says what changed in your product's words — and flags a caption the screen no longer matches.",
+    icon: "M12 5c-5 0-9 4.5-9 7s4 7 9 7 9-4.5 9-7-4-7-9-7zm0 4.5A2.5 2.5 0 1112 14a2.5 2.5 0 010-4.5z",
+  },
+  {
+    title: "Demos behind a login",
+    body: "Sign in once off camera and replay that session — or start on the logged-out page and cross over mid-demo with signIn. Nobody watches a login, and no password ever goes near a spec.",
+    icon: "M12 3l8 4v6c0 4.4-3.4 8-8 9-4.6-1-8-4.6-8-9V7zM9.5 12.5l1.8 1.8 3.5-3.6",
+  },
+  {
     title: "Byte-identical renders",
     body: "A virtual timeline and a frozen clock mean the same spec produces the same bytes on any machine. Committed demo media changes only when the demo does.",
     icon: "M12 8v4l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
@@ -80,29 +95,38 @@ const FEATURES = [
   },
 ];
 
-/** Every command the CLI exposes, worded as `reel --help` words them. */
+/**
+ * Every command the CLI exposes, worded as `reel --help` words them.
+ *
+ * Complete on purpose. A list that quietly showed the handful that were easy to
+ * describe would undersell the tool, and worse, it would be the first thing to
+ * fall out of date the next time one was added.
+ */
 const COMMANDS = [
+  { cmd: "doctor", blurb: "Check this machine can record: browser, ffmpeg, image pipeline, temp space." },
   { cmd: "init", blurb: "Scaffold a starter demo.reel.yaml to edit." },
+  { cmd: "capture --url <url>", blurb: "Author by doing — drive your app in a browser and get a spec back." },
   { cmd: "record <spec>", blurb: "Drive your app from a spec and render the demo." },
   { cmd: "check <spec>", blurb: "Re-run the spec headlessly and fail if any step can't complete." },
+  { cmd: "ci [specs...]", blurb: "Run every demo in the repository and report one result." },
+  { cmd: "diff <a> <b>", blurb: "Compare two renders and report which parts of the demo changed." },
+  { cmd: "review <a> <b>", blurb: "Say what changed, and whether the demo is still telling the truth." },
   { cmd: "heal <spec>", blurb: "Re-resolve a step the UI broke, and repair the spec in place." },
   { cmd: "author <story>", blurb: "Turn plain English into a spec an agent verified against your app." },
+  { cmd: "schema", blurb: "Print the JSON Schema for a spec — editor autocomplete and validation." },
+  { cmd: "themes", blurb: "List the colour schemes available to terminal demos." },
   { cmd: "ui", blurb: "Launch Reel Studio, the local web workspace." },
 ];
 
-/* Condensed from this repo's own workflow — Reel keeps its own demos honest
-   the same way it would keep yours. */
-const CI = `- run: npm ci
-- run: npx playwright install --with-deps chromium
-
-# Fails the build when a step can't complete.
-- name: Drift check
-  run: npx reel check demo.reel.yaml
-
-# Deterministic, so this is a no-op unless
-# the demo genuinely changed.
-- name: Regenerate demo media
-  run: npx reel record demo.reel.yaml`;
+/* Reel's own workflow, which is the same one it asks of you — the action is
+   built from this repository and runs on every pull request against it. */
+const CI = `- uses: KirtiJha/reel@v1
+  with:
+    specs: "**/*.reel.yaml"
+    mode: record      # regenerate the media
+    review: true      # …and say what changed in it
+    comment: true     # one PR comment, updated in place
+    commit: true      # push the new media to the branch`;
 
 /** Studio screenshots, in the order someone would actually meet the app. */
 const SHOTS = [
@@ -562,7 +586,7 @@ export default function Landing() {
               It all runs from your terminal
             </h2>
             <p className="prose-muted mx-auto mt-3 max-w-[62ch]">
-              Studio is optional. The CLI is the whole tool — the same six commands work on your
+              Studio is optional. The CLI is the whole tool — every command works the same on your
               machine and on a CI runner, with no service to sign up for.
             </p>
           </div>
@@ -589,7 +613,7 @@ export default function Landing() {
               <div className="card !p-0">
                 <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
                   <span className="font-mono text-[12px] text-muted">.github/workflows/reel.yml</span>
-                  <span className="tag">in CI</span>
+                  <span className="tag">GitHub Action</span>
                 </div>
                 <pre className="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.7] text-muted">
                   {CI}
@@ -603,6 +627,27 @@ export default function Landing() {
                   And because renders are deterministic,{" "}
                   <span className="font-mono text-ink">record</span> is a no-op unless the demo
                   genuinely changed — a media diff means something really moved.
+                </p>
+              </div>
+              <div className="card">
+                <h3 className="text-[15px] font-semibold">Demos behind a login</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-muted">
+                  Sign in once off camera with{" "}
+                  <span className="font-mono text-ink">capture --save-auth</span> and every render
+                  replays that session. Opening on a logged-out page instead? A{" "}
+                  <span className="font-mono text-ink">signIn</span> step crosses over mid-demo, so
+                  one continuous take shows both. No password ever goes near a spec — there is
+                  deliberately nowhere to put one.
+                </p>
+              </div>
+              <div className="card">
+                <h3 className="text-[15px] font-semibold">Is it still true, though?</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-muted">
+                  A demo can pass every check and still be wrong: rename a button and the flow
+                  completes, the diff is a fraction of a percent, and the caption over it now names
+                  a control that no longer exists.{" "}
+                  <span className="font-mono text-ink">review</span> reads the frames that changed
+                  and says so. At one demo somebody watches the GIF; at forty, nobody does.
                 </p>
               </div>
             </div>
