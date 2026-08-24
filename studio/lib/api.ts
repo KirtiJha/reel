@@ -141,6 +141,12 @@ export async function runJob(
         const obj = JSON.parse(line);
         if (obj.type === "log") onLog({ level: obj.level, msg: obj.msg });
         else if (obj.type === "done") done = obj;
+        // Anything else is ignored on purpose. The server sends `{type:"ping"}`
+        // every few seconds so that a proxy between us — Next's dev rewrite, in
+        // the normal setup — never sees an idle connection during the minutes a
+        // render spends compositing without logging anything. Dropping unknown
+        // types here is what lets the server add such lines without a lockstep
+        // client release.
       } catch {
         /* ignore malformed line */
       }

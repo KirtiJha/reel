@@ -514,17 +514,36 @@ async function saveSpec(req: http.IncomingMessage, res: http.ServerResponse, cwd
   sendJson(res, 200, { ok: true });
 }
 
+/**
+ * How often to write something — anything — while a job is running.
+ *
+ * The UI reaches this server through Next's dev rewrite, and a proxy will drop
+ * a stream it believes has gone idle. Rendering is exactly that: several
+ * silent minutes of compositing between one log line and the next. The job
+ * would finish, write its files, and the page would sit on “working…” forever,
+ * because the connection carrying the answer had already been severed.
+ *
+ * Well under any proxy's idle timeout, and cheap — one short line.
+ */
+const KEEPALIVE_MS = 5_000;
+
 /** Run a job in-process, streaming logs + a final result as NDJSON. */
 function streamJob(res: http.ServerResponse, run: () => Promise<unknown>): void {
   if (busy) return void sendJson(res, 409, { error: "A job is already running. Wait for it to finish." });
   busy = true;
   res.writeHead(200, {
     "content-type": "application/x-ndjson; charset=utf-8",
-    "cache-control": "no-cache",
+    // `no-transform` asks intermediaries not to buffer this up for compression;
+    // `x-accel-buffering` is the same request in the dialect nginx speaks.
+    "cache-control": "no-cache, no-transform",
+    "x-accel-buffering": "no",
     connection: "keep-alive",
   });
   const write = (obj: unknown) => res.write(JSON.stringify(obj) + "\n");
   const unsub = addLogSink((e) => write({ type: "log", ...e }));
+  // Unref'd: a heartbeat must never be the reason the process stays alive.
+  const beat = setInterval(() => write({ type: "ping" }), KEEPALIVE_MS);
+  beat.unref();
   run()
     .then((result) => write({ type: "done", ok: true, result }))
     .catch((err) => {
@@ -532,6 +551,7 @@ function streamJob(res: http.ServerResponse, run: () => Promise<unknown>): void 
       write({ type: "done", ok: false, error: e.message, hint: e.hint });
     })
     .finally(() => {
+      clearInterval(beat);
       unsub();
       busy = false;
       res.end();
