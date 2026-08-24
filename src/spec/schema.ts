@@ -96,6 +96,19 @@ export const polishSchema = z.object({
    */
   frame: z.enum(["none", "browser", "window"]).default("none"),
   /**
+   * Address shown in the browser frame's URL pill.
+   *
+   * Demos are filmed against whatever serves the app locally, so without this
+   * every published video has `localhost:4500` in the chrome — which tells the
+   * viewer they are watching a developer's laptop rather than the product. Set
+   * it to the address people actually type.
+   *
+   * It is cosmetic by design: it changes the pixels in the pill and nothing
+   * else. The demo still runs against `url`, so this cannot be used to make a
+   * recording claim it visited somewhere it did not.
+   */
+  frameUrl: z.string().optional(),
+  /**
    * Outer padding around the frame, in reference px (at 1000px-wide output;
    * scales with resolution). When a frame is set, a sensible default is used.
    */

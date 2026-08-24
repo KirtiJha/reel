@@ -335,7 +335,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             viewport: spec.viewport,
             captions: spec.polish.captions ? caps : [],
             polish: spec.polish,
-            url: spec.url,
+            // Cosmetic only — what the URL pill reads. The recording still ran
+            // against spec.url; this just keeps a dev server's port out of a
+            // published video.
+            url: spec.polish.frameUrl ?? spec.url,
           },
           bts,
         );

@@ -183,6 +183,10 @@
           "default": "none",
           "description": "Device frame around the captured page:\n - none    : no chrome\n - browser : macOS-style window with traffic lights + a URL pill\n - window  : macOS-style window with traffic lights only"
         },
+        "frameUrl": {
+          "type": "string",
+          "description": "Address shown in the browser frame's URL pill.\n\nDemos are filmed against whatever serves the app locally, so without this\nevery published video has `localhost:4500` in the chrome — which tells the\nviewer they are watching a developer's laptop rather than the product. Set\nit to the address people actually type.\n\nIt is cosmetic by design: it changes the pixels in the pill and nothing\nelse. The demo still runs against `url`, so this cannot be used to make a\nrecording claim it visited somewhere it did not."
+        },
         "padding": {
           "type": "integer",
           "minimum": 0,
