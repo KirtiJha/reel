@@ -23,6 +23,7 @@ import { isRetryable, retryDelayMs } from "./retry.js";
 import { captureFailure, reportFailure, type FailureArtifacts } from "./failure.js";
 import { describeStep } from "../heal/selectors.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
+import { resolveCutRange, sliceFrames, sliceTimeline, cutDuration } from "../encode/cut.js";
 import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
@@ -60,6 +61,11 @@ export interface RunResult {
  * every caller — the CLI, the Studio, the JSON reporter — can point at them
  * without re-deriving where they went.
  */
+/** `1.4s`, for talking about a position in the demo the way a scrubber does. */
+function formatMs(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 export class StepFailure extends ReelError {
   constructor(
     message: string,
@@ -305,36 +311,99 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       endMs: durationMs,
       gif: profile.gif,
     };
+    // One render, used for the master and for every cut taken out of it. The
+    // sharp render path handles auto-zoom AND the presentation layer (device
+    // frame / padding / background); the fast concat encoder suffices when
+    // neither is requested.
+    const renderTo = async (
+      fr: typeof frames,
+      tgts: typeof targets,
+      sbDir: string | undefined,
+      opts: typeof encodeOpts,
+      caps: typeof captions,
+      zm: typeof zoom,
+      bts: typeof beats,
+    ): Promise<void> => {
+      if (compositesCaptions(spec.polish)) {
+        await renderWithZoom(
+          fr,
+          framesDir,
+          { ...tgts, storyboard: sbDir },
+          opts,
+          {
+            timeline: zm,
+            viewport: spec.viewport,
+            captions: spec.polish.captions ? caps : [],
+            polish: spec.polish,
+            url: spec.url,
+          },
+          bts,
+        );
+      } else {
+        await encode(fr, framesDir, tgts, opts);
+        if (sbDir) await writeStoryboard(bts, fr, framesDir, sbDir);
+      }
+    };
+
     // Skip the whole encode phase for an HTML-only build — it needs frames, not
     // a video, and the CFR expansion is the most expensive step in the pipeline.
     const needsEncode = Boolean(targets.gif || targets.mp4 || targets.webm || storyboardDir);
     if (needsEncode) log.phase("Encoding");
 
-    // The sharp render path handles auto-zoom AND the presentation layer
-    // (device frame / padding / background). Use it when either is requested;
-    // otherwise the fast concat encoder suffices.
-    if (!needsEncode) {
-      /* nothing to encode */
-    } else if (compositesCaptions(spec.polish)) {
-      await renderWithZoom(
-        frames,
-        framesDir,
-        { ...targets, storyboard: storyboardDir },
-        encodeOpts,
-        {
-          timeline: zoom,
-          viewport: spec.viewport,
-          captions: spec.polish.captions ? captions : [],
-          polish: spec.polish,
-          url: spec.url,
-        },
-        beats,
-      );
-    } else {
-      await encode(frames, framesDir, targets, encodeOpts);
-      if (storyboardDir) await writeStoryboard(beats, frames, framesDir, storyboardDir);
+    if (needsEncode) {
+      await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats);
+      for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
     }
-    for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
+
+    // Cuts: shorter deliverables out of the recording that just happened. No
+    // browser, no second pass over the app — the frames are already on disk,
+    // which is what makes a cut incapable of disagreeing with the master.
+    if (spec.cuts?.length) {
+      log.phase("Cuts");
+      for (const cut of spec.cuts) {
+        const range = resolveCutRange(cut, beats, durationMs);
+        const cutFrames = sliceFrames(frames, range);
+        if (cutFrames.length === 0) {
+          throw new ReelError(
+            `Cut "${cut.name}" covers ${formatMs(range.startMs)}–${formatMs(range.endMs)}, ` +
+              `which caught no frames.`,
+            "Check its `from` and `to` against the beats this demo actually records.",
+          );
+        }
+        const cutProfile = resolveOutputProfile(cut.output);
+        const cutSb = cut.output.storyboard ? resolveOutput(loaded, cut.output.storyboard) : undefined;
+        const cutTargets = {
+          gif: cut.output.gif ? resolveOutput(loaded, cut.output.gif) : undefined,
+          mp4: cut.output.mp4 ? resolveOutput(loaded, cut.output.mp4) : undefined,
+          webm: cut.output.webm ? resolveOutput(loaded, cut.output.webm) : undefined,
+        };
+        await renderTo(
+          cutFrames,
+          cutTargets,
+          cutSb,
+          {
+            ...encodeOpts,
+            fps: cutProfile.fps,
+            maxWidth: cutProfile.maxWidth,
+            gif: cutProfile.gif,
+            endMs: cutDuration(range),
+          },
+          // Captions and zooms carry in: whatever was on screen when the cut
+          // opens is still on screen. Beats do not — a chapter that ended
+          // before the cut began would mislabel it.
+          sliceTimeline(captions, range),
+          sliceTimeline(zoom, range),
+          sliceTimeline(beats, range, { carryIn: false }),
+        );
+        log.step(
+          `${cut.name} — ${formatMs(range.startMs)}–${formatMs(range.endMs)} ` +
+            `(${(cutDuration(range) / 1000).toFixed(1)}s)`,
+        );
+        for (const t of [cutTargets.gif, cutTargets.mp4, cutTargets.webm, cutSb]) {
+          if (t) outputs.push(t);
+        }
+      }
+    }
 
     // Interactive build: the same demo as a self-contained click-through, and
     // the only output that can carry more than one path.

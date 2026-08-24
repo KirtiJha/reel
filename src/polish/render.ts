@@ -1,4 +1,4 @@
-import { mkdir, readdir, writeFile, copyFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile, copyFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { cpus } from "node:os";
 import type { CapturedFrame } from "../capture/frames.js";
@@ -58,6 +58,12 @@ export async function renderWithZoom(
   const manifestPath = join(framesDir, "frames.concat");
   await writeFile(manifestPath, buildConcatManifest(frames, opts.tailMs, opts.endMs), "utf8");
   const cfrDir = join(framesDir, "cfr");
+  // Cleared, not just created. These are working directories keyed on the
+  // frames dir, and the frame numbering restarts at 000001 every time — so a
+  // second render into the same place (a cut taken out of the master, say)
+  // reads back its own frames *and* the previous render's, and silently
+  // produces a video longer than the recording it came from.
+  await rm(cfrDir, { recursive: true, force: true });
   await mkdir(cfrDir, { recursive: true });
   await ffmpeg(
     ["-y", "-f", "concat", "-safe", "0", "-i", "frames.concat", "-vf", `fps=${opts.fps}`, "cfr/%06d.png"],
@@ -96,6 +102,8 @@ export async function renderWithZoom(
   const seqH = layout ? layout.canvasH : outH;
 
   const procDir = join(framesDir, "proc");
+  // Cleared for the same reason as cfr above.
+  await rm(procDir, { recursive: true, force: true });
   await mkdir(procDir, { recursive: true });
 
   const label = framed ? `polish (${zoom.polish.frame} frame)` : "auto-zoom";

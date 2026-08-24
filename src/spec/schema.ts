@@ -229,6 +229,31 @@ export function resolveOutputProfile(o: Output): OutputProfile {
   };
 }
 
+/* ------------------------------ Cuts ------------------------------ */
+
+/**
+ * A shorter deliverable taken out of the same recording.
+ *
+ * `from` and `to` are beat labels or millisecond offsets, and labels are the
+ * point: `from: pricing` still means the right moment after the demo above it
+ * gets a slower caption, where `from: 42000` quietly starts pointing into the
+ * middle of a sentence. Omit either end to run from the start, or to the end.
+ *
+ * Each cut carries its own `output`, so the same range can be a high-fidelity
+ * MP4 in one cut and a small GIF in another.
+ */
+export const cutSchema = z.object({
+  /** What this cut is for — `youtube`, `readme`. Used in logs and errors. */
+  name: z.string().min(1),
+  /** Beat label or ms offset to start from. Omit to start at the beginning. */
+  from: z.union([z.string(), z.number().nonnegative()]).optional(),
+  /** Beat label or ms offset to end at. Omit to run to the end. */
+  to: z.union([z.string(), z.number().nonnegative()]).optional(),
+  output: outputSchema,
+});
+
+export type Cut = z.infer<typeof cutSchema>;
+
 /* ---------------------------- Terminal ---------------------------- */
 
 /**
@@ -675,6 +700,20 @@ const specObject = z.object({
   /** The demo itself, in order. */
   steps: z.array(stepSchema).min(1),
   output: outputSchema,
+  /**
+   * Shorter deliverables cut out of this same recording.
+   *
+   * One demo usually has to be several: a long walkthrough for YouTube, a
+   * minute for LinkedIn, forty seconds for Twitter, something much shorter for
+   * a README. Written as separate specs they drift apart within a month — the
+   * caption gets fixed in one and not the others — which is the failure this
+   * whole tool exists to prevent.
+   *
+   * A cut is not a second recording. It names a range of the demo that was
+   * already filmed and re-encodes the frames already on disk, so it costs no
+   * browser time and cannot disagree with the master about what the app did.
+   */
+  cuts: z.array(cutSchema).optional(),
 });
 
 /**

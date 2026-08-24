@@ -1884,6 +1884,137 @@
       },
       "additionalProperties": false,
       "description": "What gets rendered, and where it is written."
+    },
+    "cuts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What this cut is for — `youtube`, `readme`. Used in logs and errors."
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "Beat label or ms offset to start from. Omit to start at the beginning."
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number",
+                "minimum": 0
+              }
+            ],
+            "description": "Beat label or ms offset to end at. Omit to run to the end."
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "preset": {
+                "type": "string",
+                "enum": [
+                  "share",
+                  "readme",
+                  "hq",
+                  "social",
+                  "docs"
+                ],
+                "default": "share",
+                "description": "Delivery profile; sets defaults for the fields below."
+              },
+              "gif": {
+                "type": "string"
+              },
+              "mp4": {
+                "type": "string"
+              },
+              "webm": {
+                "type": "string"
+              },
+              "storyboard": {
+                "type": "string",
+                "description": "Directory to drop a PNG storyboard (one image per beat)."
+              },
+              "html": {
+                "type": "string",
+                "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
+              },
+              "fps": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 60,
+                "description": "Frame rate for video (overrides preset)."
+              },
+              "maxWidth": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "Cap the output width in px (overrides preset)."
+              },
+              "gifFps": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 50,
+                "description": "GIF-specific overrides (GIFs trade size for smoothness/palette)."
+              },
+              "gifMaxWidth": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "gifColors": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 256
+              },
+              "subtitles": {
+                "type": [
+                  "boolean",
+                  "string"
+                ],
+                "description": "Emit sidecar subtitles from the captions. true, or an explicit path base."
+              },
+              "languages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Localize the subtitles into these languages, e.g. [\"es\",\"fr\"]."
+              },
+              "targetDuration": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "description": "Fit the finished demo to a length: `30`, `\"30s\"`, `\"1500ms\"`. Applied\nafter `polish.trimIdle`, by rescaling the recorded timeline rather than\nre-running the demo. Useful where length is a hard limit (social embeds)."
+              }
+            },
+            "additionalProperties": false,
+            "description": "What gets rendered, and where it is written."
+          }
+        },
+        "required": [
+          "name",
+          "output"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Shorter deliverables cut out of this same recording.\n\nOne demo usually has to be several: a long walkthrough for YouTube, a\nminute for LinkedIn, forty seconds for Twitter, something much shorter for\na README. Written as separate specs they drift apart within a month — the\ncaption gets fixed in one and not the others — which is the failure this\nwhole tool exists to prevent.\n\nA cut is not a second recording. It names a range of the demo that was\nalready filmed and re-encodes the frames already on disk, so it costs no\nbrowser time and cannot disagree with the master about what the app did."
     }
   },
   "required": [
