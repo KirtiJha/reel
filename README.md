@@ -296,6 +296,31 @@ frame rate, for the cost of a single screenshot. The tradeoff is that
 `position: fixed` elements are captured once, at the top — pages with sticky
 headers should use `scrollTo`, which jumps instead.
 
+**Dragging** is the gesture a click grammar can't express, and without it a
+kanban board, a flow builder, a slider or a reorderable list can't be demoed at
+all:
+
+```yaml
+- drag: { from: "#card-ship", to: "#doing" }        # onto another element
+- drag: { from: role=button[name=Filter], to: { x: 640, y: 320 } }   # or a point
+- drag: { from: "#node", to: "#canvas", ms: 1400 }  # slower, for a long travel
+```
+
+It presses, walks the path in steps, then releases — not Playwright's
+press-move-release, which plenty of apps read as a click because a board that
+reorders on `pointermove` never sees the pointer move. Walking it is also what
+makes it watchable: a card that teleports isn't a demo of dragging.
+
+Prefer naming the destination. A point is there for dropping onto empty canvas,
+where there is genuinely nothing to name — and `reel capture` says so in its
+skipped list when it has to fall back to one, because a coordinate is a promise
+about the layout rather than about the app.
+
+Capture records drags too, which took finding: press and release on different
+elements fire **no click at all**, so before this the whole gesture produced no
+event, no step, and nothing in the skipped list either. The demo silently lost
+the thing it was about.
+
 ## Interactive HTML — the format a GIF can't be
 
 A recorded demo is passive: the viewer watches at your pace. Add one line and the

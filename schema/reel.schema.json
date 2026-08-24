@@ -541,6 +541,61 @@
               {
                 "type": "object",
                 "properties": {
+                  "drag": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "to": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "number"
+                              },
+                              "y": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "x",
+                              "y"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "The element to drop onto, or a viewport point."
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 900,
+                        "description": "How long the travel takes on camera."
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "to"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "drag"
+                ],
+                "additionalProperties": false,
+                "description": "Drag one element onto another — a card between columns, a node onto a\ncanvas, a handle along a slider.\n\nThe gesture a click grammar cannot express, and the reason kanban boards,\nflow builders and range inputs could not be filmed at all. `to` is another\nelement, or a point when the destination is empty canvas with nothing to\nname."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "hover": {
                     "type": "string",
                     "minLength": 1
@@ -1149,6 +1204,61 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "Double-click an element."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "drag": {
+                                    "type": "object",
+                                    "properties": {
+                                      "from": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "to": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "x": {
+                                                "type": "number"
+                                              },
+                                              "y": {
+                                                "type": "number"
+                                              }
+                                            },
+                                            "required": [
+                                              "x",
+                                              "y"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        ],
+                                        "description": "The element to drop onto, or a viewport point."
+                                      },
+                                      "ms": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 900,
+                                        "description": "How long the travel takes on camera."
+                                      }
+                                    },
+                                    "required": [
+                                      "from",
+                                      "to"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "drag"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Drag one element onto another — a card between columns, a node onto a\ncanvas, a handle along a slider.\n\nThe gesture a click grammar cannot express, and the reason kanban boards,\nflow builders and range inputs could not be filmed at all. `to` is another\nelement, or a point when the destination is empty canvas with nothing to\nname."
                               },
                               {
                                 "type": "object",

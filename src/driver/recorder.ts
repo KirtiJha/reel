@@ -138,6 +138,51 @@ export class Recorder {
     });
   }
 
+  /**
+   * Press, travel, release — with the page's own pointer events all the way.
+   *
+   * Playwright's `dragTo` jumps: press, one move, release. Plenty of apps read
+   * that as a click, because a board that reorders on `pointermove` never sees
+   * the pointer move. So this walks the path in steps, which is also what makes
+   * it watchable — a card that teleports is not a demo of dragging.
+   *
+   * The synthetic cursor is moved alongside the real one, since the real one
+   * doesn't exist headless and is what the recording actually shows.
+   */
+  async dragCursor(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    ms = 900,
+  ): Promise<void> {
+    await this.page.mouse.move(from.x, from.y);
+    await this.page.mouse.down();
+    try {
+      if (!this.opts.cinematic) {
+        // Still several moves: correctness here is the same in check mode, and
+        // a drag that silently does nothing is the failure worth catching.
+        for (let i = 1; i <= 4; i++) {
+          await this.page.mouse.move(
+            from.x + ((to.x - from.x) * i) / 4,
+            from.y + ((to.y - from.y) * i) / 4,
+          );
+        }
+        return;
+      }
+      this.cursor = { ...to };
+      await this.motion(ms, async (p) => {
+        // The same arc the cursor takes everywhere else, so a drag reads as one
+        // gesture with the moves around it rather than as a straight-line jump.
+        const at = cursorPathAt(from, to, p);
+        await this.page.mouse.move(at.x, at.y);
+        await setCursorAt(this.page, at.x, at.y, 0.9);
+      });
+    } finally {
+      // Released even if a move threw: leaving the button down poisons every
+      // step after this one, and the failure would be reported against them.
+      await this.page.mouse.up();
+    }
+  }
+
   /** Click feedback: the cursor presses in as a ring expands out. */
   async pulse(x: number, y: number, ms = 380): Promise<void> {
     if (!this.opts.cinematic) return;

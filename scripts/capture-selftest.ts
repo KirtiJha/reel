@@ -166,6 +166,60 @@ try {
     String(groupSel),
   );
 
+  // A drag: press and release on different elements, which fires no click at
+  // all. Before the observer watched for it the gesture produced no event, no
+  // step, and nothing in the skipped list — the demo silently lost the one
+  // thing it was about.
+  const board = await context.newPage();
+  await board.route("**/__board", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><style>
+        .col{display:inline-block;width:180px;height:160px;border:1px solid #ccc;vertical-align:top}
+        .card{padding:8px;background:#eef}
+      </style>
+      <div class="col" id="todo"><div class="card" id="card-ship">Ship the release</div></div>
+      <div class="col" id="doing"></div>
+      <script>
+        let held = null;
+        document.addEventListener("pointerdown", (e) => {
+          const c = e.target.closest(".card");
+          if (c) { held = c; c.style.pointerEvents = "none"; }
+        });
+        document.addEventListener("pointerup", (e) => {
+          if (!held) return;
+          const col = document.elementFromPoint(e.clientX, e.clientY)?.closest(".col");
+          if (col) col.appendChild(held);
+          held.style.pointerEvents = ""; held = null;
+        });
+      </script>`,
+    }),
+  );
+  await board.goto(`${URL_}/__board`, { waitUntil: "domcontentloaded" });
+
+  const before = events.length;
+  const card = (await board.locator("#card-ship").boundingBox())!;
+  const doing = (await board.locator("#doing").boundingBox())!;
+  await board.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await board.mouse.down();
+  for (let i = 1; i <= 8; i++) {
+    await board.mouse.move(
+      card.x + ((doing.x + 40 - card.x) * i) / 8,
+      card.y + ((doing.y + 40 - card.y) * i) / 8,
+    );
+  }
+  await board.mouse.up();
+  await board.waitForTimeout(400);
+
+  ok("the card really moved", (await board.locator("#doing .card").count()) === 1);
+  const dragged = toSteps(events.slice(before), URL_);
+  ok(
+    "a drag is written down as a drag, with both ends named",
+    JSON.stringify(dragged.steps) === JSON.stringify([{ drag: { from: "#card-ship", to: "#doing" } }]),
+    JSON.stringify(dragged.steps),
+  );
+  ok("and nothing about it was dropped in silence", dragged.skipped.length === 0, dragged.skipped.join("; "));
+
   const link = await clicked("nav a");
   const scoped = chooseSelector(link);
   ok("an ambiguous name is qualified by its region", scoped === "nav >> role=link[name=Tutorial]", String(scoped));

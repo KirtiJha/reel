@@ -187,6 +187,37 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     return;
   }
 
+  if ("drag" in step) {
+    const { from, to, ms } = step.drag;
+    // The camera goes to the source first, as it would for a click: the gesture
+    // starts there, and the viewer needs to see what is being picked up.
+    const start = await pointAt(ctx, from, cinematic);
+    const box = start ?? (await locate(page, from).boundingBox());
+    if (!box) {
+      throw new ReelError(
+        `drag: "${from}" has no position on the page.`,
+        "It may be hidden or not rendered yet — a waitFor before this step usually fixes it.",
+      );
+    }
+    const target = await dragTarget(ctx, to);
+    snap(ctx, label, { hotspot: toHotspot(box) });
+    await ctx.rec.dragCursor(
+      { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+      target,
+      ms,
+    );
+    // Where it landed is the point of the step, so that is what the camera
+    // should be looking at when the dust settles.
+    if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
+      const after = await locate(page, from).boundingBox().catch(() => null);
+      if (after) {
+        ctx.zoom.push({ t: ctx.now(), rect: { x: after.x, y: after.y, w: after.width, h: after.height } });
+      }
+    }
+    await ctx.rec.hold(HOLD.afterClick);
+    return;
+  }
+
   if ("hover" in step) {
     const box = await pointAt(ctx, step.hover, cinematic);
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
@@ -540,6 +571,28 @@ async function pointAt(
   return box;
 }
 
+/**
+ * Where a drag is going: the middle of an element, or a point as written.
+ *
+ * A point is escape-hatch syntax for the case a selector cannot express —
+ * dropping onto empty canvas, where the destination is a coordinate and there
+ * is genuinely nothing there to name.
+ */
+async function dragTarget(
+  ctx: StepContext,
+  to: string | { x: number; y: number },
+): Promise<{ x: number; y: number }> {
+  if (typeof to !== "string") return to;
+  const box = await locate(ctx.page, to).boundingBox();
+  if (!box) {
+    throw new ReelError(
+      `drag: "${to}" has no position on the page.`,
+      "Name an element that is on screen, or give a point: { x, y }.",
+    );
+  }
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
 /** Record a zoom-out (full-frame) camera target. */
 function zoomOut(ctx: StepContext): void {
   if (ctx.mode === "record" && ctx.spec.polish.zoom === "auto") {
@@ -653,6 +706,12 @@ function describe(step: Step): string {
     const v = val as Record<string, unknown>;
     if ("cmd" in v) return `${key} ${v.cmd}`;
     if ("state" in v) return `${key} ${v.state}`;
+    // Before the generic `to` branch below: a drag has both ends, and naming
+    // only the destination reads as though that is what was picked up.
+    if ("from" in v) {
+      const to = typeof v.to === "string" ? v.to : "a point";
+      return `${key} ${v.from} → ${to}`;
+    }
     if ("selector" in v) return `${key} ${v.selector}${"text" in v ? ` "${v.text}"` : ""}`;
     if ("title" in v) return `${key} “${v.title}”`;
     if ("text" in v) return `${key} “${v.text}”`;

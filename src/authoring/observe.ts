@@ -19,8 +19,12 @@ export const BINDING = "__reelCaptureEvent";
 export const UI_ID = "__reel_capture_ui__";
 
 export interface ObservedEvent {
-  type: "click" | "dblclick" | "input" | "key" | "caption" | "beat" | "finish";
+  type: "click" | "dblclick" | "drag" | "input" | "key" | "caption" | "beat" | "finish";
   candidates?: { kind: string; selector: string; matches: number }[];
+  /** Where a drag was released, when something nameable was under it. */
+  toCandidates?: { kind: string; selector: string; matches: number }[];
+  /** Where a drag was released, in viewport pixels — the fallback. */
+  toPoint?: { x: number; y: number };
   /** Final value of a field, for input events. */
   value?: string;
   /** The key pressed, for key events. */
@@ -311,6 +315,52 @@ export const OBSERVER_SCRIPT = `
 
   /** The field currently being typed into, so a run of keystrokes counts once. */
   let lastTyped = null;
+
+  /**
+   * A drag looks like nothing at all unless you watch for it.
+   *
+   * Press and release on different elements, and the browser fires no click —
+   * so a card dragged between columns produced no event, no step, and nothing
+   * in the skipped list either. The demo silently lost the one thing it was
+   * about.
+   *
+   * Distance is what separates the two gestures: a press and release in the
+   * same place is a click however long it took, and a press that travelled is a
+   * drag however quickly. Small movements are somebody's hand, not an
+   * intention.
+   */
+  const DRAG_THRESHOLD_PX = 12;
+  let press = null;
+
+  document.addEventListener("pointerdown", (e) => {
+    const el = actionable(e.target);
+    press = el && !ours(el) ? { el: el, x: e.clientX, y: e.clientY } : null;
+  }, true);
+
+  document.addEventListener("pointerup", (e) => {
+    const from = press;
+    press = null;
+    if (!from) return;
+    const dx = e.clientX - from.x;
+    const dy = e.clientY - from.y;
+    if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD_PX) return; // a click; that handler has it
+
+    // What is under the cursor at the release, which is not where the press
+    // was — the dragged element usually follows the pointer and would name
+    // itself as its own destination.
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const target = under && !from.el.contains(under) ? actionable(under) : null;
+    lastTyped = null;
+    steps++;
+    render();
+    send({
+      type: "drag",
+      candidates: candidatesFor(from.el),
+      toCandidates: target ? candidatesFor(target) : undefined,
+      toPoint: { x: Math.round(e.clientX), y: Math.round(e.clientY) },
+      url: location.href,
+    });
+  }, true);
 
   document.addEventListener("click", (e) => {
     const el = actionable(e.target);

@@ -84,6 +84,56 @@ describe("choosing a selector", () => {
   });
 });
 
+describe("recording a drag", () => {
+  const cand = (sel: string): Candidate[] => [{ kind: "id", selector: sel, matches: 1 }];
+  const drag = (over: Partial<CaptureEvent> = {}): CaptureEvent =>
+    ({
+      type: "drag",
+      candidates: cand("#card"),
+      toCandidates: cand("#doing"),
+      toPoint: { x: 412, y: 260 },
+      ...over,
+    }) as CaptureEvent;
+
+  test("names both ends when it can", () => {
+    // Before this the browser fired no click at all — press and release on
+    // different elements — so the whole gesture vanished, with nothing even in
+    // the skipped list to say so.
+    const { steps, skipped } = toSteps([drag()], "http://x");
+    assert.deepEqual(steps, [{ drag: { from: "#card", to: "#doing" } }]);
+    assert.deepEqual(skipped, []);
+  });
+
+  test("falls back to a point, and says that it did", () => {
+    // Dropping onto empty canvas is legitimate and the step is weaker for it:
+    // a coordinate is a promise about the layout, so it is worth a word.
+    const { steps, skipped } = toSteps([drag({ toCandidates: undefined } as never)], "http://x");
+    assert.deepEqual(steps, [{ drag: { from: "#card", to: { x: 412, y: 260 } } }]);
+    assert.equal(skipped.length, 1);
+    assert.match(skipped[0]!, /layout staying put/);
+  });
+
+  test("an unnameable source is reported, not dropped", () => {
+    const { steps, skipped } = toSteps(
+      [drag({ candidates: [{ kind: "css", selector: "div > div", matches: 4 }] } as never)],
+      "http://x",
+    );
+    assert.deepEqual(steps, []);
+    assert.equal(skipped.length, 1);
+    assert.match(skipped[0]!, /drag/);
+  });
+
+  test("a drag counts as having acted, so the navigation after it is kept", () => {
+    // Navigations before the first real action are the app routing itself; one
+    // caused by a drag is the demo going somewhere.
+    const { steps } = toSteps(
+      [drag(), { type: "nav", url: "http://x/board/done" } as CaptureEvent],
+      "http://x",
+    );
+    assert.deepEqual(steps[steps.length - 1], { waitForUrl: "/board/done" });
+  });
+});
+
 describe("a URL with an id the app just minted", () => {
   test("the generated segment becomes a wildcard", () => {
     // n8n's "Build a workflow" lands on a workflow that will never exist

@@ -110,6 +110,31 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
       continue;
     }
 
+    if (event.type === "drag") {
+      if (!selector) {
+        skipped.push(describeUnnamed("drag", event));
+        continue;
+      }
+      // A named destination beats a coordinate for the same reason a named
+      // element beats a CSS path: the column is still the column after a
+      // redesign, and (412, 260) is wherever the layout puts it.
+      const to = event.toCandidates
+        ? chooseSelector(event.toCandidates as Candidate[])
+        : null;
+      if (to) {
+        steps.push({ drag: { from: selector, to } });
+      } else if (event.toPoint) {
+        steps.push({ drag: { from: selector, to: event.toPoint } });
+        skipped.push(
+          `drag onto a point (${event.toPoint.x}, ${event.toPoint.y}) — nothing there could be named, ` +
+            `so this step depends on the layout staying put`,
+        );
+      } else {
+        skipped.push(describeUnnamed("drag destination", event));
+      }
+      continue;
+    }
+
     if (event.type === "click" || event.type === "dblclick") {
       if (!selector) {
         skipped.push(describeUnnamed("click", event));

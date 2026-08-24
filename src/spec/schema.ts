@@ -340,6 +340,26 @@ const baseStepSchema = z.union([
   z.object({ click: selector }).strict(),
   /** Double-click an element. */
   z.object({ dblclick: selector }).strict(),
+  /**
+   * Drag one element onto another — a card between columns, a node onto a
+   * canvas, a handle along a slider.
+   *
+   * The gesture a click grammar cannot express, and the reason kanban boards,
+   * flow builders and range inputs could not be filmed at all. `to` is another
+   * element, or a point when the destination is empty canvas with nothing to
+   * name.
+   */
+  z
+    .object({
+      drag: z.object({
+        from: selector,
+        /** The element to drop onto, or a viewport point. */
+        to: z.union([selector, z.object({ x: z.number(), y: z.number() })]),
+        /** How long the travel takes on camera. */
+        ms: durationMs.default(900),
+      }),
+    })
+    .strict(),
   /** Move the cursor onto an element without clicking — for menus and tooltips. */
   z.object({ hover: selector }).strict(),
   /** Type into a field, character by character, so the typing reads on camera. */

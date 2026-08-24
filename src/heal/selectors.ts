@@ -9,6 +9,9 @@ import type { Step } from "../spec/schema.js";
 export function stepSelector(step: Step): string | null {
   if ("click" in step) return step.click;
   if ("dblclick" in step) return step.dblclick;
+  // The thing being dragged is the half that breaks: a destination is usually a
+  // container that outlives a redesign, and the card inside it is not.
+  if ("drag" in step) return step.drag.from;
   if ("hover" in step) return step.hover;
   if ("scrollTo" in step) return step.scrollTo;
   if ("waitFor" in step) return step.waitFor;
@@ -26,6 +29,7 @@ export function stepSelector(step: Step): string | null {
 export function withStepSelector(step: Step, selector: string): Step {
   if ("click" in step) return { click: selector };
   if ("dblclick" in step) return { dblclick: selector };
+  if ("drag" in step) return { drag: { ...step.drag, from: selector } };
   if ("hover" in step) return { hover: selector };
   if ("scrollTo" in step) return { scrollTo: selector };
   if ("waitFor" in step) return { waitFor: selector };
@@ -43,6 +47,10 @@ export function withStepSelector(step: Step, selector: string): Step {
 export function describeStep(step: Step): string {
   if ("click" in step) return `click the element "${step.click}"`;
   if ("dblclick" in step) return `double-click the element "${step.dblclick}"`;
+  if ("drag" in step) {
+    const to = typeof step.drag.to === "string" ? `"${step.drag.to}"` : "a point on the page";
+    return `drag "${step.drag.from}" onto ${to}`;
+  }
   if ("hover" in step) return `hover the element "${step.hover}"`;
   if ("scrollTo" in step) return `scroll to the element "${step.scrollTo}"`;
   if ("waitFor" in step) return `wait for "${step.waitFor}" to be visible`;
