@@ -40,6 +40,31 @@ const INITIAL_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * A provider's own `Retry-After`, in ms — capped so a hostile or mistaken
+ * header cannot park a recording for an hour.
+ */
+export function parseRetryAfter(header: string | string[] | undefined, body: string): number | undefined {
+  const raw = Array.isArray(header) ? header[0] : header;
+  let ms: number | undefined;
+  if (raw) {
+    const secs = Number(raw);
+    // The header is either delta-seconds or an HTTP date.
+    if (Number.isFinite(secs)) ms = secs * 1000;
+    else {
+      const at = Date.parse(raw);
+      if (Number.isFinite(at)) ms = at - Date.now();
+    }
+  }
+  // Google returns no header but puts `"retryDelay": "31s"` in the error body.
+  if (ms === undefined) {
+    const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(body);
+    if (m) ms = Number(m[1]) * 1000;
+  }
+  if (ms === undefined || !Number.isFinite(ms) || ms <= 0) return undefined;
+  return Math.min(ms, MAX_BACKOFF_MS);
+}
+
 export interface LlmConfig {
   /** Which preset resolved — surfaced in errors and in Studio. */
   providerId: string;
@@ -302,7 +327,16 @@ export async function chat(
           e.body?.slice(0, 300),
         );
       }
-      const wait = Math.random() * Math.min(INITIAL_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
+      // Prefer what the provider actually asked for. A rate limit is a fact it
+      // knows and we can only guess at: Gemini's free tier resets per minute,
+      // and guessing produced four retries inside fifteen seconds that were
+      // always going to fail.
+      //
+      // Failing that, exponential with *half* jitter rather than full. The old
+      // `Math.random() * cap` could return near-zero, spending a retry on a
+      // wait too short to have changed anything.
+      const cap = Math.min(INITIAL_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
+      const wait = e.retryAfterMs ?? cap / 2 + Math.random() * (cap / 2);
       log.debug(`LLM attempt ${attempt}/${MAX_RETRIES} failed (${e.message}); retrying in ${Math.round(wait)}ms`);
       await sleep(wait);
     }
@@ -314,6 +348,8 @@ interface HttpError extends Error {
   status?: number;
   body?: string;
   transient?: boolean;
+  /** Seconds the provider asked us to wait, from `Retry-After`. */
+  retryAfterMs?: number;
 }
 
 /**
@@ -403,7 +439,13 @@ function postJson(
             reject(Object.assign(new Error("LLM returned non-JSON response"), { status, body: text }));
           }
         } else {
-          reject(Object.assign(new Error(`HTTP ${status}`), { status, body: text }));
+          reject(
+            Object.assign(new Error(`HTTP ${status}`), {
+              status,
+              body: text,
+              retryAfterMs: parseRetryAfter(res.headers["retry-after"], text),
+            }),
+          );
         }
       });
     });
