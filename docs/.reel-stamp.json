@@ -1,0 +1,40 @@
+{
+  "hash": "acf8824031d13046cef0716fcabe2a0e",
+  "version": "0.2.0",
+  "epoch": 1,
+  "outputs": [
+    "../examples/taskflow/out/showcase-storyboard",
+    "../examples/taskflow/out/showcase.html",
+    "demo.gif",
+    "demo.mp4"
+  ],
+  "beats": [
+    {
+      "label": "TaskFlow",
+      "t": 0
+    },
+    {
+      "label": "hero",
+      "t": 2020
+    },
+    {
+      "label": "One spec. Every format.",
+      "t": 18860
+    },
+    {
+      "label": "outro",
+      "t": 20880
+    }
+  ],
+  "captions": [
+    {
+      "t": 3320,
+      "text": "Type a task and add it — that's the whole flow"
+    },
+    {
+      "t": 11280,
+      "text": "Reel scrolls, frames, and narrates the story for you, so a long page still reads as one continuous take"
+    }
+  ],
+  "durationMs": 22180
+}

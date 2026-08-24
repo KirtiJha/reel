@@ -24,8 +24,16 @@ demos/out/
 # Diagnostics from a failed step — local, never committed.
 .reel-failures/
 
-# Render fingerprint, written beside a spec's outputs.
-.reel-stamp.json
+# The render fingerprint is committed, not ignored.
+#
+# It is what `record --if-changed` compares against, and a fresh checkout with
+# no stamp answers "no previous render recorded" — so the flag never skipped
+# anything in CI, which is the one place it was meant to save time. It also
+# carries the caption timeline `reel review` needs to spot a caption the screen
+# no longer matches.
+#
+# Safe to commit because it is a pure function of the render: no timestamp, and
+# its paths are relative to itself. Identical inputs write identical bytes.
 
 # Before/after strips from `reel diff` — a review aid, not an artifact.
 .reel-diff/

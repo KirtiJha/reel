@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import type { LoadedSpec } from "./load.js";
 import { resolveOutput } from "./load.js";
 import type { Spec, Step } from "./schema.js";
@@ -120,11 +120,34 @@ function dirname(p: string): string {
   return i <= 0 ? p : p.slice(0, i);
 }
 
+/**
+ * An output path as the stamp should record it: relative to the stamp itself,
+ * with forward slashes so a stamp written on Windows reads the same elsewhere.
+ */
+export function relativeToStamp(stampPath: string, output: string): string {
+  const rel = relative(dirname(stampPath), output);
+  return rel.split(sep).join("/") || output;
+}
+
+/**
+ * The stamp is committed, so it has to be a pure function of the render.
+ *
+ * It used to carry `at`, an ISO timestamp nothing ever read, and `outputs` as
+ * absolute paths — `/home/user/you/repo/docs/demo.gif`. Both were harmless
+ * while the file was ignored and neither survives being checked in: the
+ * timestamp changes on every render, so a demo that produced byte-identical
+ * media would still show up as a change, which is the exact signal this project
+ * exists to keep meaningful. The absolute paths would be somebody's home
+ * directory, in a public repository, differing per machine.
+ *
+ * What is left is the fingerprint, what it rendered, and where the beats and
+ * captions fell. Two machines running the same spec write the same bytes.
+ */
 export interface Stamp {
   hash: string;
   version: string;
   epoch: number;
-  at: string;
+  /** Relative to this file, so the stamp means the same thing anywhere. */
   outputs: string[];
   /**
    * What the render actually produced, which `reel diff` uses to describe a
@@ -202,8 +225,9 @@ export async function writeStamp(
     hash: fp.hash,
     version: fp.version,
     epoch: fp.epoch,
-    at: new Date().toISOString(),
-    outputs,
+    // Sorted as well as relative: the order they were encoded in is an
+    // implementation detail, and a reordering would read as a change.
+    outputs: outputs.map((o) => relativeToStamp(path, o)).sort(),
     ...(render?.beats?.length ? { beats: render.beats } : {}),
     // Only the text and the timing: a CaptionCue also carries measured word
     // advances, which are large, meaningless outside the renderer, and would
