@@ -187,3 +187,25 @@ describe("waiting for something that is legitimately slow", () => {
     assert.equal(r.success, false);
   });
 });
+
+describe("describing a slow wait", () => {
+  test("names the selector, not the wrapper object", async () => {
+    const { describeStep, stepSelector, withStepSelector } = await import("../src/heal/selectors.js");
+    const step = { waitFor: { selector: "text=Done", timeout: 300_000 } } as const;
+    const described = describeStep(step);
+    assert.match(described, /text=Done/, `got: ${described}`);
+    assert.doesNotMatch(described, /\[object Object\]/);
+    assert.equal(stepSelector(step), "text=Done");
+    // A repair must keep the budget — the timeout describes the work being
+    // waited on, not the selector that broke.
+    assert.deepEqual(withStepSelector(step, "text=Finished"), {
+      waitFor: { selector: "text=Finished", timeout: 300_000 },
+    });
+  });
+
+  test("the plain string form is unchanged", async () => {
+    const { describeStep, withStepSelector } = await import("../src/heal/selectors.js");
+    assert.match(describeStep({ waitFor: "text=Done" }), /wait for "text=Done"/);
+    assert.deepEqual(withStepSelector({ waitFor: "text=Done" }, "text=X"), { waitFor: "text=X" });
+  });
+});

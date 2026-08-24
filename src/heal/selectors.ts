@@ -32,7 +32,12 @@ export function withStepSelector(step: Step, selector: string): Step {
   if ("drag" in step) return { drag: { ...step.drag, from: selector } };
   if ("hover" in step) return { hover: selector };
   if ("scrollTo" in step) return { scrollTo: selector };
-  if ("waitFor" in step) return { waitFor: selector };
+  // Repairing a slow wait keeps its budget: the timeout describes the work,
+  // not the selector that broke.
+  if ("waitFor" in step)
+    return typeof step.waitFor === "string"
+      ? { waitFor: selector }
+      : { waitFor: { selector, timeout: step.waitFor.timeout } };
   if ("type" in step) return { type: { ...step.type, selector } };
   if ("fill" in step) return { fill: { ...step.fill, selector } };
   if ("press" in step) return { press: { ...step.press, selector } };
@@ -53,7 +58,14 @@ export function describeStep(step: Step): string {
   }
   if ("hover" in step) return `hover the element "${step.hover}"`;
   if ("scrollTo" in step) return `scroll to the element "${step.scrollTo}"`;
-  if ("waitFor" in step) return `wait for "${step.waitFor}" to be visible`;
+  if ("waitFor" in step) {
+    // The object form carries its own timeout; describing the step must still
+    // name the selector, not stringify the wrapper into "[object Object]".
+    const w = step.waitFor;
+    return typeof w === "string"
+      ? `wait for "${w}" to be visible`
+      : `wait for "${w.selector}" to be visible (up to ${Math.round(w.timeout / 1000)}s)`;
+  }
   if ("type" in step) return `type "${step.type.text}" into the field "${step.type.selector}"`;
   if ("fill" in step) return `fill "${step.fill.text}" into the field "${step.fill.selector}"`;
   if ("press" in step) return `press ${step.press.key} on "${step.press.selector ?? "(page)"}"`;
