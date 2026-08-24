@@ -158,7 +158,11 @@ describe("waiting for something that is legitimately slow", () => {
   test("a bare selector still works, and takes no timeout", () => {
     const r = specSchema.safeParse({ ...minimal, steps: [{ waitFor: "text=Done" }] });
     assert.equal(r.success, true);
-    if (r.success) assert.equal(r.data.steps[0]?.waitFor, "text=Done");
+    if (r.success) {
+      const step = r.data.steps[0];
+      assert.ok(step && "waitFor" in step);
+      assert.equal(step.waitFor, "text=Done");
+    }
   });
 
   test("a slow wait can name its own timeout", () => {
@@ -168,8 +172,10 @@ describe("waiting for something that is legitimately slow", () => {
     });
     assert.equal(r.success, true, r.success ? "" : JSON.stringify(r.error.issues));
     if (r.success) {
-      const w = r.data.steps[0]?.waitFor;
-      assert.equal(typeof w === "string" ? null : w?.timeout, 180_000);
+      const step = r.data.steps[0];
+      assert.ok(step && "waitFor" in step);
+      const w = step.waitFor;
+      assert.equal(typeof w === "string" ? null : w.timeout, 180_000);
     }
   });
 

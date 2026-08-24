@@ -218,7 +218,12 @@ export default function StudioPage() {
     if (!(await save())) return;
     setRunning(kind);
     setLogs([]);
-    setOutputs([]);
+    // Only a record replaces the media, so only a record clears the preview.
+    // Check and heal render nothing at all — blanking the panel for them threw
+    // away a perfectly good previous render and told the user "nothing rendered
+    // yet" about a demo sitting finished on disk. Heal may edit the spec, which
+    // makes the render stale rather than absent; `stale` already says so.
+    if (kind === "record") setOutputs([]);
     setNote(null);
     const done = await runJob(`/api/${kind}`, { path, ...extra }, (l) => setLogs((p) => [...p, l]));
     setRunning(null);

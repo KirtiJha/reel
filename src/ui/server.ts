@@ -242,16 +242,25 @@ async function renderedOutputs(
     p.replace(/\{viewport\}/g, v.viewport).replace(/\{theme\}/g, v.theme);
 
   const candidates: { p?: string; kind: string }[] = [];
-  for (const v of variants) {
-    for (const [key, kind] of [
-      ["mp4", "mp4"],
-      ["gif", "gif"],
-      ["webm", "webm"],
-      ["storyboard", "storyboard"],
-      ["html", "html"],
-    ] as const) {
-      const val = o[key];
-      if (val) candidates.push({ p: fill(String(val), v), kind });
+  // The spec's own output block, plus every cut taken out of the same
+  // recording. Without the cuts, a spec that renders a long master and three
+  // shorter deliverables shows one file in Studio and looks like it produced
+  // far less than it did.
+  const blocks: unknown[] = [o, ...(Array.isArray(parsed?.cuts) ? parsed.cuts.map((c: any) => c?.output) : [])];
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    const b = block as Record<string, unknown>;
+    for (const v of variants) {
+      for (const [key, kind] of [
+        ["mp4", "mp4"],
+        ["gif", "gif"],
+        ["webm", "webm"],
+        ["storyboard", "storyboard"],
+        ["html", "html"],
+      ] as const) {
+        const val = b[key];
+        if (val) candidates.push({ p: fill(String(val), v), kind });
+      }
     }
   }
 
