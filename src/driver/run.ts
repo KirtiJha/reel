@@ -28,7 +28,7 @@ import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
-import { audioEnabled, planAudio } from "../narrate/audio.js";
+import { audioEnabled, missingVoiceLines, planAudio } from "../narrate/audio.js";
 import type { SpokenCue, SpokenLine } from "../narrate/voice.js";
 import { mixNarration, muxAudio } from "../encode/audio.js";
 import { buildAudioRetime, buildRetime, parseDuration } from "../polish/retime.js";
@@ -294,8 +294,72 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           capture: false,
         });
       }
+      // Narration is drift too. A spec whose spoken lines have no audio behind
+      // them renders a video that is silent where it should not be, and finding
+      // that out from the finished file is finding out too late. Reported here,
+      // where it costs nothing: reading the cache needs no API key.
+      if (spec.audio && say.length) {
+        const missing = await missingVoiceLines(say, spec.audio.voice, loaded.dir);
+        if (missing.length) {
+          log.warn(`${missing.length} spoken lines have no audio yet — \`reel record\` will synthesize them.`);
+          for (const m of missing.slice(0, 5)) log.warn(`  “${m.slice(0, 60)}”`);
+        }
+      }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
       return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats, captions };
+    }
+
+    // Narration.
+    //
+    // Deliberately after the drive and before the encode: nothing above this
+    // line made a network call, so a recording is never at the mercy of a TTS
+    // endpoint, and nothing here can change what the demo *did* — only how long
+    // the picture waits for the voice.
+    let spoken: SpokenLine[] = [];
+    if (audioEnabled(spec.audio, spec.output.audio, say)) {
+      log.phase("Narration");
+      const audio = spec.audio;
+      if (audio.fit === "stretch" && spec.output.targetDuration !== undefined) {
+        throw new ReelError(
+          "`output.targetDuration` and `audio.fit: stretch` disagree about how long this demo is.",
+          "Stretching to fit the narration and scaling to a fixed length cannot both win. " +
+            "Set `audio.fit: none` to keep the target length, or drop `targetDuration` to let the voice decide.",
+        );
+      }
+      const plan = await planAudio(say, audio.voice, loaded.dir);
+      spoken = plan.lines;
+
+      if (audio.fit === "stretch") {
+        const fit = buildAudioRetime(frames.map((f) => f.t), spoken, durationMs, {
+          breathMs: audio.breathMs,
+        });
+        if (fit.changed) {
+          for (const f of frames) f.t = fit.map(f.t);
+          for (const c of captions) c.t = fit.map(c.t);
+          for (const z of zoom) z.t = fit.map(z.t);
+          for (const b of beats) b.t = fit.map(b.t);
+          for (const s of scenes) s.t = fit.map(s.t);
+          for (const l of spoken) l.t = fit.map(l.t);
+          log.step(
+            `Fitting narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
+          );
+          durationMs = fit.endMs;
+        }
+      } else {
+        // `fit: none` keeps the recorded timeline, so an overrun is the
+        // author's to resolve — but it must be said out loud, because a line
+        // that runs past its scene is not visible in the output, only audible.
+        const sorted = [...spoken].sort((a, b) => a.t - b.t);
+        for (const [i, line] of sorted.entries()) {
+          const until = sorted[i + 1]?.t ?? durationMs;
+          const over = line.t + line.durationMs - until;
+          if (over > 0) {
+            log.warn(
+              `“${line.text.slice(0, 48)}…” runs ${(over / 1000).toFixed(1)}s past its scene.`,
+            );
+          }
+        }
+      }
     }
 
     // Encode deliverables.
@@ -363,6 +427,29 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     if (needsEncode) {
       await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats);
       for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
+    }
+
+    // The soundtrack goes on last, onto finished video. The picture is
+    // stream-copied rather than re-encoded, so what was rendered and verified
+    // above is bit-for-bit what ships with audio on it.
+    if (spoken.length) {
+      log.phase("Audio");
+      const track = spec.output.audioTrack
+        ? resolveOutput(loaded, spec.output.audioTrack)
+        : join(workDir, "narration.m4a");
+      await mixNarration(spoken.map((l) => ({ t: l.t, file: l.file })), track, durationMs);
+      const videos = [targets.mp4, targets.webm].filter((v): v is string => Boolean(v));
+      for (const v of videos) await muxAudio(v, track);
+      if (spec.output.audioTrack) outputs.push(track);
+      if (!videos.length) {
+        log.warn("Narration was mixed but this spec renders no video to carry it.");
+      }
+      // Said rather than silently accepted: a cut is a slice of these same
+      // frames, but the mix here is one track for the whole recording, so a cut
+      // comes out silent until per-cut mixing lands.
+      if (spec.cuts?.length) {
+        log.warn(`Cuts do not carry narration yet — ${spec.cuts.length} will render silent.`);
+      }
     }
 
     // Cuts: shorter deliverables out of the recording that just happened. No

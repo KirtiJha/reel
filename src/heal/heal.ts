@@ -85,6 +85,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
       beats: [],
       zoom: [],
       captions: [],
+      say: [],
       scenes: [],
       // Healing replays the flow without filming it, so nothing cosmetic runs.
       rec: new Recorder(page, null, timeline, {

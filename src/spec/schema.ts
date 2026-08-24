@@ -186,11 +186,15 @@ export const audioSchema = z.object({
    * for — which it usually will, since `ms` was chosen for reading.
    *
    * `stretch` extends the hold so the line fits, making the video longer and
-   * leaving delivery untouched. `speed` keeps the authored length and asks the
-   * vendor to read faster, which is for cuts where length is fixed. `none`
-   * leaves the timeline alone and warns about every overrun.
+   * leaving delivery untouched. `none` leaves the timeline exactly as recorded
+   * and warns about every line that overruns, for demos whose narration was
+   * written against known holds.
+   *
+   * (A third mode — keep the authored length and read faster to fit — is not
+   * here yet. It needs re-synthesis at a computed rate, and a half-working
+   * version that silently rushed the delivery would be worse than its absence.)
    */
-  fit: z.enum(["stretch", "speed", "none"]).default("stretch"),
+  fit: z.enum(["stretch", "none"]).default("stretch"),
   /** Silence between consecutive spoken lines, so delivery has room to breathe. */
   breathMs: z.number().int().nonnegative().default(350),
 });

@@ -227,6 +227,63 @@
       "default": {},
       "description": "How the demo is filmed and presented: camera, cursor, captions, and the\nframe around the page. None of it changes what the app does."
     },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "voice": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "openai",
+                "elevenlabs"
+              ],
+              "default": "openai"
+            },
+            "id": {
+              "type": "string",
+              "description": "Voice id or name, as the vendor names it. Omit for the provider default."
+            },
+            "model": {
+              "type": "string",
+              "description": "The synthesis model. Omit for the provider default."
+            },
+            "style": {
+              "type": "string",
+              "description": "Free-text direction — \"calm, confident technical explainer, unhurried\".\nHonoured where the vendor supports steering, and ignored with a warning\nwhere it doesn't, rather than silently changing nothing."
+            },
+            "speed": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 2,
+              "default": 1,
+              "description": "Playback rate asked of the vendor. Past about 1.15 it starts to sound rushed."
+            }
+          },
+          "additionalProperties": false,
+          "default": {},
+          "description": "The voice that reads the narration.\n\nThe API key is never written here. Specs are committed, often to public\nrepositories, which is the same reason there is deliberately no `${ENV}`\ninterpolation anywhere in this grammar — the key comes from the environment."
+        },
+        "fit": {
+          "type": "string",
+          "enum": [
+            "stretch",
+            "none"
+          ],
+          "default": "stretch",
+          "description": "What happens when a spoken line runs longer than the hold it was written\nfor — which it usually will, since `ms` was chosen for reading.\n\n`stretch` extends the hold so the line fits, making the video longer and\nleaving delivery untouched. `none` leaves the timeline exactly as recorded\nand warns about every line that overruns, for demos whose narration was\nwritten against known holds.\n\n(A third mode — keep the authored length and read faster to fit — is not\nhere yet. It needs re-synthesis at a computed rate, and a half-working\nversion that silently rushed the delivery would be worse than its absence.)"
+        },
+        "breathMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 350,
+          "description": "Silence between consecutive spoken lines, so delivery has room to breathe."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Voice and timing for spoken narration. Top-level rather than under\n`polish:` because it is not a look — every cut of a recording shares it."
+    },
     "storageState": {
       "type": "string",
       "description": "Playwright storageState path for logged-in demos."
@@ -797,6 +854,19 @@
                               "top"
                             ],
                             "default": "bottom"
+                          },
+                          "say": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              }
+                            ],
+                            "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
                           }
                         },
                         "required": [
@@ -812,6 +882,40 @@
                 ],
                 "additionalProperties": false,
                 "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "say": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Hold at least this long. The spoken line extends it when it needs to."
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "say"
+                ],
+                "additionalProperties": false,
+                "description": "Narration with nothing on screen — a line that carries the demo between two\nthings the viewer can see. Holds like a caption does, and draws nothing."
               },
               {
                 "type": "object",
@@ -850,6 +954,19 @@
                             "type": "integer",
                             "minimum": 0,
                             "default": 1800
+                          },
+                          "say": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              }
+                            ],
+                            "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
                           }
                         },
                         "required": [
@@ -1486,6 +1603,19 @@
                                               "top"
                                             ],
                                             "default": "bottom"
+                                          },
+                                          "say": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "boolean",
+                                                "const": false
+                                              }
+                                            ],
+                                            "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
                                           }
                                         },
                                         "required": [
@@ -1501,6 +1631,40 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "say": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "description": "Hold at least this long. The spoken line extends it when it needs to."
+                                          }
+                                        },
+                                        "required": [
+                                          "text"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "say"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Narration with nothing on screen — a line that carries the demo between two\nthings the viewer can see. Holds like a caption does, and draws nothing."
                               },
                               {
                                 "type": "object",
@@ -1539,6 +1703,19 @@
                                             "type": "integer",
                                             "minimum": 0,
                                             "default": 1800
+                                          },
+                                          "say": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "boolean",
+                                                "const": false
+                                              }
+                                            ],
+                                            "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
                                           }
                                         },
                                         "required": [
@@ -1910,6 +2087,14 @@
           ],
           "description": "Emit sidecar subtitles from the captions. true, or an explicit path base."
         },
+        "audio": {
+          "type": "boolean",
+          "description": "Mux the narration into the video. Needs an `audio:` block and at least one\n`say:` line; without either it is a no-op, not an error, so a spec can\ncarry the flag before it carries the script."
+        },
+        "audioTrack": {
+          "type": "string",
+          "description": "Also write the bare mixed track here, for editing elsewhere."
+        },
         "languages": {
           "type": "array",
           "items": {
@@ -2031,6 +2216,14 @@
                   "string"
                 ],
                 "description": "Emit sidecar subtitles from the captions. true, or an explicit path base."
+              },
+              "audio": {
+                "type": "boolean",
+                "description": "Mux the narration into the video. Needs an `audio:` block and at least one\n`say:` line; without either it is a no-op, not an error, so a spec can\ncarry the flag before it carries the script."
+              },
+              "audioTrack": {
+                "type": "string",
+                "description": "Also write the bare mixed track here, for editing elsewhere."
               },
               "languages": {
                 "type": "array",
