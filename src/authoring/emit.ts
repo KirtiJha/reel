@@ -103,6 +103,14 @@ export function renderStep(step: StepInput): string {
  * is fine on a line of its own and needs quoting in an inline map.
  */
 export function scalar(value: unknown, flow = false): string {
+  // A nested collection has to be written in flow style or it breaks the map it
+  // sits inside: serialized block-style, `{ x, y }` becomes two lines and turns
+  // `- drag: { from: "#card", to: x: 900\ny: 900 }` into YAML that will not
+  // parse. Capture writes exactly that shape when a drag lands on empty canvas
+  // with nothing to name, so the spec it produced could not be loaded at all.
+  if (flow && value !== null && typeof value === "object") {
+    return stringify(value, { lineWidth: 0, collectionStyle: "flow" }).trimEnd();
+  }
   const out = stringify(value, { lineWidth: 0 }).trimEnd();
   if (flow && /^[^"']/.test(out) && /[,{}[\]]/.test(out)) return JSON.stringify(String(value));
   return out;

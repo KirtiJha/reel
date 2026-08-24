@@ -582,6 +582,32 @@ async function dragTarget(
   ctx: StepContext,
   to: string | { x: number; y: number },
 ): Promise<{ x: number; y: number }> {
+  const point = await resolveDragTarget(ctx, to);
+
+  // Nothing is outside the viewport, so a drop there lands on nothing. The
+  // mouse goes wherever it is told without complaining, so this would otherwise
+  // pass every check while doing nothing at all — a demo that is wrong rather
+  // than broken, which is the failure this project exists to prevent. Found by
+  // replaying a captured n8n drag at a smaller viewport than it was recorded at,
+  // which is exactly what the point form warns is fragile.
+  const view = ctx.page.viewportSize();
+  if (view && (point.x < 0 || point.y < 0 || point.x > view.width || point.y > view.height)) {
+    throw new ReelError(
+      `drag: the destination (${Math.round(point.x)}, ${Math.round(point.y)}) is outside the ` +
+        `${view.width}×${view.height} viewport, so there is nothing there to drop onto.`,
+      typeof to === "string"
+        ? `"${to}" is off screen — scroll it into view first, with a scrollTo step.`
+        : "A point is measured from the top-left of the viewport. Naming the destination " +
+          "element instead survives a change of viewport; a point does not.",
+    );
+  }
+  return point;
+}
+
+async function resolveDragTarget(
+  ctx: StepContext,
+  to: string | { x: number; y: number },
+): Promise<{ x: number; y: number }> {
   if (typeof to !== "string") return to;
   const box = await locate(ctx.page, to).boundingBox();
   if (!box) {

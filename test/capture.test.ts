@@ -134,6 +134,28 @@ describe("recording a drag", () => {
   });
 });
 
+describe("writing a step back out as YAML", () => {
+  const roundTrip = (step: unknown): unknown =>
+    parse(`steps:\n  ${renderStep(step as never)}`).steps[0];
+
+  test("a nested value stays inside the map it belongs to", () => {
+    // Serialized block-style, `{ x, y }` becomes two lines and shatters the
+    // inline map around it — `- drag: { from: "#c", to: x: 900\ny: 900 }`,
+    // which does not parse. Capture writes exactly this when a drag lands on
+    // empty canvas, so the spec it produced could not be loaded at all.
+    const step = { drag: { from: "#card", to: { x: 900, y: 900 } } };
+    assert.equal(renderStep(step as never), '- drag: { from: "#card", to: { x: 900, y: 900 } }');
+    assert.deepEqual(roundTrip(step), step);
+  });
+
+  test("a selector with brackets is still quoted", () => {
+    // The reason the guard exists: a comma or a bracket ends a value inside
+    // `{ … }`, so `role=button[name=Add]` needs quoting there.
+    const step = { drag: { from: "role=button[name=Add]", to: "#bin" } };
+    assert.deepEqual(roundTrip(step), step);
+  });
+});
+
 describe("a URL with an id the app just minted", () => {
   test("the generated segment becomes a wildcard", () => {
     // n8n's "Build a workflow" lands on a workflow that will never exist

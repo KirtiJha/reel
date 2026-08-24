@@ -220,6 +220,35 @@ try {
   );
   ok("and nothing about it was dropped in silence", dragged.skipped.length === 0, dragged.skipped.join("; "));
 
+  // A drag to a point nothing occupies. Playwright's mouse goes wherever it is
+  // told, so this used to run happily and drop on nothing — passing every check
+  // while doing nothing at all. Found by replaying a captured n8n drag at a
+  // smaller viewport than it was recorded at.
+  {
+    const dir = await mkdtemp(join(tmpdir(), "reel-drag-selftest-"));
+    const file = join(dir, "offscreen.reel.yaml");
+    await writeFile(
+      file,
+      // The example app, because the driver opens its own browser and only the
+      // real server is there — the board above exists solely as a route
+      // intercepted inside this one.
+      emitSpec({
+        name: "Offscreen",
+        url: URL_,
+        steps: [{ drag: { from: "#task-input", to: { x: 9000, y: 9000 } } }],
+        gif: "out/demo.gif",
+      }),
+      "utf8",
+    );
+    let why = "";
+    try {
+      await check(await loadSpec(file));
+    } catch (err) {
+      why = (err as Error).message;
+    }
+    ok("a drag to a point outside the viewport fails loudly", /outside the/.test(why), why.slice(0, 90));
+  }
+
   const link = await clicked("nav a");
   const scoped = chooseSelector(link);
   ok("an ambiguous name is qualified by its region", scoped === "nav >> role=link[name=Tutorial]", String(scoped));

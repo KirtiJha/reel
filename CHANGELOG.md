@@ -44,6 +44,15 @@ this tool they are the whole point:
   friends, so `role=group[name="Add first step…"]` looked perfect, passed
   capture's own uniqueness check, and resolved to zero elements in Playwright.
   Found in n8n.
+- **A captured drag onto a point wrote a spec that could not be parsed.** A
+  nested `{ x, y }` was serialized block-style inside an inline map, producing
+  `- drag: { from: "#card", to: x: 900` and a second line. Capture said it had
+  succeeded and the file was unloadable. Found in n8n's canvas.
+- **A drag to a point outside the viewport reported success.** There is nothing
+  out there to drop onto, and the mouse goes wherever it is told without
+  complaining, so the step did nothing and `check` called the demo fine. Found
+  by replaying a captured n8n drag at a smaller viewport than it was recorded
+  at — which is exactly what the point form warns is fragile.
 
 ### Changed
 
