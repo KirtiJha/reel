@@ -29,6 +29,21 @@ this tool they are the whole point:
 
 ### Fixed
 
+- **`diff` and `review` called a changed price identical.** A demo whose plan
+  went from "£9 per month" to "USD 29" came back as *"Identical — the two
+  renders are the same demo, frame for frame"*, which is the worst answer this
+  tool can give: it is the one people will trust without looking. The threshold
+  sat at 0.2% of pixels while the change moved 0.168%. It is now 0.1%.
+
+  The old number was justified as sitting "well under a moving cursor (~0.3%)",
+  and that was describing a world Reel does not have: two renders of one spec
+  differ by exactly 0.0000%, because renders are deterministic — that is the
+  whole point of the project. The real noise ceiling is GIF palette
+  quantisation at 0.073%, and only when comparing *across* formats. The new
+  threshold sits between that and the smallest real change measured, with room
+  either side, and the numbers are pinned in the tests so the next person to
+  move it has to move the measurements too.
+
 - **Capture recorded a drag as nothing at all.** Press and release on different
   elements fire no click, and the observer only listened for clicks — so the
   gesture produced no step *and* nothing in the skipped list. Found in n8n.

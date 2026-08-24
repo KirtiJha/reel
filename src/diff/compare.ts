@@ -73,11 +73,30 @@ export interface Range {
 /**
  * Below this fraction of changed pixels, a sample counts as identical.
  *
- * Not zero: a caption fading in one frame earlier is a real difference of a few
- * hundred pixels that nobody would call a change to the demo. Chosen to sit
- * well under a moving cursor (~0.3%) but above encoder dither.
+ * The number that used to be here was 0.2%, justified as sitting "well under a
+ * moving cursor (~0.3%) but above encoder dither". Measured against real
+ * renders, both halves of that were wrong, and the consequence was the worst
+ * kind of bug this tool can have — a demo whose price changed from £9 to USD 29
+ * was reported as *identical*, frame for frame.
+ *
+ * What the measurements actually say, on a 1100×700 app compared at 480 wide:
+ *
+ *   unchanged demo, re-rendered      0.0000%   ← renders are deterministic,
+ *   same render, mp4 vs webm         0.0000%     so the floor really is zero
+ *   same render, mp4 vs gif          0.0728%   ← palette quantisation, diffuse
+ *   a changed price                  0.1682%   ← the signal, and it was missed
+ *
+ * So the honest floor is not "a moving cursor" — two renders of one spec are
+ * byte-identical, which is the whole point of the project — it is GIF palette
+ * quantisation, and only when comparing *across* formats. 0.1% sits between
+ * that and the smallest real change measured, with room either side.
+ *
+ * Tiling was tried first, on the theory that a text change is concentrated and
+ * quantisation noise is diffuse. It separates them less well, not more (7.2%
+ * against 12.5% on the worst tile), because quantisation concentrates in
+ * gradients. The simple fraction, with an honest number, is better.
  */
-export const DEFAULT_THRESHOLD = 0.002;
+export const DEFAULT_THRESHOLD = 0.001;
 
 /**
  * Changed samples that are close together belong to the same event.
