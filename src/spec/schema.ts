@@ -145,6 +145,58 @@ export const polishSchema = z.object({
 export type Polish = z.infer<typeof polishSchema>;
 
 /**
+ * The voice that reads the narration.
+ *
+ * The API key is never written here. Specs are committed, often to public
+ * repositories, which is the same reason there is deliberately no `${ENV}`
+ * interpolation anywhere in this grammar — the key comes from the environment.
+ */
+export const voiceSchema = z.object({
+  provider: z.enum(["openai", "elevenlabs"]).default("openai"),
+  /** Voice id or name, as the vendor names it. Omit for the provider default. */
+  id: z.string().optional(),
+  /** The synthesis model. Omit for the provider default. */
+  model: z.string().optional(),
+  /**
+   * Free-text direction — "calm, confident technical explainer, unhurried".
+   * Honoured where the vendor supports steering, and ignored with a warning
+   * where it doesn't, rather than silently changing nothing.
+   */
+  style: z.string().optional(),
+  /** Playback rate asked of the vendor. Past about 1.15 it starts to sound rushed. */
+  speed: z.number().min(0.5).max(2).default(1),
+});
+export type Voice = z.infer<typeof voiceSchema>;
+
+/**
+ * Spoken narration.
+ *
+ * Captions are written to be read — terse, telegraphic. Spoken aloud that same
+ * text comes out clipped, because there is no connective tissue to carry
+ * rhythm. So narration is its own text (`say:` on a caption or card), and this
+ * block only says how it is voiced and how the timeline accommodates it.
+ *
+ * Audio is a post-process: the driver records exactly as it does without it and
+ * makes no network calls. Nothing here can change what the demo does.
+ */
+export const audioSchema = z.object({
+  voice: voiceSchema.default({}),
+  /**
+   * What happens when a spoken line runs longer than the hold it was written
+   * for — which it usually will, since `ms` was chosen for reading.
+   *
+   * `stretch` extends the hold so the line fits, making the video longer and
+   * leaving delivery untouched. `speed` keeps the authored length and asks the
+   * vendor to read faster, which is for cuts where length is fixed. `none`
+   * leaves the timeline alone and warns about every overrun.
+   */
+  fit: z.enum(["stretch", "speed", "none"]).default("stretch"),
+  /** Silence between consecutive spoken lines, so delivery has room to breathe. */
+  breathMs: z.number().int().nonnegative().default(350),
+});
+export type AudioConfig = z.infer<typeof audioSchema>;
+
+/**
  * App lifecycle — how the app under test gets started. The plan implied a
  * running `url` but never said how it boots; real demos need this.
  */
@@ -208,6 +260,14 @@ export const outputSchema = z
     gifColors: z.number().int().min(16).max(256).optional(),
     /** Emit sidecar subtitles from the captions. true, or an explicit path base. */
     subtitles: z.union([z.boolean(), z.string()]).optional(),
+    /**
+     * Mux the narration into the video. Needs an `audio:` block and at least one
+     * `say:` line; without either it is a no-op, not an error, so a spec can
+     * carry the flag before it carries the script.
+     */
+    audio: z.boolean().optional(),
+    /** Also write the bare mixed track here, for editing elsewhere. */
+    audioTrack: z.string().optional(),
     /** Localize the subtitles into these languages, e.g. ["es","fr"]. */
     languages: z.array(z.string()).optional(),
     /**
@@ -331,6 +391,8 @@ export type TerminalConfig = z.infer<typeof terminalSchema>;
 
 const selector = z.string().min(1);
 const durationMs = z.number().int().nonnegative();
+/** Narration for one step: what to say, or `false` to keep it silent. */
+const sayText = z.union([z.string().min(1), z.literal(false)]);
 
 /**
  * Steps are expressed as single-key objects so YAML stays terse and readable:
@@ -446,6 +508,26 @@ const baseStepSchema = z.union([
         /** How long to hold this caption (ms). Omit to run until the next one. */
         ms: durationMs.optional(),
         position: z.enum(["bottom", "top"]).default("bottom"),
+        /**
+         * What the narrator says here, written for the ear rather than the eye.
+         * Omit and the caption's own text is spoken; `false` keeps this caption
+         * silent, which is right for a label that reads better than it speaks.
+         */
+        say: sayText.optional(),
+      }),
+    ]),
+  }).strict(),
+  /**
+   * Narration with nothing on screen — a line that carries the demo between two
+   * things the viewer can see. Holds like a caption does, and draws nothing.
+   */
+  z.object({
+    say: z.union([
+      z.string(),
+      z.object({
+        text: z.string(),
+        /** Hold at least this long. The spoken line extends it when it needs to. */
+        ms: durationMs.optional(),
       }),
     ]),
   }).strict(),
@@ -462,6 +544,12 @@ const baseStepSchema = z.union([
         title: z.string(),
         subtitle: z.string().optional(),
         ms: durationMs.default(1800),
+        /**
+         * What the narrator says over the card. Unlike a caption there is no
+         * sensible fallback — a title read aloud sounds like a title — so a
+         * card is silent unless this says otherwise.
+         */
+        say: sayText.optional(),
       }),
     ]),
   }).strict(),
@@ -704,6 +792,11 @@ const specObject = z.object({
   run: runSchema.optional(),
   deterministic: deterministicSchema.default({}),
   polish: polishSchema.default({}),
+  /**
+   * Voice and timing for spoken narration. Top-level rather than under
+   * `polish:` because it is not a look — every cut of a recording shares it.
+   */
+  audio: audioSchema.optional(),
   /** Playwright storageState path for logged-in demos. */
   storageState: z.string().optional(),
   /** Blur/box sensitive regions so demos don't leak real data. */

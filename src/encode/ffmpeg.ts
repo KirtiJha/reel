@@ -25,3 +25,26 @@ export function ffmpeg(args: string[], cwd?: string): Promise<void> {
     });
   });
 }
+
+/**
+ * Run ffmpeg for what it says about a file rather than for what it writes.
+ *
+ * `ffmpeg -i <file>` with no output exits non-zero by design, and the facts
+ * worth having (duration, streams) are on stderr at the default log level — the
+ * one `ffmpeg()` above deliberately suppresses. So this is a separate function
+ * rather than a flag: the caller wants the text, and a failing exit code is the
+ * normal case, not an error.
+ */
+export function ffmpegProbe(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, ["-hide_banner", ...args], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    proc.stderr.on("data", (d) => {
+      stderr += d.toString();
+    });
+    proc.on("error", (err) => reject(new ReelError(`Could not run ffmpeg: ${err.message}`)));
+    proc.on("close", () => resolve(stderr));
+  });
+}

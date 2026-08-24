@@ -28,7 +28,10 @@ import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
-import { buildRetime, parseDuration } from "../polish/retime.js";
+import { audioEnabled, planAudio } from "../narrate/audio.js";
+import type { SpokenCue, SpokenLine } from "../narrate/voice.js";
+import { mixNarration, muxAudio } from "../encode/audio.js";
+import { buildAudioRetime, buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
@@ -136,6 +139,9 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     const beats: { label: string; t: number }[] = [];
     const zoom: ZoomKey[] = [];
     const captions: CaptionCue[] = [];
+    // Collected during the drive, spoken after it: synthesis is a post-process,
+    // so a recording never waits on a TTS endpoint.
+    const say: SpokenCue[] = [];
     const scenes: Scene[] = [];
     const rec = new Recorder(page, capture, timeline, {
       fps: profile.fps,
@@ -175,6 +181,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       beats,
       zoom,
       captions,
+      say,
       capture,
       rec,
       term,

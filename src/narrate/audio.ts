@@ -1,0 +1,110 @@
+import { join } from "node:path";
+import { probeDurationMs } from "../encode/audio.js";
+import {
+  synthesizeAll,
+  voicePath,
+  voiceKey,
+  findVoiceProvider,
+  VOICE_CACHE_DIR,
+  type SpokenCue,
+  type SpokenLine,
+} from "./voice.js";
+import type { AudioConfig, Voice } from "../spec/schema.js";
+import { log } from "../util/log.js";
+import { access } from "node:fs/promises";
+
+/**
+ * From narration cues to audio files with known lengths.
+ *
+ * The step between "the author wrote a sentence" and "the timeline can make
+ * room for it": every line is synthesized (or found in the cache), then
+ * measured, because how long a sentence takes to say is not something the spec
+ * can know and not something the author should have to guess.
+ */
+
+export interface AudioPlan {
+  lines: SpokenLine[];
+  synthesized: number;
+  cached: number;
+}
+
+/** Where a spec keeps its spoken lines. Committed, so renders reproduce. */
+export function voiceCacheDir(specDir: string): string {
+  return join(specDir, VOICE_CACHE_DIR);
+}
+
+export async function planAudio(
+  cues: SpokenCue[],
+  voice: Voice,
+  specDir: string,
+): Promise<AudioPlan> {
+  const cacheDir = voiceCacheDir(specDir);
+  const { files, synthesized, cached } = await synthesizeAll(
+    cues.map((c) => c.text),
+    voice,
+    cacheDir,
+  );
+
+  // Measured once per distinct line rather than per cue: the same sentence said
+  // twice in a demo is the same file and the same length.
+  const durations = new Map<string, number>();
+  for (const [text, file] of files) durations.set(text, await probeDurationMs(file));
+
+  const lines: SpokenLine[] = cues.map((c) => ({
+    t: c.t,
+    text: c.text,
+    file: files.get(c.text)!,
+    durationMs: durations.get(c.text) ?? 0,
+  }));
+
+  const totalMs = lines.reduce((n, l) => n + l.durationMs, 0);
+  log.ok(
+    `${lines.length} spoken lines · ${(totalMs / 1000).toFixed(1)}s of narration ` +
+      `(${synthesized} synthesized, ${cached} cached)`,
+  );
+  return { lines, synthesized, cached };
+}
+
+/**
+ * Which lines have no audio behind them yet.
+ *
+ * Used by `reel check`, which must not need an API key and must not be silent
+ * about it: a demo that quietly ships with a third of its narration missing is
+ * worse than one that refuses to render.
+ */
+export async function missingVoiceLines(
+  cues: SpokenCue[],
+  voice: Voice,
+  specDir: string,
+): Promise<string[]> {
+  const p = findVoiceProvider(voice.provider);
+  const cacheDir = voiceCacheDir(specDir);
+  const missing: string[] = [];
+  for (const text of new Set(cues.map((c) => c.text))) {
+    const key = voiceKey(text, {
+      providerId: p.id,
+      baseUrl: p.baseUrl,
+      apiKey: "",
+      id: voice.id ?? p.defaultVoice,
+      model: voice.model ?? p.defaultModel,
+      style: p.steerable ? voice.style : undefined,
+      speed: voice.speed,
+      sslVerify: true,
+    });
+    try {
+      await access(voicePath(cacheDir, key));
+    } catch {
+      missing.push(text);
+    }
+  }
+  return missing;
+}
+
+/** Whether this spec asks for a soundtrack at all. */
+export function audioEnabled(
+  audio: AudioConfig | undefined,
+  outputAudio: boolean | undefined,
+  cues: SpokenCue[],
+): audio is AudioConfig {
+  return Boolean(audio) && outputAudio !== false && cues.length > 0;
+}

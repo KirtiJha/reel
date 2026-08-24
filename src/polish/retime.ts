@@ -84,6 +84,100 @@ export function buildRetime(
   };
 }
 
+/** A spoken line, in demo time, with the length it actually came back as. */
+export interface SpokenSpan {
+  t: number;
+  durationMs: number;
+}
+
+/**
+ * Stretch the timeline so every spoken line fits in the gap it was written for.
+ *
+ * This is the piece that makes narration land with the picture rather than race
+ * it. A caption's `ms` was chosen for reading; the same sentence spoken takes
+ * longer, so the interval starting at each line has to grow to at least the
+ * length of its audio, plus a breath before the next one starts.
+ *
+ * Only stretching happens here — an interval that is already long enough is
+ * left exactly as it was, so a well-paced demo is not disturbed by adding a
+ * soundtrack, and a line that fits costs nothing.
+ *
+ * Everything downstream is timestamped in demo time, so this remains a remap:
+ * frames, captions, zoom keys, beats and scenes all follow, and nothing is
+ * re-recorded.
+ */
+export function buildAudioRetime(
+  frameTimes: number[],
+  lines: SpokenSpan[],
+  endMs: number,
+  opts: { breathMs?: number } = {},
+): Retimed {
+  const identity: Retimed = { map: (t) => t, endMs, changed: false };
+  const spoken = lines
+    .filter((l) => Number.isFinite(l.t) && l.durationMs > 0)
+    .sort((a, b) => a.t - b.t);
+  if (spoken.length === 0) return identity;
+
+  const breath = Math.max(0, opts.breathMs ?? 0);
+
+  // Breakpoints: every frame, every line boundary, and the end. Line starts
+  // must be breakpoints or a stretch would be spread across a segment that
+  // begins before the line does, and the audio would drift off its cue.
+  const marks = new Set<number>();
+  for (const t of frameTimes) if (Number.isFinite(t)) marks.add(Math.max(0, t));
+  for (const l of spoken) marks.add(Math.max(0, l.t));
+  marks.add(endMs);
+  const src = [...marks].sort((a, b) => a - b);
+  if (src.length < 2) return identity;
+
+  // How much room each line needs, measured from where it starts.
+  const needed = new Map<number, number>();
+  for (const l of spoken) {
+    const at = Math.max(0, l.t);
+    needed.set(at, Math.max(needed.get(at) ?? 0, l.durationMs + breath));
+  }
+
+  // Walk forward, carrying each line's requirement until it is satisfied. A
+  // line whose audio outlasts several segments stretches the last one it
+  // reaches rather than smearing across all of them, which keeps every
+  // intermediate cue where the author put it.
+  const dst: number[] = [src[0]!];
+  let owed = 0; // ms of audio still to be covered by the segments ahead
+  for (let i = 1; i < src.length; i++) {
+    const from = src[i - 1]!;
+    const gap = src[i]! - from;
+    const need = needed.get(from);
+    if (need !== undefined) owed = Math.max(owed, need);
+    const take = Math.max(gap, owed);
+    dst.push(dst[i - 1]! + take);
+    owed = Math.max(0, owed - take);
+  }
+
+  const newEnd = dst[dst.length - 1]! + owed;
+  const changed = dst.some((v, i) => Math.abs(v - src[i]!) > 0.5) || owed > 0.5;
+  if (!changed) return identity;
+
+  return {
+    endMs: Math.round(newEnd),
+    changed: true,
+    map(t: number): number {
+      if (t <= src[0]!) return Math.round(dst[0]! + (t - src[0]!));
+      const last = src.length - 1;
+      if (t >= src[last]!) return Math.round(dst[last]! + (t - src[last]!));
+      let lo = 0;
+      let hi = last;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (src[mid]! <= t) lo = mid;
+        else hi = mid;
+      }
+      const span = src[hi]! - src[lo]!;
+      const p = span > 0 ? (t - src[lo]!) / span : 0;
+      return Math.round(dst[lo]! + (dst[hi]! - dst[lo]!) * p);
+    },
+  };
+}
+
 /**
  * Parse an authored duration: a number of ms, or a string like "30s", "1500ms",
  * "1.5s". Returns undefined for anything unparseable.

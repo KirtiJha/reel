@@ -13,6 +13,7 @@ import {
 import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
+import type { SpokenCue } from "../narrate/voice.js";
 import { compositesCaptions } from "../polish/frame.js";
 import type { Rect, ZoomKey } from "../polish/zoom.js";
 import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../terminal/grid.js";
@@ -38,6 +39,14 @@ export interface StepContext {
   zoom: ZoomKey[];
   /** Caption timeline — composited in post so zoom never clips it. */
   captions: CaptionCue[];
+  /**
+   * Narration cues, in demo time.
+   *
+   * Collected here and spoken later: synthesis is a post-process, so the drive
+   * makes no network calls and a recording is not at the mercy of a TTS
+   * endpoint being up.
+   */
+  say: SpokenCue[];
   /** The running capture, when recording — lets steps synthesize their own frames. */
   capture?: ScreenshotCapture | null;
   /** Owns the demo clock and every operation that consumes demo time. */
@@ -321,9 +330,13 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("caption" in step) {
     const cue = typeof step.caption === "string"
-      ? { text: step.caption, ms: undefined as number | undefined, position: "bottom" as const }
+      ? { text: step.caption, ms: undefined as number | undefined, position: "bottom" as const, say: undefined }
       : step.caption;
     if (cinematic) {
+      // A caption's own text is what gets spoken unless the author wrote
+      // something better for the ear, or `false` to keep this one silent.
+      const spoken = cue.say === undefined ? cue.text : cue.say;
+      if (spoken) ctx.say.push({ t: ctx.now(), text: spoken });
       // Measure with the browser's own text engine so the renderer can wrap at
       // real word boundaries instead of guessing an average glyph width.
       const measure = await measureText(page, cue.text);
@@ -338,6 +351,23 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       if (inPage) await setCaption(page, cue.text);
       await ctx.rec.hold(cue.ms ?? HOLD.caption);
       if (inPage && cue.ms) await setCaption(page, "");
+    }
+    return;
+  }
+
+  /**
+   * Narration with nothing on screen.
+   *
+   * The hold here is a floor, not the final length: with `fit: stretch` the
+   * timeline is stretched afterwards to whatever the line actually takes. So an
+   * author writes the pause they want *at minimum* and lets the voice decide
+   * the rest.
+   */
+  if ("say" in step) {
+    const cue = typeof step.say === "string" ? { text: step.say, ms: undefined } : step.say;
+    if (cinematic) {
+      ctx.say.push({ t: ctx.now(), text: cue.text });
+      await ctx.rec.hold(cue.ms ?? 0);
     }
     return;
   }
@@ -360,10 +390,15 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("card" in step) {
-    const c = typeof step.card === "string" ? { title: step.card, subtitle: undefined, ms: 1800 } : step.card;
+    const c = typeof step.card === "string"
+      ? { title: step.card, subtitle: undefined, ms: 1800, say: undefined }
+      : step.card;
     // A title card is a natural chapter boundary — worth a storyboard frame.
     ctx.beats.push({ label: c.title, t: ctx.now() });
     if (cinematic) {
+      // No fallback here: a title read aloud sounds like a title, so a card is
+      // silent unless the author wrote a line for it.
+      if (c.say) ctx.say.push({ t: ctx.now(), text: c.say });
       zoomOut(ctx); // never crop into a full-screen card
       await showCard(page, c.title, c.subtitle);
       await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap
