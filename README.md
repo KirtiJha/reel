@@ -915,6 +915,9 @@ a login** (including signing in mid-demo), **self-healing drift repair**,
 **subtitles + localization**, and **PII redaction + mock data**
 — the model-backed parts provider-agnostic via a LiteLLM proxy, and optional.
 
+What changed between releases, and which of it will move your committed media,
+is in [CHANGELOG.md](CHANGELOG.md).
+
 Around them, the things that make it usable day to day: `reel doctor`, failure
 artifacts, `--json`, `--if-changed`, `reel diff`, `reel review`, `reel ci` and
 its **GitHub Action**, and a JSON Schema for editor autocomplete.
