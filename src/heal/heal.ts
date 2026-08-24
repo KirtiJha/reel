@@ -208,7 +208,7 @@ async function resolveSelector(
 }
 
 /** Apply repaired selectors back to the spec file, preserving formatting. */
-async function applyFixes(specPath: string, fixes: Fix[]): Promise<void> {
+export async function applyFixes(specPath: string, fixes: Fix[]): Promise<void> {
   let raw = await readFile(specPath, "utf8");
   const applied = new Map<string, string>(); // before → after already written
   let count = 0;
@@ -223,9 +223,26 @@ async function applyFixes(specPath: string, fixes: Fix[]): Promise<void> {
     // Replace the old selector whether it's bare or wrapped in quotes, and
     // always emit a YAML-safe double-quoted value (e.g. "#add" — a bare #add
     // would be parsed as a comment).
-    const re = new RegExp(`(["']?)${escapeRegExp(fix.before)}\\1`, "g");
-    if (re.test(raw)) {
-      raw = raw.replace(new RegExp(`(["']?)${escapeRegExp(fix.before)}\\1`, "g"), yamlDoubleQuote(fix.after));
+    //
+    // The match has to be a *whole* scalar, not a substring of one. Replacing
+    // every occurrence anywhere in the file meant a fix for one step rewrote
+    // the middle of another step that merely contained the same text:
+    //
+    //   - waitFor: "text=Aalu parwal sabji × 1 · just now"
+    //
+    // became `""text=P" × 1 · just now"`, which is not YAML at all. `--write`
+    // destroyed the spec it was asked to repair, and the next command could
+    // not even parse it. So the value must start after a `:`/`-`/`,`/`{` and
+    // end at a quote, comma, brace, comment or end of line — anything else is
+    // a longer string that happens to contain this selector, and is left for
+    // its own fix or for a human.
+    const re = () =>
+      new RegExp(
+        `(?<=(?::|-|,|\\{)\\s*)(["']?)${escapeRegExp(fix.before)}\\1(?=\\s*(?:[,}]|#|$))`,
+        "gm",
+      );
+    if (re().test(raw)) {
+      raw = raw.replace(re(), yamlDoubleQuote(fix.after));
       applied.set(fix.before, fix.after);
       count++;
     } else {
