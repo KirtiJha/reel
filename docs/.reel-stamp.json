@@ -1,6 +1,6 @@
 {
-  "hash": "acf8824031d13046cef0716fcabe2a0e",
-  "version": "0.2.0",
+  "hash": "b61645c910d72171c1040eb8a6818ebc",
+  "version": "0.3.0",
   "epoch": 1,
   "outputs": [
     "../examples/taskflow/out/showcase-storyboard",

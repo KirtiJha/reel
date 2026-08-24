@@ -6,4 +6,4 @@
  * from npm by default, so a pinned action tag is a pinned tool. Two copies of
  * it means one of them is wrong; a test asserts this one matches package.json.
  */
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";

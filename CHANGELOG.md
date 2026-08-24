@@ -19,6 +19,13 @@ this tool they are the whole point:
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-24
+
+A minor rather than a patch because `drag` is a new step kind: a spec that
+uses it will not load on 0.2.x. The reason to take it anyway is the first
+entry under Fixed — `diff` could call a real change identical, and everything
+downstream of it inherited that answer.
+
 ### Added
 
 - **`drag` steps.** Kanban boards, flow builders, sliders, reorderable lists and
@@ -138,6 +145,7 @@ repair, subtitles and localization, PII redaction and mock data, `reel doctor`,
 `reel diff`, failure artifacts, `--json`, `--if-changed`, and a JSON Schema for
 editor autocomplete.
 
-[Unreleased]: https://github.com/KirtiJha/reel/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/KirtiJha/reel/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/KirtiJha/reel/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KirtiJha/reel/releases/tag/v0.2.0
 [0.1.0]: https://www.npmjs.com/package/@kirti_jha/reel/v/0.1.0
