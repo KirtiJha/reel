@@ -1,0 +1,11 @@
+import { chromium } from "playwright-core";
+const SP="/tmp/claude-0/-home-user-reel/360d857a-4ce4-5dae-8620-ae4fb24379b5/scratchpad/";
+const b = await chromium.launch({headless:true});
+const p = await b.newPage({viewport:{width:1440,height:960}});
+await p.goto("http://localhost:4488/gallery",{waitUntil:"networkidle",timeout:120000});
+await p.waitForTimeout(4000);
+await p.screenshot({path:SP+"gal.png", fullPage:true});
+console.log("118 STEPS count:", await p.locator("text=118 STEPS").count());
+const t = await p.evaluate(()=>document.body.innerText.split("\n").map(s=>s.trim()).filter(Boolean).slice(6,40).join(" | "));
+console.log(t.slice(0,500));
+await b.close();

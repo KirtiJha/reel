@@ -124,6 +124,14 @@ export default function StudioPage() {
 
   const save = useCallback(async () => {
     if (!path) return false;
+    // Belt to the server's braces. Every job saves first, so pressing Record
+    // before the spec has finished loading would post an empty buffer — and
+    // the file on disk is the only copy anyone has.
+    if (!raw.trim()) {
+      setNoteTone("err");
+      setNote("Still loading this spec — nothing was saved.");
+      return false;
+    }
     const r = await postJSON<{ ok: boolean; error?: string; warnings?: string[] }>("/api/spec", {
       path,
       raw,

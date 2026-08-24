@@ -481,6 +481,22 @@ async function saveSpec(req: http.IncomingMessage, res: http.ServerResponse, cwd
   const p = safePath(cwd, String(body.path ?? ""));
   if (!p) return sendJson(res, 400, { error: "bad path" });
   const raw = String(body.raw ?? "");
+
+  // An empty buffer is not an incomplete draft — it is deletion, and it is
+  // never what someone meant. Studio saves before every Record, Check and Heal,
+  // so a spec that had not finished loading when a button was pressed was
+  // written over with nothing: 118 steps replaced by a zero-byte file, no
+  // error, no undo. Blank YAML also parses cleanly, so nothing below catches it.
+  if (!raw.trim()) {
+    const existing = await readFile(p, "utf8").catch(() => "");
+    if (existing.trim()) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: "Refusing to save an empty document over a spec that has content.",
+      });
+    }
+  }
+
   let parsed: unknown;
   try {
     parsed = parseYaml(raw);
