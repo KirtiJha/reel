@@ -73,6 +73,25 @@ const norm = (v: string | undefined): string =>
  * Score how well a snapshot element matches the intent. Higher is better;
  * anything at or below zero is not a plausible repair.
  */
+/**
+ * How alike two names must be before one containing the other means anything.
+ * Half the longer string: enough for "Add" → "Add task", nowhere near enough
+ * for a single letter that happens to appear somewhere in a sentence.
+ */
+const SIMILAR_ENOUGH = 0.5;
+
+/**
+ * Below this, a candidate is not a repair — it is a guess.
+ *
+ * Every repair is verified by re-running the step, which sounds like a
+ * sufficient guard and is not: waiting for, or clicking, the *wrong* element
+ * usually succeeds. So the score is the only thing standing between drift and
+ * a spec quietly rewritten to point somewhere meaningless. A single shared
+ * word (15) is not evidence; leaving the step unresolved and saying so is
+ * better than a repair nobody asked for and nobody can see.
+ */
+export const MIN_REPAIR_SCORE = 30;
+
 export function scoreCandidate(intent: Intent, el: ElementInfo): number {
   const name = norm(el.name);
   const want = norm(intent.name);
@@ -80,15 +99,28 @@ export function scoreCandidate(intent: Intent, el: ElementInfo): number {
   let score = 0;
 
   if (want && name) {
+    // How much of the longer string the shorter one accounts for. Prefix and
+    // containment are only evidence when the two names are comparable in
+    // size: every string contains "a", and without this guard a one-letter
+    // avatar scored 40 against "Aalu parwal sabji" purely because the dish
+    // name contains a "p". The repair was then "verified" by re-running the
+    // step — and waiting for the wrong element succeeds — so a meaningless
+    // selector was written into the spec and the demo passed while pointing
+    // at an avatar.
+    const overlap = Math.min(name.length, want.length) / Math.max(name.length, want.length);
+
     if (name === want) score += 100;
     else if (name.replace(/[^a-z0-9]/g, "") === want.replace(/[^a-z0-9]/g, "")) score += 80;
-    else if (name.startsWith(want) || want.startsWith(name)) score += 55;
-    else if (name.includes(want) || want.includes(name)) score += 40;
-    else {
+    else if (overlap >= SIMILAR_ENOUGH && (name.startsWith(want) || want.startsWith(name))) {
+      score += 55;
+    } else if (overlap >= SIMILAR_ENOUGH && (name.includes(want) || want.includes(name))) {
+      score += 40;
+    } else {
       // Word overlap catches "Add" → "Add task" and "Sign in" → "Log in" less
       // well, but cheaply enough to be worth trying before a model call.
-      const a = new Set(want.split(" ").filter(Boolean));
-      const b = new Set(name.split(" ").filter(Boolean));
+      // Single characters are not words: they match far too much to be a signal.
+      const a = new Set(want.split(" ").filter((w) => w.length > 1));
+      const b = new Set(name.split(" ").filter((w) => w.length > 1));
       const shared = [...a].filter((w) => b.has(w)).length;
       if (shared) score += 15 * shared;
     }
@@ -119,7 +151,7 @@ export function deterministicCandidates(
 
   const scored = elements
     .map((el) => ({ el, score: scoreCandidate(intent, el) }))
-    .filter((c) => c.score > 0 && c.el.selector && c.el.selector !== brokenSelector)
+    .filter((c) => c.score >= MIN_REPAIR_SCORE && c.el.selector && c.el.selector !== brokenSelector)
     .sort((a, b) => b.score - a.score);
 
   const seen = new Set<string>();

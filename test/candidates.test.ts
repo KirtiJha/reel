@@ -143,3 +143,41 @@ describe("deterministicCandidates", () => {
     assert.equal(deterministicCandidates("role=button[name=Add]", dupes).length, 1);
   });
 });
+
+describe("a repair has to be a repair, not a guess", () => {
+  // Found by breaking a real demo: a dish was renamed, and heal rewrote the
+  // step to `text=P` — the single-letter avatar beside the chef's name. It
+  // scored 40 because "aalu parwal sabji" happens to contain a "p", and the
+  // repair passed verification because waiting for the *wrong* element
+  // succeeds. The spec would have been rewritten to point at an avatar and
+  // the demo would have gone on passing.
+  test("a single letter is not a match for a sentence", () => {
+    const intent = parseIntent("text=Aalu parwal sabji");
+    assert.equal(scoreCandidate(intent, el("P", "img", "text=P")), 0);
+  });
+
+  test("nor is one short word buried in a long name", () => {
+    const intent = parseIntent("text=Aalu parwal sabji");
+    assert.ok(scoreCandidate(intent, el("ab", "generic", "text=ab")) < 30);
+  });
+
+  test("and such a candidate is not even offered", () => {
+    const cands = deterministicCandidates("text=Aalu parwal sabji", [
+      el("P", "img", "text=P"),
+      el("Pratibha", "link", "text=Pratibha"),
+    ]);
+    assert.ok(!cands.includes("text=P"), `should not offer text=P, got ${JSON.stringify(cands)}`);
+  });
+
+  test("a genuine relabel still repairs", () => {
+    // The case heal exists for: same element, longer label.
+    const intent = parseIntent("text=Aalu parwal sabji");
+    const better = scoreCandidate(intent, el("Aalu parwal sabji (family recipe)", "heading", "text=Aalu parwal sabji (family recipe)"));
+    assert.ok(better >= 30, `a real relabel should still score, got ${better}`);
+  });
+
+  test("and 'Add' → 'Add task' is still comfortably a match", () => {
+    const intent = parseIntent("role=button[name=Add]");
+    assert.ok(scoreCandidate(intent, el("Add task", "button", "role=button[name=Add task]")) >= 30);
+  });
+});
