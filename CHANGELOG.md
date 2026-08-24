@@ -19,6 +19,76 @@ this tool they are the whole point:
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-24
+
+A minor rather than a patch because the spec is now strict about keys it does
+not recognize — see Changed. Everything here came out of filming a real
+product demo end to end, which is the only way some of these surface.
+
+### Added
+
+- **`cuts` — several deliverables out of one recording.** One demo has to be
+  several: a long walkthrough for YouTube, a minute for LinkedIn, forty seconds
+  for Twitter, something much shorter for a README. Written as four specs they
+  drift apart within a month.
+
+  ```yaml
+  cuts:
+    - name: readme
+      from: hero          # a beat label, or a ms offset
+      to: pricing
+      output: { preset: readme, gif: docs/demo.gif }
+  ```
+
+  A cut is not a second recording: it names a range of the demo already filmed
+  and re-encodes frames already on disk, so it costs no browser time and cannot
+  disagree with the master about what the app did. Beat labels rather than
+  timestamps are the point — `from: pricing` still means the right moment after
+  the caption above it gets slower.
+
+  The frame in effect at the in point is carried in and rebased to zero, since
+  frames land only when the picture changes; slicing to frames inside the range
+  opens the cut on whatever changes next, with the opening stretch missing.
+  Captions and zooms carry in for the same reason. Beats deliberately do not — a
+  chapter that ended before the cut began would mislabel it.
+
+- **`polish.frameUrl`** — the address shown in the browser frame's URL pill.
+  Demos are filmed against a dev server, so every published video carried
+  `localhost:4500` in the chrome. Cosmetic by construction: it changes the pill
+  and nothing else, so it cannot make a recording claim it visited somewhere it
+  did not.
+
+### Changed
+
+- **An unrecognized top-level key is now an error rather than a shrug.** Every
+  step kind was already strict; the root object was not — which is exactly
+  where a version mismatch shows up. A spec using `cuts:` run against 0.3.0
+  rendered, reported success, and quietly produced one deliverable instead of
+  four, with nothing said. The same hole swallowed ordinary typos: `polsih:`
+  renders a demo without the polish you asked for and looks like it worked.
+
+  Both are now rejected by name. Every spec in this repository validates
+  unchanged, but a spec carrying a stray key will now fail where it previously
+  rendered — which is the point.
+
+### Fixed
+
+- **The polish render path reused its working directories.** Frames are
+  expanded into `cfr/` and `proc/` under the frames dir, created but never
+  cleared, while ffmpeg restarts its numbering at `000001` every time. A second
+  render into the same place read back its own frames *and* the previous
+  render's — the first cut of a 22.2s demo came out 27.8s, longer than the
+  recording it was taken from, and nothing failed. Latent until `cuts` made a
+  second render routine.
+
+### Known limitation
+
+- **`reel check` skips caption and hold time**, which is what makes it fast. A
+  timing-sensitive assertion can therefore pass `check` and still fail
+  `record` — a lazily-rendered element gets time to appear that the check never
+  gave it. Prefer assertions on meaning over exact `count:` on text that the
+  app renders in more than one place.
+
 ## [0.3.0] — 2026-08-24
 
 A minor rather than a patch because `drag` is a new step kind: a spec that
@@ -145,7 +215,8 @@ repair, subtitles and localization, PII redaction and mock data, `reel doctor`,
 `reel diff`, failure artifacts, `--json`, `--if-changed`, and a JSON Schema for
 editor autocomplete.
 
-[Unreleased]: https://github.com/KirtiJha/reel/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/KirtiJha/reel/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/KirtiJha/reel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/KirtiJha/reel/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KirtiJha/reel/releases/tag/v0.2.0
 [0.1.0]: https://www.npmjs.com/package/@kirti_jha/reel/v/0.1.0
