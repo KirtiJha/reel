@@ -83,28 +83,77 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+      # Is this the newest release, or a fix backported onto an older line?
+      #
+      # Publishing a backport the ordinary way quietly undoes the newest
+      # release for everybody. Three separate things mean "newest" and all
+      # three are last-write-wins: npm's `latest` dist-tag, which is what a
+      # bare `npm install` follows; the `v1` alias tag, which is what
+      # `uses: KirtiJha/reel@v1` follows; and GitHub's own latest-release
+      # flag, which is what the repository front page shows. Publish 0.2.1
+      # after 0.3.0 and it wins all three while being the older tool.
+      #
+      # So the version is compared against what npm currently calls latest,
+      # and a version that is not ahead of it is published beside the line
+      # rather than over it — installable as `@kirti_jha/reel@0.2.x`, and
+      # invisible to everyone who did not ask for it by name.
+      - name: Newest release, or a backport?
+        id: line
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          LATEST="$(npm view @kirti_jha/reel version 2>/dev/null || echo 0.0.0)"
+          NEWEST="$(printf '%s\n%s\n' "$VERSION" "$LATEST" | sort -V | tail -1)"
+          # A prerelease is never the newest release either, whatever it sorts
+          # against — nobody should reach 0.3.0-rc.1 by typing `npm install`.
+          if [ "$VERSION" = "$NEWEST" ] && [ "$VERSION" != "$LATEST" ] && case "$VERSION" in *-*) false;; *) true;; esac; then
+            echo "newest=true"      >> "$GITHUB_OUTPUT"
+            echo "dist_tag=latest"  >> "$GITHUB_OUTPUT"
+            echo "$VERSION is the newest release; npm latest is $LATEST."
+          else
+            # A prerelease gets `next`; a maintenance release gets its line.
+            # `${VERSION%.*}.x` on 0.4.0-rc.1 would yield the nonsense tag
+            # `0.4.0-rc.x`, which nobody would think to install.
+            case "$VERSION" in
+              *-*) LINE="next" ;;
+              *)   LINE="${VERSION%.*}.x" ;;
+            esac
+            echo "newest=false"     >> "$GITHUB_OUTPUT"
+            echo "dist_tag=$LINE"   >> "$GITHUB_OUTPUT"
+            echo "::notice::$VERSION is not ahead of $LATEST — publishing as @$LINE, leaving latest, v1 and the release flag alone."
+          fi
+
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DIST_TAG: ${{ steps.line.outputs.dist_tag }}
 
       # Only now, with the package actually on npm.
       #
       # The `v1` alias is deliberately not the package version: `uses:
       # KirtiJha/reel@v1` is a promise about the Action's inputs and outputs,
       # which survives a package bump, and moving it is what makes that pin
-      # resolve to the newest release rather than a frozen one.
+      # resolve to the newest release rather than a frozen one. That is also
+      # exactly why a backport must not touch it — moving it *backwards* would
+      # silently downgrade every workflow pinned to v1.
       - name: Tag what was published
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          NEWEST: ${{ steps.line.outputs.newest }}
         run: |
           set -euo pipefail
           git config user.name "reel-bot"
           git config user.email "bot@users.noreply.github.com"
           git tag -f "v$VERSION"
           git push -f origin "v$VERSION"
-          git tag -f v1
-          git push -f origin v1
+          if [ "$NEWEST" = "true" ]; then
+            git tag -f v1
+            git push -f origin v1
+          else
+            echo "Backport — leaving the v1 alias where it is."
+          fi
 
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
@@ -114,3 +163,7 @@ jobs:
           # A version with a prerelease part (0.3.0-rc.1) should not become the
           # release people land on from the repository's front page.
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          # Neither should a backport. GitHub marks the most recently *created*
+          # release as latest unless told otherwise, which has nothing to do
+          # with which version is newest.
+          make_latest: ${{ steps.line.outputs.newest }}
