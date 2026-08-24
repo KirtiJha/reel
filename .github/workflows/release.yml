@@ -95,8 +95,13 @@ jobs:
       #
       # So the version is compared against what npm currently calls latest,
       # and a version that is not ahead of it is published beside the line
-      # rather than over it — installable as `@kirti_jha/reel@0.2.x`, and
+      # rather than over it — installable as `@kirti_jha/reel@maint-0.2`, and
       # invisible to everyone who did not ask for it by name.
+      #
+      # That tag is named the way it is because npm rejects any dist-tag that
+      # parses as a semver range, and every obvious name for a line is one:
+      # `0.2.x`, `v0.2`, `0.2` and `~0.2` all parse as >=0.2.0 <0.3.0. A name
+      # beginning with a letter cannot be a range, which is the whole trick.
       - name: Newest release, or a backport?
         id: line
         env:
@@ -113,11 +118,19 @@ jobs:
             echo "$VERSION is the newest release; npm latest is $LATEST."
           else
             # A prerelease gets `next`; a maintenance release gets its line.
-            # `${VERSION%.*}.x` on 0.4.0-rc.1 would yield the nonsense tag
-            # `0.4.0-rc.x`, which nobody would think to install.
+            # Both start with a letter, so neither can parse as a range.
             case "$VERSION" in
               *-*) LINE="next" ;;
-              *)   LINE="${VERSION%.*}.x" ;;
+              *)   LINE="maint-${VERSION%.*}" ;;
+            esac
+            # Belt and braces. npm rejects a range-shaped tag anyway, but it
+            # does so after the tests have run and blames semver rather than
+            # this step, so fail here where the fix is. The check is the shape
+            # rather than a semver call: no range can begin with a letter, and
+            # a guard that needs a module it might not have would fail open.
+            case "$LINE" in
+              [A-Za-z]*) ;;
+              *) echo "::error::Computed dist-tag '$LINE' could parse as a semver range; npm will refuse it."; exit 1 ;;
             esac
             echo "newest=false"     >> "$GITHUB_OUTPUT"
             echo "dist_tag=$LINE"   >> "$GITHUB_OUTPUT"
