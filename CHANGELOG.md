@@ -12,8 +12,13 @@ Install from this line by name, since `latest` points at the newest release
 rather than this one:
 
 ```bash
-npm install @kirti_jha/reel@0.2.x
+npm install @kirti_jha/reel@maint-0.2
 ```
+
+The tag is spelled that way because npm refuses any dist-tag that parses as a
+semver range, which rules out `0.2.x`, `v0.2`, `0.2` and `~0.2` alike. A `~0.2`
+range in your `package.json` is unaffected and still works normally — it is
+only the published tag name that has to avoid the shape.
 
 ## [0.2.1] — 2026-08-24
 
