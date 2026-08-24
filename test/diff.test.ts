@@ -277,3 +277,38 @@ describe("the pull-request comment", () => {
     }
   });
 });
+
+describe("the threshold is set from measurements, not from a guess", () => {
+  // Every number here was measured on a 1100×700 app compared at 480 wide. The
+  // threshold that shipped was 0.2%, above the signal — so a demo whose price
+  // changed from £9 to USD 29 was reported identical, frame for frame.
+  const MEASURED = {
+    unchangedRerender: 0,
+    sameRenderMp4VsWebm: 0,
+    sameRenderMp4VsGif: 0.000728, // palette quantisation, the real noise ceiling
+    aChangedPrice: 0.001682, // the smallest real change measured
+  };
+
+  test("a change that small is still a change", () => {
+    assert.ok(
+      MEASURED.aChangedPrice > DEFAULT_THRESHOLD,
+      `a changed price (${MEASURED.aChangedPrice}) must exceed the threshold (${DEFAULT_THRESHOLD})`,
+    );
+  });
+
+  test("and cross-format quantisation still is not", () => {
+    // The floor is not "a moving cursor": two renders of one spec are
+    // byte-identical. It is GIF palette quantisation, and only across formats.
+    assert.ok(
+      MEASURED.sameRenderMp4VsGif < DEFAULT_THRESHOLD,
+      `gif quantisation (${MEASURED.sameRenderMp4VsGif}) must stay below ${DEFAULT_THRESHOLD}`,
+    );
+    assert.equal(MEASURED.unchangedRerender, 0);
+    assert.equal(MEASURED.sameRenderMp4VsWebm, 0);
+  });
+
+  test("with room on both sides, so neither is a coin flip", () => {
+    assert.ok(DEFAULT_THRESHOLD / MEASURED.sameRenderMp4VsGif > 1.3, "headroom over noise");
+    assert.ok(MEASURED.aChangedPrice / DEFAULT_THRESHOLD > 1.6, "margin below the signal");
+  });
+});

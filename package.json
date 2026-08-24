@@ -1,6 +1,6 @@
 {
   "name": "@kirti_jha/reel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Demos-as-code for web apps and CLIs. A small YAML spec drives your real app and renders always-current GIF, MP4, storyboards and a self-contained interactive click-through — and fails your build when the flow breaks.",
   "license": "MIT",
   "type": "module",
