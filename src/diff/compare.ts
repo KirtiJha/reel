@@ -99,6 +99,31 @@ export interface Range {
 export const DEFAULT_THRESHOLD = 0.001;
 
 /**
+ * The same measurements, for two renders in the *same* format.
+ *
+ * The 0.073% floor above is GIF palette quantisation, and it only exists when
+ * comparing across formats. Compare an mp4 with an mp4 — which is what CI does
+ * every time, the previous render against the new one — and the floor is
+ * literally zero, because two renders of one spec are byte-identical.
+ *
+ * Holding those comparisons to a threshold set by noise they cannot contain
+ * costs real detections. A ₹80 → ₹95 price change on a 1280-wide app moves
+ * 0.02% of pixels: far above the same-format floor of nothing, far below the
+ * cross-format one. It was reported as *identical*.
+ *
+ * This is not zero, because a threshold of zero would report a difference for
+ * a single stray pixel and there would be no way to say "close enough". It is
+ * low enough to catch two changed digits.
+ */
+export const SAME_FORMAT_THRESHOLD = 0.00005;
+
+/** The container two renders are in, for choosing between the two above. */
+export function sameFormat(a: string, b: string): boolean {
+  const ext = (p: string) => p.toLowerCase().replace(/^.*\./, "");
+  return ext(a) === ext(b);
+}
+
+/**
  * Changed samples that are close together belong to the same event.
  *
  * A dialog opening is one change, but the samples through its animation dip

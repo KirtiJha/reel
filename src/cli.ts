@@ -15,6 +15,7 @@ import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
 import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
+import { SAME_FORMAT_THRESHOLD, sameFormat } from "./diff/compare.js";
 import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
 import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
 import { recordOne } from "./commands/record.js";
@@ -205,8 +206,9 @@ program
   .option("--fps <n>", "samples per second to compare at", String(DIFF_DEFAULTS.fps))
   .option(
     "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed",
-    String(DIFF_DEFAULTS.threshold * 100),
+    "percentage of changed pixels before a moment counts as changed " +
+      `(default: ${SAME_FORMAT_THRESHOLD * 100} comparing one format with itself, ` +
+      `${DIFF_DEFAULTS.threshold * 100} across formats)`,
   )
   .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
   .option("--no-out", "skip the comparison images")
@@ -215,12 +217,22 @@ program
     async (
       before: string,
       after: string,
-      opts: { fps: string; threshold: string; out: string | false; exitCode: boolean },
+      opts: { fps: string; threshold?: string; out: string | false; exitCode: boolean },
     ) => {
       await withErrors(async () => {
+        // Two renders in the same format have a floor of literally zero — the
+        // output is deterministic — so holding them to a threshold sized for
+        // GIF palette quantisation throws away real detections. An explicit
+        // --threshold always wins.
+        const threshold =
+          opts.threshold !== undefined
+            ? Number(opts.threshold) / 100
+            : sameFormat(before, after)
+              ? SAME_FORMAT_THRESHOLD
+              : DIFF_DEFAULTS.threshold;
         const report = await diff(before, after, {
           fps: Number(opts.fps),
-          threshold: Number(opts.threshold) / 100,
+          threshold,
           out: opts.out,
         });
         printDiff(report);

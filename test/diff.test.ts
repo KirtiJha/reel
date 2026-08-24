@@ -9,6 +9,8 @@ import {
   summarize,
   CHANNEL_TOLERANCE,
   DEFAULT_THRESHOLD,
+  SAME_FORMAT_THRESHOLD,
+  sameFormat,
   type Sample,
   type Range,
   type DiffReport,
@@ -310,5 +312,34 @@ describe("the threshold is set from measurements, not from a guess", () => {
   test("with room on both sides, so neither is a coin flip", () => {
     assert.ok(DEFAULT_THRESHOLD / MEASURED.sameRenderMp4VsGif > 1.3, "headroom over noise");
     assert.ok(MEASURED.aChangedPrice / DEFAULT_THRESHOLD > 1.6, "margin below the signal");
+  });
+});
+
+describe("comparing one format with itself", () => {
+  // The 0.073% floor the default threshold is built around is GIF palette
+  // quantisation, and it only exists across formats. mp4 against mp4 — which
+  // is what CI does on every run, the previous render against the new one —
+  // has a floor of nothing at all, because two renders of one spec are
+  // byte-identical. Holding it to the cross-format number cost real
+  // detections: a ₹80 → ₹95 price change moves 0.02% of pixels and was
+  // reported as identical.
+  test("the same extension is the same format", () => {
+    assert.equal(sameFormat("a/before.mp4", "b/after.mp4"), true);
+    assert.equal(sameFormat("BEFORE.MP4", "after.mp4"), true, "extension case does not matter");
+  });
+
+  test("different extensions are not", () => {
+    assert.equal(sameFormat("demo.mp4", "demo.gif"), false);
+    assert.equal(sameFormat("demo.webm", "demo.mp4"), false);
+  });
+
+  test("the same-format threshold catches a change the cross-format one misses", () => {
+    const priceChange = 0.0002; // measured: two digits on a 1280-wide app
+    assert.ok(priceChange > SAME_FORMAT_THRESHOLD, "must be caught comparing mp4 with mp4");
+    assert.ok(priceChange < DEFAULT_THRESHOLD, "and is what the cross-format threshold misses");
+  });
+
+  test("it is not zero — a single stray pixel is not a report", () => {
+    assert.ok(SAME_FORMAT_THRESHOLD > 0);
   });
 });
