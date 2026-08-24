@@ -116,3 +116,36 @@ describe("resolveOutput", () => {
     assert.equal(resolveOutput(loaded, "out/a~b.mp4"), join(dir, "out", "a~b.mp4"));
   });
 });
+
+describe("a key Reel does not recognize is an error", () => {
+  // This is a version-skew guard as much as a typo guard. A spec written
+  // against a newer Reel and run on an older one used to render happily and
+  // quietly do less than it said: `cuts:` was dropped, four deliverables
+  // became one, and nothing reported it.
+  test("an unknown top-level key is rejected, and named", () => {
+    // Stands in for a key some future Reel adds: this version has never heard
+    // of it, which is exactly the case an older Reel is in when it meets a
+    // spec that uses `cuts:`. It must refuse rather than render a lesser demo.
+    const r = specSchema.safeParse({ ...minimal, chapters: [{ name: "readme" }] });
+    assert.equal(r.success, false, "a spec using a key this version lacks must not parse");
+    if (!r.success) {
+      assert.match(JSON.stringify(r.error.issues), /chapters/, "the error should name the key");
+    }
+  });
+
+  test("a misspelled known key is rejected rather than ignored", () => {
+    // `polsih:` renders a demo without the polish you asked for and looks
+    // like it worked, which is the same failure wearing a different hat.
+    const r = specSchema.safeParse({ ...minimal, polsih: { zoom: "auto" } });
+    assert.equal(r.success, false);
+  });
+
+  test("a spec using only keys this version knows still parses", () => {
+    const r = specSchema.safeParse({
+      ...minimal,
+      polish: { frame: "browser", frameUrl: "example.com" },
+      cuts: [{ name: "readme", from: "hero", output: { gif: "out/a.gif" } }],
+    });
+    assert.equal(r.success, true, r.success ? "" : JSON.stringify(r.error.issues));
+  });
+});

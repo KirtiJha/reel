@@ -727,7 +727,21 @@ const specObject = z.object({
    * browser time and cannot disagree with the master about what the app did.
    */
   cuts: z.array(cutSchema).optional(),
-});
+})
+  /**
+   * A key Reel does not recognize is an error, not something to ignore.
+   *
+   * Silently dropping it produces the worst outcome this tool can have: a spec
+   * that renders, reports success, and quietly does less than it says. A demo
+   * written against a newer Reel and run on an older one asked for four
+   * deliverables and got one, with `cuts:` discarded and nothing said. A
+   * misspelled `polish` key does the same on any version — the demo renders
+   * without the thing you asked for and looks like it worked.
+   *
+   * Every step kind was already strict for exactly this reason; the top level
+   * was not, which is where a version mismatch actually shows up.
+   */
+  .strict();
 
 /**
  * A terminal-only demo has no app to load, so `url` must not fall back to a dev
