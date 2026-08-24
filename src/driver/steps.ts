@@ -284,7 +284,12 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("waitFor" in step) {
-    await locate(page, step.waitFor).waitFor({ state: "visible" });
+    const w = step.waitFor;
+    const target = typeof w === "string" ? w : w.selector;
+    // Only pass a timeout when the spec asked for one, so the default (short in
+    // `check`, Playwright's own in `record`) still applies everywhere else.
+    const opts = typeof w === "string" ? {} : { timeout: w.timeout };
+    await locate(page, target).waitFor({ state: "visible", ...opts });
     return;
   }
 

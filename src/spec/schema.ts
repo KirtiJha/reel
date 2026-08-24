@@ -418,7 +418,18 @@ const baseStepSchema = z.union([
   /** Scroll an element into view. Use `scroll` for a filmed, cinematic pan. */
   z.object({ scrollTo: selector }).strict(),
   /** State-based wait — the reliability moat. Never a raw sleep by default. */
-  z.object({ waitFor: selector }).strict(),
+  /**
+   * State-based wait — the reliability moat. Never a raw sleep by default.
+   *
+   * The object form exists for the rare wait that is legitimately long: a build
+   * running inside the page, a job whose progress the UI streams. The default
+   * is deliberately short so that a *broken* selector fails fast instead of
+   * stalling the recording, and raising it globally would trade that away for
+   * every step. Naming the one step that needs longer keeps the rest honest.
+   */
+  z.object({
+    waitFor: z.union([selector, z.object({ selector, timeout: z.number().int().positive() })]),
+  }).strict(),
   /** Wait until the address bar matches — a substring, or a glob with `*`. */
   z.object({ waitForUrl: z.string() }).strict(),
   /** Wait for in-flight requests to settle. A last resort — prefer `waitFor`. */

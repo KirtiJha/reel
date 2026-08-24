@@ -715,15 +715,37 @@
                 "type": "object",
                 "properties": {
                   "waitFor": {
-                    "type": "string",
-                    "minLength": 1
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "selector": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "timeout": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "selector",
+                          "timeout"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "waitFor"
                 ],
                 "additionalProperties": false,
-                "description": "State-based wait — the reliability moat. Never a raw sleep by default."
+                "description": "State-based wait — the reliability moat. Never a raw sleep by default.\n\nThe object form exists for the rare wait that is legitimately long: a build\nrunning inside the page, a job whose progress the UI streams. The default\nis deliberately short so that a *broken* selector fails fast instead of\nstalling the recording, and raising it globally would trade that away for\nevery step. Naming the one step that needs longer keeps the rest honest."
               },
               {
                 "type": "object",
@@ -1382,15 +1404,37 @@
                                 "type": "object",
                                 "properties": {
                                   "waitFor": {
-                                    "type": "string",
-                                    "minLength": 1
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "selector": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "timeout": {
+                                            "type": "integer",
+                                            "exclusiveMinimum": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "selector",
+                                          "timeout"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
                                   "waitFor"
                                 ],
                                 "additionalProperties": false,
-                                "description": "State-based wait — the reliability moat. Never a raw sleep by default."
+                                "description": "State-based wait — the reliability moat. Never a raw sleep by default.\n\nThe object form exists for the rare wait that is legitimately long: a build\nrunning inside the page, a job whose progress the UI streams. The default\nis deliberately short so that a *broken* selector fails fast instead of\nstalling the recording, and raising it globally would trade that away for\nevery step. Naming the one step that needs longer keeps the rest honest."
                               },
                               {
                                 "type": "object",

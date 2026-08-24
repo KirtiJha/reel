@@ -14,7 +14,7 @@ export function stepSelector(step: Step): string | null {
   if ("drag" in step) return step.drag.from;
   if ("hover" in step) return step.hover;
   if ("scrollTo" in step) return step.scrollTo;
-  if ("waitFor" in step) return step.waitFor;
+  if ("waitFor" in step) return typeof step.waitFor === "string" ? step.waitFor : step.waitFor.selector;
   if ("type" in step) return step.type.selector;
   if ("fill" in step) return step.fill.selector;
   if ("press" in step) return step.press.selector ?? null;

@@ -149,3 +149,35 @@ describe("a key Reel does not recognize is an error", () => {
     assert.equal(r.success, true, r.success ? "" : JSON.stringify(r.error.issues));
   });
 });
+
+describe("waiting for something that is legitimately slow", () => {
+  // The default wait is short on purpose: a broken selector should fail fast
+  // rather than stall a recording. But some waits are real — a build running
+  // inside the page, a job whose progress the UI streams — and raising the
+  // default globally would trade that away for every step.
+  test("a bare selector still works, and takes no timeout", () => {
+    const r = specSchema.safeParse({ ...minimal, steps: [{ waitFor: "text=Done" }] });
+    assert.equal(r.success, true);
+    if (r.success) assert.equal(r.data.steps[0]?.waitFor, "text=Done");
+  });
+
+  test("a slow wait can name its own timeout", () => {
+    const r = specSchema.safeParse({
+      ...minimal,
+      steps: [{ waitFor: { selector: "text=Drift check passed", timeout: 180_000 } }],
+    });
+    assert.equal(r.success, true, r.success ? "" : JSON.stringify(r.error.issues));
+    if (r.success) {
+      const w = r.data.steps[0]?.waitFor;
+      assert.equal(typeof w === "string" ? null : w?.timeout, 180_000);
+    }
+  });
+
+  test("a timeout of zero is refused — it would mean 'never wait'", () => {
+    const r = specSchema.safeParse({
+      ...minimal,
+      steps: [{ waitFor: { selector: "text=Done", timeout: 0 } }],
+    });
+    assert.equal(r.success, false);
+  });
+});
