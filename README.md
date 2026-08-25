@@ -453,9 +453,69 @@ output:
 - **Localization** — the LLM translates the captions per language and emits
   localized `demo.es.srt` / `demo.es.vtt`, etc.
 
-> Demos are **silent** by design right now. Synthesized voiceover sounded robotic
-> enough to hurt the demo, so it was removed rather than shipped half-good;
-> narration will come back once it's genuinely engaging.
+## Narration, music & sound
+
+Demos can talk. Add a spoken line beside the caption it belongs to:
+
+```yaml
+audio:
+  voice: { provider: elevenlabs }   # or openai
+  fit: stretch                      # let the picture wait for the voice
+  sfx: subtle                       # a tick on a click, key texture while typing
+  music:
+    file: bed.mp3                   # yours; Reel ships no tracks
+    gain: -20
+    duck: -14                       # how far the bed drops under the voice
+
+steps:
+  - caption:
+      text: "No screen recorder, no editing"
+      say: "There is no screen recorder here, and no editing. What you are
+            watching is a file in the repository."
+      sayIn:
+        es: "Aquí no hay grabador de pantalla ni edición."
+```
+
+**`say` is separate from `text` on purpose.** A caption is read; narration is
+heard. Captions are terse by necessity, and terse text spoken aloud comes out
+clipped — so the two are written separately, and either can be omitted.
+
+**The picture waits for the voice.** A caption's `ms` was chosen for reading, and
+the same sentence spoken usually runs longer — in the bundled example, 11.4s of
+captions became 26.7s of narration. `fit: stretch` extends each hold to fit the
+audio it carries, so a demo stays in sync without anyone hand-tuning durations.
+
+**Ducking honours the number you give it.** The music envelope is built from the
+narration timings rather than from a compressor listening to the voice, so
+`duck: -14` means fourteen decibels rather than "about fourteen, sometimes". The
+finished track is normalised to −14 LUFS, which is what YouTube and LinkedIn
+normalise to anyway.
+
+**Sound effects are synthesized, not sampled** — nothing to license, nothing
+bundled, and no two projects sharing a recognisable click.
+
+**One recording, a voice per language.** With `output.languages`, each language
+re-fits the same frames to however long its own speech takes and encodes its own
+mp4. No second drive, no second capture.
+
+### Rendering the same bytes twice
+
+A text-to-speech endpoint returns slightly different audio every time it is
+asked, which would break the one guarantee Reel is built on. So nothing is ever
+spoken twice: each line is synthesized once and written to `.reel-cache/voice`,
+keyed by a hash of its text and voice settings.
+
+**Commit that directory.** It is what lets a colleague — and CI — render the
+same demo, byte for byte, with no API key present at all. A key is needed only
+to speak a line that has changed.
+
+```bash
+export REEL_VOICE_API_KEY=...        # ElevenLabs or OpenAI
+npx reel record examples/narrated/demo.reel.yaml
+```
+
+`examples/narrated/` is a working demo of all of it — narration, a ducked bed,
+sound design and a Spanish track from one recording.
 
 ## Trustworthy data & privacy
 

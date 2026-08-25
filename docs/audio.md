@@ -4,7 +4,15 @@ A design note for adding a soundtrack to a Reel demo — spoken narration, a
 music bed, and UI sound effects — without giving up the thing the tool is built
 on: the same spec against the same app renders byte-identical media.
 
-Status: all four phases are implemented.
+Status: all four phases are implemented, and verified end to end against a real
+vendor — synthesis, cache, stretch-to-fit, mix and mux.
+
+Three things only a real run found, none of which a test could have: Node does
+not read `HTTPS_PROXY` the way curl does, so a managed network killed the
+request with a bare timeout; the default voice was a Voice Library one, which
+free accounts are refused, so the first render anyone attempted failed; and
+`aformat` upstream in a filter chain is not the same as `aformat` last, which
+some ffmpeg builds forgive and the macOS one does not.
 
 ## Why
 

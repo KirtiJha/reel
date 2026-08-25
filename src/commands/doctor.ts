@@ -44,6 +44,7 @@ export async function doctor(): Promise<DoctorReport> {
   checks.push(await sharpNative());
   checks.push(await tempWritable());
   checks.push(model());
+  checks.push(voice());
 
   return { ok: isHealthy(checks), checks };
 }
@@ -208,6 +209,25 @@ function model(): CheckResult {
     status: "warn",
     detail: "not configured — only `reel author` and subtitle localization need one",
     fix: "See SECURITY.md and the README for the environment variables",
+  };
+}
+
+/**
+ * A voice key is needed only to *synthesize* a line, and only once.
+ *
+ * After that the audio lives in `.reel-cache/voice`, which is meant to be
+ * committed — so a render on a colleague's machine, or in CI, wants no key at
+ * all. A warning here would be wrong for the common case; this reports what is
+ * configured and leaves it at that.
+ */
+function voice(): CheckResult {
+  const found = ["REEL_VOICE_API_KEY", "ELEVENLABS_API_KEY", "ELEVEN_API_KEY", "OPENAI_API_KEY"]
+    .find((k) => process.env[k]?.trim());
+  if (found) return { name: "Voice", status: "ok", detail: `key from ${found}` };
+  return {
+    name: "Voice",
+    status: "ok",
+    detail: "no key — narration renders from the committed voice cache",
   };
 }
 
