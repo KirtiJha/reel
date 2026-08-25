@@ -86,7 +86,7 @@ export const PROVIDERS: Provider[] = [
     auth: "bearer",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     keyEnv: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    defaultModel: "gemini-2.0-flash",
+    defaultModel: "gemini-2.5-flash",
     docs: "https://ai.google.dev/gemini-api/docs/openai",
   },
   {
