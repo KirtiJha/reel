@@ -29,7 +29,8 @@ import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
-import { audioEnabled, missingVoiceLines, planAudio } from "../narrate/audio.js";
+import { audioEnabled, localizeCues, missingVoiceLines, planAudio } from "../narrate/audio.js";
+import { langName } from "../narrate/translate.js";
 import type { SpokenCue, SpokenLine } from "../narrate/voice.js";
 import { renderSfx, toWav, type SfxCue } from "../encode/sfx.js";
 import { mixNarration, muxAudio } from "../encode/audio.js";
@@ -321,6 +322,18 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // endpoint, and nothing here can change what the demo *did* — only how long
     // the picture waits for the voice.
     let spoken: SpokenLine[] = [];
+    // Every language stretches the timeline by a different amount, because
+    // translated speech is a different length. Each therefore renders from the
+    // recording as it stood before *any* narration was fitted, not from the
+    // master's already-stretched copy.
+    const preAudio = {
+      frames: frames.map((f) => ({ ...f })),
+      captions: captions.map((c) => ({ ...c })),
+      zoom: zoom.map((z) => ({ ...z })),
+      beats: beats.map((b) => ({ ...b })),
+      sfx: sfx.map((c) => ({ ...c })),
+      durationMs,
+    };
     if (audioEnabled(spec.audio, spec.output.audio, say)) {
       log.phase("Narration");
       const audio = spec.audio;
@@ -508,6 +521,83 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       }
       const wrote = await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track, sfx);
       if (wrote && spec.output.audioTrack) outputs.push(track);
+    }
+
+    // One recording, a voice per language.
+    //
+    // No second drive and no second capture: the frames on disk are the same
+    // frames. What differs is how long the picture waits, because a sentence
+    // takes a different time to say in German than in English — so each
+    // language re-fits the pre-narration snapshot to its own speech and encodes
+    // from there. Captions are composited in post, which is what makes this a
+    // re-encode rather than a re-record.
+    const languages = spec.output.languages ?? [];
+    if (languages.length && audioEnabled(spec.audio, spec.output.audio, say) && targets.mp4) {
+      log.phase("Languages");
+      for (const lang of languages) {
+        const local = await localizeCues(say, lang);
+        const parts = [
+          local.authored ? `${local.authored} authored` : "",
+          local.machine ? `${local.machine} machine-translated` : "",
+          local.untranslated ? `${local.untranslated} left in the original` : "",
+        ].filter(Boolean);
+        log.step(`${langName(lang)} — ${parts.join(", ")}`);
+        if (local.untranslated) {
+          const n = local.untranslated;
+          log.warn(
+            `${n} line${n === 1 ? "" : "s"} ha${n === 1 ? "s" : "ve"} no ${lang} translation ` +
+              `and will be spoken in the original.`,
+          );
+        }
+
+        const plan = await planAudio(local.cues, spec.audio!.voice, loaded.dir);
+        // Fresh copies: this language's stretch must not disturb the next one's.
+        const lf = preAudio.frames.map((f) => ({ ...f }));
+        const lc = preAudio.captions.map((c) => ({ ...c }));
+        const lz = preAudio.zoom.map((z) => ({ ...z }));
+        const lb = preAudio.beats.map((b) => ({ ...b }));
+        const lx = preAudio.sfx.map((c) => ({ ...c }));
+        let lineage = plan.lines;
+        let total = preAudio.durationMs;
+        if (spec.audio!.fit === "stretch") {
+          const fit = buildAudioRetime(lf.map((f) => f.t), lineage, total, {
+            breathMs: spec.audio!.breathMs,
+          });
+          if (fit.changed) {
+            for (const f of lf) f.t = fit.map(f.t);
+            for (const c of lc) c.t = fit.map(c.t);
+            for (const z of lz) z.t = fit.map(z.t);
+            for (const b of lb) b.t = fit.map(b.t);
+            for (const c of lx) c.t = fit.map(c.t);
+            lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
+            total = fit.endMs;
+          }
+        }
+
+        const base = targets.mp4.replace(/\.mp4$/i, "");
+        const langMp4 = `${base}.${lang}.mp4`;
+        // Only the mp4: a GIF and a storyboard carry no audio, so a language
+        // variant of them would be a byte-identical duplicate of the master.
+        await renderTo(
+          lf,
+          { gif: undefined, mp4: langMp4, webm: undefined },
+          undefined,
+          { ...encodeOpts, endMs: total },
+          lc,
+          lz,
+          lb,
+        );
+        await soundtrack(
+          lineage,
+          total,
+          [langMp4],
+          join(workDir, `narration.${lang}.m4a`),
+          lx,
+          `The ${langName(lang)} track`,
+        );
+        outputs.push(langMp4);
+        log.ok(`${langName(lang)} → ${langMp4} (${(total / 1000).toFixed(1)}s)`);
+      }
     }
 
     // Cuts: shorter deliverables out of the recording that just happened. No

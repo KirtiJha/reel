@@ -435,6 +435,15 @@ const selector = z.string().min(1);
 const durationMs = z.number().int().nonnegative();
 /** Narration for one step: what to say, or `false` to keep it silent. */
 const sayText = z.union([z.string().min(1), z.literal(false)]);
+/**
+ * The same line in other languages, keyed by code — `{ es: "…", ja: "…" }`.
+ *
+ * Written by a person, because this is the copy a customer hears. Machine
+ * translation fills the gaps when a model is configured, but a demo is
+ * marketing, and marketing copy nobody has read is not something to ship by
+ * default.
+ */
+const sayIn = z.record(z.string().min(1));
 
 /**
  * Steps are expressed as single-key objects so YAML stays terse and readable:
@@ -556,6 +565,8 @@ const baseStepSchema = z.union([
          * silent, which is right for a label that reads better than it speaks.
          */
         say: sayText.optional(),
+        /** The same line in other languages, for `output.languages`. */
+        sayIn: sayIn.optional(),
       }),
     ]),
   }).strict(),
@@ -570,6 +581,8 @@ const baseStepSchema = z.union([
         text: z.string(),
         /** Hold at least this long. The spoken line extends it when it needs to. */
         ms: durationMs.optional(),
+        /** The same line in other languages, for `output.languages`. */
+        sayIn: sayIn.optional(),
       }),
     ]),
   }).strict(),
@@ -592,6 +605,8 @@ const baseStepSchema = z.union([
          * card is silent unless this says otherwise.
          */
         say: sayText.optional(),
+        /** The same line in other languages, for `output.languages`. */
+        sayIn: sayIn.optional(),
       }),
     ]),
   }).strict(),

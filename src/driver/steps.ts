@@ -344,7 +344,13 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("caption" in step) {
     const cue = typeof step.caption === "string"
-      ? { text: step.caption, ms: undefined as number | undefined, position: "bottom" as const, say: undefined }
+      ? {
+          text: step.caption,
+          ms: undefined as number | undefined,
+          position: "bottom" as const,
+          say: undefined,
+          sayIn: undefined as Record<string, string> | undefined,
+        }
       : step.caption;
     // A caption's own text is what gets spoken unless the author wrote
     // something better for the ear, or `false` to keep this one silent.
@@ -354,7 +360,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // say. Only `t` differs between modes — check runs no holds — and the audit
     // reads the text alone.
     const spoken = cue.say === undefined ? cue.text : cue.say;
-    if (spoken) ctx.say.push({ t: ctx.now(), text: spoken });
+    if (spoken) ctx.say.push({ t: ctx.now(), text: spoken, alt: cue.sayIn });
     if (cinematic) {
       // Measure with the browser's own text engine so the renderer can wrap at
       // real word boundaries instead of guessing an average glyph width.
@@ -383,8 +389,10 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
    * the rest.
    */
   if ("say" in step) {
-    const cue = typeof step.say === "string" ? { text: step.say, ms: undefined } : step.say;
-    ctx.say.push({ t: ctx.now(), text: cue.text });
+    const cue = typeof step.say === "string"
+      ? { text: step.say, ms: undefined, sayIn: undefined as Record<string, string> | undefined }
+      : step.say;
+    ctx.say.push({ t: ctx.now(), text: cue.text, alt: cue.sayIn });
     if (cinematic) await ctx.rec.hold(cue.ms ?? 0);
     return;
   }
@@ -408,14 +416,20 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("card" in step) {
     const c = typeof step.card === "string"
-      ? { title: step.card, subtitle: undefined, ms: 1800, say: undefined }
+      ? {
+          title: step.card,
+          subtitle: undefined,
+          ms: 1800,
+          say: undefined,
+          sayIn: undefined as Record<string, string> | undefined,
+        }
       : step.card;
     // A title card is a natural chapter boundary — worth a storyboard frame.
     ctx.beats.push({ label: c.title, t: ctx.now() });
     // No fallback here: a title read aloud sounds like a title, so a card is
     // silent unless the author wrote a line for it. Recorded in every mode so
     // `reel check` can audit it.
-    if (c.say) ctx.say.push({ t: ctx.now(), text: c.say });
+    if (c.say) ctx.say.push({ t: ctx.now(), text: c.say, alt: c.sayIn });
     if (cinematic) {
       ctx.sfx.push({ t: ctx.now(), kind: "card" });
       zoomOut(ctx); // never crop into a full-screen card

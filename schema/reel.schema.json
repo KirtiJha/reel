@@ -915,6 +915,14 @@
                               }
                             ],
                             "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
+                          },
+                          "sayIn": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "The same line in other languages, for `output.languages`."
                           }
                         },
                         "required": [
@@ -949,6 +957,14 @@
                             "type": "integer",
                             "minimum": 0,
                             "description": "Hold at least this long. The spoken line extends it when it needs to."
+                          },
+                          "sayIn": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "The same line in other languages, for `output.languages`."
                           }
                         },
                         "required": [
@@ -1015,6 +1031,14 @@
                               }
                             ],
                             "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
+                          },
+                          "sayIn": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "The same line in other languages, for `output.languages`."
                           }
                         },
                         "required": [
@@ -1664,6 +1688,14 @@
                                               }
                                             ],
                                             "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
+                                          },
+                                          "sayIn": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": "The same line in other languages, for `output.languages`."
                                           }
                                         },
                                         "required": [
@@ -1698,6 +1730,14 @@
                                             "type": "integer",
                                             "minimum": 0,
                                             "description": "Hold at least this long. The spoken line extends it when it needs to."
+                                          },
+                                          "sayIn": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": "The same line in other languages, for `output.languages`."
                                           }
                                         },
                                         "required": [
@@ -1764,6 +1804,14 @@
                                               }
                                             ],
                                             "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
+                                          },
+                                          "sayIn": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": "The same line in other languages, for `output.languages`."
                                           }
                                         },
                                         "required": [

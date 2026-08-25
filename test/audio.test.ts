@@ -1,8 +1,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { buildAudioRetime } from "../src/polish/retime.js";
-import { voiceKey, resolveVoice, findVoiceProvider, type ResolvedVoice } from "../src/narrate/voice.js";
-import { audioEnabled } from "../src/narrate/audio.js";
+import {
+  voiceKey,
+  resolveVoice,
+  findVoiceProvider,
+  type ResolvedVoice,
+  type SpokenCue,
+} from "../src/narrate/voice.js";
+import { audioEnabled, localizeCues } from "../src/narrate/audio.js";
 import { duckEnvelope } from "../src/encode/audio.js";
 import { placeHits, renderSfx, synthesize, toWav, SFX_SAMPLE_RATE } from "../src/encode/sfx.js";
 import { audioSchema, specSchema } from "../src/spec/schema.js";
@@ -461,5 +467,76 @@ describe("toWav", () => {
     const wav = toWav(Float32Array.from([2, -2]));
     assert.equal(wav.readInt16LE(44), 32767);
     assert.equal(wav.readInt16LE(46), -32768);
+  });
+});
+
+/* ------------------------------ Languages ------------------------------- */
+
+describe("localizeCues", () => {
+  const cues: SpokenCue[] = [
+    { t: 0, text: "One", alt: { es: "Uno", de: "Eins" } },
+    { t: 1000, text: "Two", alt: { es: "Dos" } },
+    { t: 2000, text: "Three" },
+  ];
+
+  test("prefers the line a person wrote", async () => {
+    const r = await localizeCues(cues, "es");
+    assert.deepEqual(r.cues.map((c) => c.text), ["Uno", "Dos", "Three"]);
+    assert.equal(r.authored, 2);
+  });
+
+  test("counts what it could not translate rather than hiding it", async () => {
+    // No model is configured in the test environment, so the untranslated
+    // lines stay in the original — and must be reported, because a German
+    // track that is quietly two-thirds English is worse than none.
+    const r = await localizeCues(cues, "de");
+    assert.equal(r.authored, 1);
+    assert.equal(r.untranslated, 2);
+    assert.equal(r.cues[0]!.text, "Eins");
+    assert.equal(r.cues[1]!.text, "Two", "falls back to the original, not to silence");
+  });
+
+  test("keeps timings untouched — only the words change", async () => {
+    const r = await localizeCues(cues, "es");
+    assert.deepEqual(r.cues.map((c) => c.t), [0, 1000, 2000]);
+  });
+
+  test("a language nobody wrote for leaves every line in the original", async () => {
+    const r = await localizeCues(cues, "ja");
+    assert.equal(r.authored, 0);
+    assert.equal(r.untranslated, 3);
+    assert.deepEqual(r.cues.map((c) => c.text), ["One", "Two", "Three"]);
+  });
+
+  test("a fully authored language needs no model at all", async () => {
+    const full: SpokenCue[] = [{ t: 0, text: "One", alt: { fr: "Un" } }];
+    const r = await localizeCues(full, "fr");
+    assert.deepEqual(r.cues.map((c) => c.text), ["Un"]);
+    assert.equal(r.untranslated, 0);
+    assert.equal(r.machine, 0);
+  });
+});
+
+describe("the sayIn grammar", () => {
+  const minimal = {
+    name: "t",
+    url: "http://localhost:3000",
+    output: { mp4: "out.mp4" },
+  };
+
+  test("a caption can carry translations beside its spoken line", () => {
+    const spec = specSchema.parse({
+      ...minimal,
+      audio: {},
+      steps: [{ caption: { text: "Hi", say: "Hello there", sayIn: { es: "Hola" } } }],
+    });
+    const step = spec.steps[0]! as { caption: { sayIn?: Record<string, string> } };
+    assert.deepEqual(step.caption.sayIn, { es: "Hola" });
+  });
+
+  test("an empty translation is rejected rather than spoken as silence", () => {
+    assert.throws(() =>
+      specSchema.parse({ ...minimal, steps: [{ caption: { text: "Hi", sayIn: { es: "" } } }] }),
+    );
   });
 });

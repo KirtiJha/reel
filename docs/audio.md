@@ -4,8 +4,7 @@ A design note for adding a soundtrack to a Reel demo — spoken narration, a
 music bed, and UI sound effects — without giving up the thing the tool is built
 on: the same spec against the same app renders byte-identical media.
 
-Status: phases 1, 2 and 3 are implemented. Phase 4 (per-language voice
-tracks) is not.
+Status: all four phases are implemented.
 
 ## Why
 
@@ -235,10 +234,33 @@ language and one recording yields a narrated demo in every language you ask
 for, with no second drive:
 
 ```yaml
+- caption:
+    text: "Two entries so far"
+    say: "The ledger opens with two entries already recorded."
+    sayIn:
+      es: "El libro se abre con dos asientos ya registrados."
+      de: "Das Buch beginnt mit zwei bereits erfassten Einträgen."
+
 output:
-  languages: [es, de, ja]
+  languages: [es, de]
   audio: true         # one mp4 per language, each with its own voice track
 ```
+
+Translations are written by a person first. Machine translation fills the gaps
+where a model is configured, and the original line stands where it does not —
+but Reel always says which, per language, because a demo whose German track is
+quietly two-thirds English is worse than one with no German track.
+
+The picture is re-encoded per language rather than reused. A sentence takes a
+different time to say in German than in English, so each language re-fits the
+recording *as it stood before any narration was fitted* — not the master's
+already-stretched copy — and encodes from there. There is no second drive and no
+second capture: the frames on disk are the same frames, which is what makes this
+cheap. Measured on the test spec: 9.9s in English, 11.9s in Spanish, 11.4s in
+German, from one recording.
+
+Only the mp4 is localized. A GIF and a storyboard carry no audio, so a language
+variant of either would be a byte-identical duplicate of the master.
 
 This is the feature most likely to matter to a company rather than an
 individual, and it is a small increment on top of everything above.
@@ -280,7 +302,8 @@ zero for iteration. The cost is not the constraint here — the script is.
 3. ~~**SFX** from the step timeline.~~ Done, off by default: it is a taste, and
    a demo that started making noises because narration was switched on would be
    a surprise rather than a feature.
-4. **Per-language voice tracks**, reusing `translate.ts`.
+4. ~~**Per-language voice tracks**, reusing `translate.ts`.~~ Done, with
+   human-authored `sayIn` as the primary path.
 
 Two modes are deliberately absent. `fit: speed` needs re-synthesis at a computed
 rate, and a version that quietly rushed the delivery would be worse than its

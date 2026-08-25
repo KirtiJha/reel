@@ -47,7 +47,10 @@ export async function narrate(input: NarrateInput): Promise<string[]> {
     try {
       cfg = loadLlmConfig();
     } catch {
-      log.warn("Localization needs a LiteLLM proxy configured — skipping languages.");
+      log.warn(
+        "Translated subtitles need a model configured — skipping those. " +
+          "Spoken language tracks are unaffected; they come from `sayIn`.",
+      );
     }
     if (cfg) {
       const subBase = input.subtitleBase ?? (videos[0] ? stripExt(videos[0]) : undefined);

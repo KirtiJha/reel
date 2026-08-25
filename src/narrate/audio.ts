@@ -11,6 +11,8 @@ import {
 } from "./voice.js";
 import type { AudioConfig, Voice } from "../spec/schema.js";
 import { log } from "../util/log.js";
+import { translateCues } from "./translate.js";
+import { loadLlmConfig, type LlmConfig } from "../ai/llm.js";
 import { access } from "node:fs/promises";
 
 /**
@@ -31,6 +33,60 @@ export interface AudioPlan {
 /** Where a spec keeps its spoken lines. Committed, so renders reproduce. */
 export function voiceCacheDir(specDir: string): string {
   return join(specDir, VOICE_CACHE_DIR);
+}
+
+/**
+ * The cues as they should be spoken in `lang`.
+ *
+ * Human-written first: `sayIn` is the copy the author reviewed. Machine
+ * translation only fills the gaps, and only when a model is configured —
+ * otherwise the original line stands, which is at least honest, where a
+ * silently dropped line would not be.
+ *
+ * What happened is always said out loud. Shipping a demo whose German track is
+ * quietly two-thirds English is worse than shipping no German track.
+ */
+export async function localizeCues(
+  cues: SpokenCue[],
+  lang: string,
+): Promise<{ cues: SpokenCue[]; authored: number; machine: number; untranslated: number }> {
+  const authoredCount = cues.filter((c) => c.alt?.[lang]).length;
+  const missing = cues.filter((c) => !c.alt?.[lang]);
+  if (missing.length === 0) {
+    return { cues: cues.map((c) => ({ ...c, text: c.alt![lang]! })), authored: authoredCount, machine: 0, untranslated: 0 };
+  }
+
+  let translated = new Map<string, string>();
+  let cfg: LlmConfig | null = null;
+  try {
+    cfg = loadLlmConfig();
+  } catch {
+    cfg = null;
+  }
+  if (cfg) {
+    const out = await translateCues(
+      cfg,
+      missing.map((c) => ({ start: c.t, end: c.t, text: c.text })),
+      lang,
+    );
+    missing.forEach((c, i) => {
+      const t = out[i]?.text;
+      if (t && t !== c.text) translated.set(c.text, t);
+    });
+  }
+
+  const resolved = cues.map((c) => {
+    const authored = c.alt?.[lang];
+    if (authored) return { ...c, text: authored };
+    const machine = translated.get(c.text);
+    return machine ? { ...c, text: machine } : c;
+  });
+  return {
+    cues: resolved,
+    authored: authoredCount,
+    machine: translated.size,
+    untranslated: missing.length - translated.size,
+  };
 }
 
 export async function planAudio(
