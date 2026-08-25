@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { LoadedSpec } from "./load.js";
 import { resolveOutput } from "./load.js";
 import type { Spec, Step } from "./schema.js";
@@ -111,13 +111,13 @@ export function stampPath(loaded: LoadedSpec): string {
   const dir = first ? resolveOutput(loaded, first) : loaded.dir;
   // The first output may be a file or a directory; either way the stamp sits
   // alongside it rather than inside a directory that gets wiped.
-  const parent = first && !first.endsWith("/") ? dirname(dir) : dir;
+  const parent = first && !endsWithSep(first) ? dirname(dir) : dir;
   return join(parent, ".reel-stamp.json");
 }
 
-function dirname(p: string): string {
-  const i = p.lastIndexOf("/");
-  return i <= 0 ? p : p.slice(0, i);
+/** A trailing separator is how a spec says an output is a directory. */
+function endsWithSep(p: string): boolean {
+  return p.endsWith("/") || p.endsWith("\\");
 }
 
 /**
