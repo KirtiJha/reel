@@ -19,11 +19,18 @@ export interface StudioOptions {
  */
 export async function launchStudio(opts: StudioOptions): Promise<void> {
   const studioDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "studio");
-  const nextBin = join(studioDir, "node_modules", ".bin", "next");
+  // Next's own entry point, not the `.bin/next` shim npm writes beside it.
+  //
+  // That shim is a POSIX shell script; Windows gets `next.cmd` instead, and
+  // spawning either without a shell fails — the extensionless one with ENOENT,
+  // the `.cmd` with EINVAL, since Node stopped executing batch files directly.
+  // Handing the script to `process.execPath` sidesteps the whole question, the
+  // same way `scripts/run-tests.mts` refuses to spawn the `tsx` shim.
+  const nextBin = join(studioDir, "node_modules", "next", "dist", "bin", "next");
   if (!existsSync(nextBin)) {
     throw new ReelError(
       "Reel Studio isn't installed yet.",
-      `Run:  (cd "${studioDir}" && npm install)   then retry \`reel ui\`.`,
+      `Run:  npm run studio:install   then retry \`reel ui\`.`,
     );
   }
 
@@ -35,10 +42,21 @@ export async function launchStudio(opts: StudioOptions): Promise<void> {
   // `-H 127.0.0.1` for the same reason the API server binds to loopback: this
   // UI can write provider credentials and start jobs that run shell commands,
   // so it must not be reachable from the network.
-  const child = spawn(nextBin, ["dev", "-p", String(opts.uiPort), "-H", "127.0.0.1"], {
-    cwd: studioDir,
-    env: { ...process.env, REEL_API_URL: `http://localhost:${opts.apiPort}` },
-    stdio: "inherit",
+  const child = spawn(
+    process.execPath,
+    [nextBin, "dev", "-p", String(opts.uiPort), "-H", "127.0.0.1"],
+    {
+      cwd: studioDir,
+      env: { ...process.env, REEL_API_URL: `http://localhost:${opts.apiPort}` },
+      stdio: "inherit",
+    },
+  );
+  // Without this the failure arrives as an unhandled 'error' event, which kills
+  // `reel ui` with a raw Node stack trace instead of something a reader can act
+  // on — and takes the API server down with it.
+  child.on("error", (err) => {
+    log.error(`Could not start the Studio UI: ${err.message}`);
+    process.exit(1);
   });
   child.on("exit", (code) => process.exit(code ?? 0));
   process.on("SIGINT", () => child.kill("SIGINT"));
