@@ -12,6 +12,9 @@ import { audioEnabled, localizeCues } from "../src/narrate/audio.js";
 import { duckEnvelope } from "../src/encode/audio.js";
 import { placeHits, renderSfx, synthesize, toWav, SFX_SAMPLE_RATE } from "../src/encode/sfx.js";
 import { audioSchema, specSchema } from "../src/spec/schema.js";
+import { applyPatch } from "../src/ui/server.js";
+import { summarize } from "../src/ui/summary.js";
+import { parse as parseYaml } from "yaml";
 
 /* ------------------------- Fitting the timeline ------------------------- */
 
@@ -538,5 +541,89 @@ describe("the sayIn grammar", () => {
     assert.throws(() =>
       specSchema.parse({ ...minimal, steps: [{ caption: { text: "Hi", sayIn: { es: "" } } }] }),
     );
+  });
+});
+
+/* ---------------------- The Studio's audio controls ---------------------- */
+
+describe("the audio options round-trip", () => {
+  const base = [
+    "name: t",
+    "url: http://localhost:3000",
+    "steps:",
+    "  - caption: { text: Hi, say: Hello there }",
+    "output:",
+    "  mp4: out/demo.mp4",
+    "",
+  ].join("\n");
+
+  test("switching narration on writes a block that parses", () => {
+    const raw = applyPatch(base, {
+      audio: {
+        voice: { provider: "elevenlabs", id: "abc123" },
+        fit: "stretch",
+        sfx: "subtle",
+        music: { file: "bed.mp3", duck: -14 },
+      },
+    });
+    const spec = specSchema.parse(parseYaml(raw));
+    assert.equal(spec.audio?.voice.provider, "elevenlabs");
+    assert.equal(spec.audio?.voice.id, "abc123");
+    assert.equal(spec.audio?.sfx, "subtle");
+    assert.equal(spec.audio?.music?.file, "bed.mp3");
+    assert.equal(spec.audio?.music?.duck, -14);
+  });
+
+  test("an unset voice id is removed, not written as empty", () => {
+    // An empty string would fail the schema, and a key that is present but
+    // blank reads as a choice nobody made.
+    const withId = applyPatch(base, { audio: { voice: { provider: "openai", id: "x" } } });
+    const cleared = applyPatch(withId, { audio: { voice: { provider: "openai", id: null } } });
+    assert.ok(!/id:/.test(cleared), `id should be gone:\n${cleared}`);
+    assert.doesNotThrow(() => specSchema.parse(parseYaml(cleared)));
+  });
+
+  test("switching narration off removes the whole block", () => {
+    const on = applyPatch(base, { audio: { voice: { provider: "openai" }, sfx: "full" } });
+    const off = applyPatch(on, { audio: null });
+    assert.ok(!/audio:/.test(off), `audio should be gone:\n${off}`);
+    assert.equal(specSchema.parse(parseYaml(off)).audio, undefined);
+  });
+
+  test("dropping the bed leaves the rest of the soundtrack alone", () => {
+    const on = applyPatch(base, {
+      audio: { voice: { provider: "openai" }, sfx: "full", music: { file: "bed.mp3", duck: -10 } },
+    });
+    const off = applyPatch(on, { audio: { voice: { provider: "openai" }, sfx: "full", music: null } });
+    const spec = specSchema.parse(parseYaml(off));
+    assert.equal(spec.audio?.music, undefined);
+    assert.equal(spec.audio?.sfx, "full", "the rest of the block must survive");
+  });
+});
+
+describe("what the Studio is told about audio", () => {
+  const spec = (steps: string) =>
+    summarize(["name: t", "url: http://x", "steps:", steps, "output: { mp4: o.mp4 }"].join("\n"));
+
+  test("counts the steps that actually carry a line", () => {
+    const s = spec(
+      [
+        "  - caption: { text: A, say: One }",
+        "  - caption: { text: B, say: false }", // deliberately silent
+        "  - caption: C", // a bare string is spoken
+        "  - card: { title: D }", // a card is silent unless given a line
+        "  - card: { title: E, say: Five }",
+        "  - say: Six",
+        "  - click: '#x'",
+      ].join("\n"),
+    );
+    assert.equal(s.options.audio.spokenLines, 4);
+  });
+
+  test("reports the defaults when a spec has no audio block", () => {
+    const s = spec("  - caption: A");
+    assert.equal(s.options.audio.enabled, false);
+    assert.equal(s.options.audio.sfx, "none");
+    assert.equal(s.options.audio.fit, "stretch");
   });
 });

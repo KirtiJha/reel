@@ -23,6 +23,10 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  // The bare narration mix, so the preview can play it rather than download it.
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
   ".srt": "text/plain; charset=utf-8",
   ".vtt": "text/vtt; charset=utf-8",
   ".ico": "image/x-icon",
@@ -263,6 +267,22 @@ async function renderedOutputs(
       }
     }
   }
+
+  // A language track is derived from the master's name rather than declared, so
+  // nothing in the output block names `demo.es.mp4` — without this, a spec that
+  // renders three languages shows one video and looks like two of them failed.
+  if (o.audio !== false && Array.isArray(o.languages) && o.mp4) {
+    for (const lang of o.languages) {
+      for (const v of variants) {
+        candidates.push({
+          p: fill(String(o.mp4), v).replace(/\.mp4$/i, `.${String(lang)}.mp4`),
+          kind: "mp4",
+        });
+      }
+    }
+  }
+  // The bare mixed track, when the spec asked for one to edit elsewhere.
+  if (o.audioTrack) candidates.push({ p: String(o.audioTrack), kind: "audio" });
 
   // Subtitles land beside the video, named after it (or at an explicit base).
   let subBase: string | undefined;

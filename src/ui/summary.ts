@@ -68,6 +68,24 @@ export interface SpecSummary {
     terminalTheme?: string;
     subtitles: boolean;
     languages: string[];
+    /**
+     * The soundtrack, or its absence.
+     *
+     * Present even when the spec has no `audio:` block, so the Studio can offer
+     * to add one rather than only edit one that already exists.
+     */
+    audio: {
+      enabled: boolean;
+      provider: string;
+      voiceId?: string;
+      fit: string;
+      sfx: string;
+      music?: string;
+      musicGain?: number;
+      musicDuck?: number;
+      /** How many steps actually carry a spoken line. */
+      spokenLines: number;
+    };
     html?: string;
     gif?: string;
     mp4?: string;
@@ -129,6 +147,36 @@ function outlineOf(steps: (Step | BaseStep)[], from = 1): OutlineStep[] {
   });
 }
 
+/**
+ * How many steps would be spoken.
+ *
+ * Worth surfacing on its own: `audio:` can be configured perfectly and still
+ * produce silence if nothing carries a line, and "narration is on" next to a
+ * count of zero is the fastest way to see that.
+ */
+function countSpoken(steps: (Step | BaseStep)[]): number {
+  let n = 0;
+  for (const step of steps) {
+    if (isBranch(step as Step)) {
+      n += countSpoken(defaultPath((step as { branch: Parameters<typeof defaultPath>[0] }).branch).steps);
+      continue;
+    }
+    const s = step as Record<string, unknown>;
+    if ("say" in s) n++;
+    else if ("caption" in s) {
+      const c = s.caption;
+      // A bare string caption is spoken; the object form can opt out.
+      if (typeof c === "string") n++;
+      else if (c && typeof c === "object" && (c as { say?: unknown }).say !== false) n++;
+    } else if ("card" in s) {
+      const c = s.card;
+      // Cards are silent unless given a line — a title read aloud is a title.
+      if (c && typeof c === "object" && (c as { say?: unknown }).say) n++;
+    }
+  }
+  return n;
+}
+
 function optionsOf(spec: Spec): SpecSummary["options"] {
   const o = spec.output;
   return {
@@ -146,6 +194,17 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
     terminalTheme: spec.terminal?.theme,
     subtitles: Boolean(o.subtitles),
     languages: o.languages ?? [],
+    audio: {
+      enabled: Boolean(spec.audio) && o.audio !== false,
+      provider: spec.audio?.voice.provider ?? "elevenlabs",
+      voiceId: spec.audio?.voice.id,
+      fit: spec.audio?.fit ?? "stretch",
+      sfx: spec.audio?.sfx ?? "none",
+      music: spec.audio?.music?.file,
+      musicGain: spec.audio?.music?.gain,
+      musicDuck: spec.audio?.music?.duck,
+      spokenLines: countSpoken(spec.steps),
+    },
     html: o.html,
     gif: o.gif,
     mp4: o.mp4,
@@ -178,6 +237,13 @@ export function summarize(raw: string): SpecSummary {
       zoomRows: 12,
       subtitles: false,
       languages: [],
+      audio: {
+        enabled: false,
+        provider: "elevenlabs",
+        fit: "stretch",
+        sfx: "none",
+        spokenLines: 0,
+      },
     },
   };
 

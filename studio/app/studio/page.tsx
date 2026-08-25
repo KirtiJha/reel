@@ -53,6 +53,14 @@ export default function StudioPage() {
   const [zoomOutput, setZoomOutput] = useState(false);
   const [zoomRows, setZoomRows] = useState(12);
   const [terminalTheme, setTerminalTheme] = useState("reel");
+  // audio
+  const [narration, setNarration] = useState(false);
+  const [voiceProvider, setVoiceProvider] = useState("elevenlabs");
+  const [voiceId, setVoiceId] = useState("");
+  const [audioFit, setAudioFit] = useState("stretch");
+  const [sfx, setSfx] = useState("none");
+  const [music, setMusic] = useState("");
+  const [musicDuck, setMusicDuck] = useState(-14);
 
   // job
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -84,6 +92,13 @@ export default function StudioPage() {
     setZoomOutput(s.options.zoomOutput);
     setZoomRows(s.options.zoomRows);
     setTerminalTheme(s.options.terminalTheme ?? "reel");
+    setNarration(s.options.audio.enabled);
+    setVoiceProvider(s.options.audio.provider);
+    setVoiceId(s.options.audio.voiceId ?? "");
+    setAudioFit(s.options.audio.fit);
+    setSfx(s.options.audio.sfx);
+    setMusic(s.options.audio.music ?? "");
+    setMusicDuck(s.options.audio.musicDuck ?? -14);
   }, []);
 
   const loadSpec = useCallback(
@@ -184,6 +199,21 @@ export default function StudioPage() {
       ? languages.split(",").map((s) => s.trim()).filter(Boolean)
       : null;
     patch.output.targetDuration = targetDuration.trim() || null;
+
+    // Audio. Switching narration off removes the whole block rather than
+    // leaving a configured-but-inert one behind, so the spec reads the way it
+    // behaves. `output.audio` stays implicit: the block's presence is the
+    // switch, and a second one would be a second source of truth.
+    if (narration) {
+      patch.audio = {
+        voice: { provider: voiceProvider, id: voiceId.trim() || null },
+        fit: audioFit,
+        sfx,
+        music: music.trim() ? { file: music.trim(), duck: musicDuck } : null,
+      };
+    } else {
+      patch.audio = null;
+    }
     const r = await postJSON<{ raw: string }>("/api/patch", { raw, patch });
     setRaw(r.raw);
     setDirty(true);
@@ -432,7 +462,7 @@ export default function StudioPage() {
                   <SpecOutline summary={summary} onToggleHidden={toggleHidden} />
                 </div>
               ) : tab === "output" ? (
-                <div className="max-h-[560px] space-y-4 overflow-y-auto pr-1">
+                <div className="max-h-[720px] space-y-4 overflow-y-auto pr-1">
                   <div className="grid grid-cols-2 gap-3 max-[560px]:grid-cols-1">
                     <label className="block">
                       <span className="label">Preset</span>
@@ -556,10 +586,135 @@ export default function StudioPage() {
                     </div>
                   </div>
 
+                  <div className="mt-3 rounded-xl border border-line bg-bg2 p-3.5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">Narration</div>
+                        <div className="text-xs leading-relaxed text-faint">
+                          Speaks the <code>say:</code> line beside each caption, and stretches the
+                          timeline so the picture waits for the voice.{" "}
+                          {narration && summary
+                            ? summary.options.audio.spokenLines
+                              ? `${summary.options.audio.spokenLines} steps carry a line.`
+                              : "No step carries a line yet, so this would render silent."
+                            : ""}
+                        </div>
+                      </div>
+                      <Toggle checked={narration} onChange={setNarration} />
+                    </div>
+
+                    {narration && (
+                      <div className="mt-3 space-y-3 border-t border-line pt-3">
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                          <label className="flex items-center gap-2">
+                            <span className="label mb-0">Voice</span>
+                            <select
+                              className="input !w-32 !py-1.5"
+                              value={voiceProvider}
+                              onChange={(e) => setVoiceProvider(e.target.value)}
+                            >
+                              <option value="elevenlabs">ElevenLabs</option>
+                              <option value="openai">OpenAI</option>
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <span
+                              className="label mb-0"
+                              title="Pin the voice: it is part of the cache key, so naming it keeps renders reproducible"
+                            >
+                              Voice id
+                            </span>
+                            <input
+                              className="input !w-52 !py-1.5"
+                              value={voiceId}
+                              onChange={(e) => setVoiceId(e.target.value)}
+                              placeholder="provider default"
+                            />
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <span
+                              className="label mb-0"
+                              title="Speech usually runs longer than the caption it belongs to"
+                            >
+                              Fit
+                            </span>
+                            <select
+                              className="input !w-40 !py-1.5"
+                              value={audioFit}
+                              onChange={(e) => setAudioFit(e.target.value)}
+                            >
+                              <option value="stretch">Stretch to fit</option>
+                              <option value="none">Keep timings</option>
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <span className="label mb-0" title="Clicks, key texture, card sweeps">
+                              Effects
+                            </span>
+                            <select
+                              className="input !w-28 !py-1.5"
+                              value={sfx}
+                              onChange={(e) => setSfx(e.target.value)}
+                            >
+                              <option value="none">None</option>
+                              <option value="subtle">Subtle</option>
+                              <option value="full">Full</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                          <label className="flex items-center gap-2">
+                            <span className="label mb-0" title="A file you have the rights to — Reel ships none">
+                              Music bed
+                            </span>
+                            <input
+                              className="input !w-52 !py-1.5"
+                              value={music}
+                              onChange={(e) => setMusic(e.target.value)}
+                              placeholder="bed.mp3"
+                            />
+                          </label>
+                          {music.trim() && (
+                            <label className="flex items-center gap-2">
+                              <span className="label mb-0" title="Honoured exactly, in decibels">
+                                Duck
+                              </span>
+                              <input
+                                type="number"
+                                max={0}
+                                min={-40}
+                                className="input !w-20 !py-1.5"
+                                value={musicDuck}
+                                onChange={(e) => setMusicDuck(Number(e.target.value))}
+                              />
+                              <span className="text-xs text-faint">dB under the voice</span>
+                            </label>
+                          )}
+                        </div>
+
+                        <div className="text-xs leading-relaxed text-faint">
+                          A key is needed only to speak a line that changed — after that the audio
+                          lives in <code>.reel-cache/voice</code>, which is meant to be committed so
+                          the demo renders the same bytes anywhere, with no key at all.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
                     <Toggle checked={subtitles} onChange={setSubtitles} label="Subtitles (SRT/VTT)" />
                     <label className="flex items-center gap-2">
-                      <span className="label mb-0">Localize</span>
+                      <span
+                        className="label mb-0"
+                        title={
+                          narration
+                            ? "Subtitle variants, and a spoken track per language from the same recording"
+                            : "Localized subtitle variants"
+                        }
+                      >
+                        Localize
+                      </span>
                       <input
                         className="input !w-40 !py-1.5"
                         value={languages}

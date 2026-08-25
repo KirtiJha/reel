@@ -31,6 +31,7 @@ const KIND_GROUP: Record<string, keyof typeof GROUPS> = {
   caption: "narrate",
   card: "narrate",
   callout: "narrate",
+  say: "narrate",
   beat: "narrate",
   zoom: "narrate",
   waitFor: "wait",
@@ -58,6 +59,7 @@ const ICONS: Record<string, string> = {
   caption: "❝",
   card: "▤",
   callout: "◈",
+  say: "♪",
   beat: "◆",
   zoom: "⌕",
   waitFor: "⏱",
@@ -225,6 +227,23 @@ export function SpecChips({ summary }: { summary: SpecSummary | null }) {
   if (o.speed !== 1) chips.push({ label: `${o.speed}× speed`, title: "Playback rate for authored durations" });
   if (o.targetDuration) chips.push({ label: `→ ${o.targetDuration}`, title: "Fitted to a target duration" });
   if (o.retries) chips.push({ label: `${o.retries} retries`, title: "Transient step failures are retried" });
+  if (o.audio.enabled) {
+    // A configured soundtrack with nothing to say is a real and easily missed
+    // mistake, so the count is the chip rather than the word "narrated".
+    chips.push(
+      o.audio.spokenLines
+        ? {
+            label: `${o.audio.spokenLines} spoken`,
+            title: `Narrated with ${o.audio.provider}${o.audio.music ? ", over a music bed" : ""}`,
+            tone: "brand",
+          }
+        : {
+            label: "narration, no lines",
+            title: "Audio is configured but no step carries a `say:` line, so this renders silent",
+            tone: "warn",
+          },
+    );
+  }
 
   const toneClass = (t?: string) =>
     t === "ok"

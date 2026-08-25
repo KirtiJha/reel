@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mediaUrl } from "@/lib/api";
 
 const ext = (p: string) => p.slice(p.lastIndexOf(".")).toLowerCase();
-const MEDIA = new Set([".mp4", ".webm", ".gif", ".html", ".srt", ".vtt", ".png", ".jpg"]);
+const MEDIA = new Set([".mp4", ".webm", ".gif", ".html", ".srt", ".vtt", ".png", ".jpg", ".m4a"]);
 
 /**
  * Group a matrix render into its variants.
@@ -46,6 +46,10 @@ export function MediaPreview({ outputs }: { outputs: string[] }) {
   if (!playable.length) return null;
   const files = variants[Math.min(variant, variants.length - 1)]?.files ?? playable;
 
+  // A spec can write the bare narration mix alongside the video, for editing
+  // elsewhere. On its own it is still worth hearing, so it gets a player rather
+  // than an empty panel.
+  const audio = files.find((o) => ext(o) === ".m4a");
   const mp4 = files.find((o) => ext(o) === ".mp4");
   const webm = files.find((o) => ext(o) === ".webm");
   const gif = files.find((o) => ext(o) === ".gif");
@@ -104,7 +108,14 @@ export function MediaPreview({ outputs }: { outputs: string[] }) {
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-line bg-black">
-          {video ? (
+          {!video && !gif && audio ? (
+            <div className="p-4">
+              <audio controls className="w-full" src={mediaUrl(audio)} />
+              <div className="mt-2 text-xs text-faint">
+                The mixed soundtrack on its own — narration, bed and effects.
+              </div>
+            </div>
+          ) : video ? (
             <video controls playsInline className="block w-full" src={mediaUrl(video)}>
               {vtt && <track kind="subtitles" src={mediaUrl(vtt)} default label="Captions" />}
             </video>

@@ -75,6 +75,19 @@ export interface SpecSummary {
     terminalTheme?: string;
     subtitles: boolean;
     languages: string[];
+    /** The soundtrack, present even when the spec has no `audio:` block yet. */
+    audio: {
+      enabled: boolean;
+      provider: string;
+      voiceId?: string;
+      fit: string;
+      sfx: string;
+      music?: string;
+      musicGain?: number;
+      musicDuck?: number;
+      /** How many steps actually carry a spoken line. */
+      spokenLines: number;
+    };
     html?: string;
     gif?: string;
     mp4?: string;
