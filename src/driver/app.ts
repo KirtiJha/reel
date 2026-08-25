@@ -36,13 +36,20 @@ export async function startApp(run: RunConfig): Promise<RunningApp> {
   child.stderr?.on("data", (d) => log.debug(`[app] ${d.toString().trimEnd()}`));
 
   let exited = false;
+  // Teardown is not a crash. A killed process reports a non-zero code, and on
+  // Windows `taskkill /F` guarantees one — so every successful recording ended
+  // by telling the author their app had exited early, immediately after the
+  // line saying the run had passed. The warning is only worth printing while
+  // the app is still supposed to be running.
+  let stopping = false;
   child.on("exit", (code) => {
     exited = true;
-    if (code && code !== 0) log.warn(`App process exited early (code ${code}).`);
+    if (!stopping && code && code !== 0) log.warn(`App process exited early (code ${code}).`);
   });
 
   const stop = async () => {
     if (exited || !child.pid) return;
+    stopping = true;
     // The shell plus everything it started — a dev server that outlives the
     // recording keeps its port bound and breaks the *next* run, which is a far
     // more confusing failure than a slow teardown.
