@@ -5,7 +5,7 @@ import { chromium, type Browser } from "playwright-core";
 import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
 import type { Step } from "../spec/schema.js";
-import { applyDeterminism } from "../driver/determinism.js";
+import { applyDeterminism, DETERMINISTIC_LAUNCH_ARGS } from "../driver/determinism.js";
 import { startApp, type RunningApp } from "../driver/app.js";
 import { runStep, type StepContext } from "../driver/steps.js";
 import { Timeline } from "../driver/timeline.js";
@@ -62,7 +62,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
       app = await startApp({ ...spec.run, cwd });
     }
 
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, args: DETERMINISTIC_LAUNCH_ARGS });
     const context = await browser.newContext({
       viewport: { width: spec.viewport.width, height: spec.viewport.height },
       deviceScaleFactor: spec.viewport.scale,

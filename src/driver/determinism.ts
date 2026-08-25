@@ -2,6 +2,26 @@ import type { BrowserContext } from "playwright-core";
 import type { Deterministic } from "../spec/schema.js";
 
 /**
+ * Chromium flags that make rasterization reproducible.
+ *
+ * Everything else in this file makes the *app* behave the same twice. This
+ * makes the *renderer* do so, which turns out to be a separate problem.
+ *
+ * Partial raster is the one that matters. Chromium keeps previously rasterized
+ * tiles and re-rasterizes only what a change is believed to have touched, so
+ * after a DOM mutation some tiles on screen are freshly drawn and others are
+ * reused — and which is which depends on timing. The two are not quite
+ * bit-identical: antialiased edges land a level or two apart. The result is a
+ * frame that differs between runs by a handful of pixels along rounded corners,
+ * on roughly one run in two, in a tool whose whole promise is that the same
+ * spec renders the same bytes.
+ *
+ * It costs some raster work on each change. That is the right trade here: this
+ * browser exists to be filmed, once, not to feel fast.
+ */
+export const DETERMINISTIC_LAUNCH_ARGS = ["--disable-partial-raster"];
+
+/**
  * Make a real web app behave reproducibly enough to record. This is the gap
  * VHS never had to close (a terminal is fully controlled) and the reason naive
  * "record the video" tools produce flaky, drifting demos.

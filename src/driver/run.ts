@@ -10,7 +10,7 @@ import {
   resolveOutputProfile,
   type Step,
 } from "../spec/schema.js";
-import { applyDeterminism } from "./determinism.js";
+import { applyDeterminism, DETERMINISTIC_LAUNCH_ARGS } from "./determinism.js";
 import { Timeline } from "./timeline.js";
 import { Recorder } from "./recorder.js";
 import { TerminalController } from "../terminal/controller.js";
@@ -105,7 +105,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     // Headless in both modes: screencast works headless and it's what CI runs,
     // so what you record is what `reel check` verifies.
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, args: DETERMINISTIC_LAUNCH_ARGS });
     const context = await prepareContext(browser, loaded);
     const page = await context.newPage();
     // In CI drift mode, fail fast: a gone selector shouldn't cost 30s.
