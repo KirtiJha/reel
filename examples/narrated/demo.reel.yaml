@@ -42,7 +42,8 @@ audio:
     # Pinning it also keeps the render reproducible: the voice is part of the
     # cache key, so naming it here is what stops a changed account default
     # silently re-synthesizing every line.
-    # id: <voice_id>
+    id: onwK4e9ZLuTAKqWW03F9 # Daniel — steady broadcaster, and premade, so
+                             # every account can use it
   # Captions are written for the eye and are short; spoken aloud they run
   # longer, so the picture waits for the voice rather than racing it.
   fit: stretch
