@@ -23,6 +23,19 @@ const LOUDNESS_RANGE = 11;
 const SAMPLE_RATE = 48_000;
 const BITRATE = "192k";
 
+/**
+ * Bring one input to the format everything else is in.
+ *
+ * Applied to every source before it reaches a mixer, rather than left to
+ * ffmpeg's own negotiation. The inputs genuinely differ: a vendor's speech mp3,
+ * a music file the author chose, and a mono WAV of synthesized clicks arrive
+ * with three different layouts and rates, and asking the graph to reconcile
+ * them at the far end fails with "Cannot select channel layout" — minutes into
+ * a render, after the picture is already encoded.
+ */
+const FORMAT_OUT = "aformat=sample_fmts=fltp:channel_layouts=stereo";
+const NORMALIZE = `aresample=${SAMPLE_RATE},${FORMAT_OUT}`;
+
 export interface MixLine {
   /** Where the line starts, in ms of demo time. */
   t: number;
@@ -138,7 +151,7 @@ export async function mixNarration(
 
   const inputs = lines.flatMap((l) => ["-i", l.file]);
   const delayed = lines.map(
-    (l, i) => `[${i}:a]aresample=${SAMPLE_RATE},adelay=${Math.max(0, Math.round(l.t))}:all=1[d${i}]`,
+    (l, i) => `[${i}:a]${NORMALIZE},adelay=${Math.max(0, Math.round(l.t))}:all=1[d${i}]`,
   );
 
   // `amix` needs two or more inputs; a single-line demo is just the one stream.
@@ -157,7 +170,7 @@ export async function mixNarration(
     const envelope = lines.length ? duckEnvelope(lines, durations, music.duck) : "1";
     const fadeOutAt = Math.max(0, durationMs - music.fadeOutMs) / 1000;
     graph.push(
-      `[${mi}:a]aresample=${SAMPLE_RATE},volume=${music.gain}dB,` +
+      `[${mi}:a]${NORMALIZE},volume=${music.gain}dB,` +
         // eval=frame so the envelope is applied over time rather than once.
         `volume='${envelope}':eval=frame,` +
         `afade=t=in:st=0:d=${(music.fadeInMs / 1000).toFixed(3)},` +
@@ -180,7 +193,7 @@ export async function mixNarration(
     // them down under the voice would leave the clicks that matter most, the
     // ones being talked over, inaudible.
     const si = lines.length + (music ? 1 : 0);
-    graph.push(`[${si}:a]aresample=${SAMPLE_RATE},atrim=0:${seconds}[fx]`);
+    graph.push(`[${si}:a]${NORMALIZE},atrim=0:${seconds}[fx]`);
     if (bus) {
       graph.push(`${bus}[fx]amix=inputs=2:normalize=0:duration=longest[withfx]`);
       bus = "[withfx]";
@@ -197,8 +210,8 @@ export async function mixNarration(
     ...(music ? ["-stream_loop", "-1", "-i", music.file] : []),
     ...(sfxFile ? ["-i", sfxFile] : []),
   ];
-  const tail = `aresample=${SAMPLE_RATE},apad,atrim=0:${seconds},` +
-    `aformat=sample_fmts=fltp:channel_layouts=stereo`;
+  // Length first; format is pinned at the very end of each chain instead.
+  const tail = `aresample=${SAMPLE_RATE},apad,atrim=0:${seconds}`;
 
   // Loudness is measured first and corrected with a constant gain, rather than
   // normalised in one pass.
@@ -219,7 +232,14 @@ export async function mixNarration(
         `:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}` +
         `:offset=${measured.target_offset}:linear=true`
       : "") +
-    `,aresample=${SAMPLE_RATE}[out]`;
+    // `aformat` must be the last filter before the output, not merely present
+    // somewhere upstream. loudnorm resamples internally and needs an
+    // `aresample` after it to come back, and a bare resample leaves the layout
+    // unpinned — so the encoder's own format filter has nothing to negotiate
+    // against and the graph dies with "Cannot select channel layout", minutes
+    // into a render, after the picture is already encoded. Some ffmpeg builds
+    // are lenient enough to guess; the macOS one is not.
+    `,aresample=${SAMPLE_RATE},${FORMAT_OUT}[out]`;
 
   await ffmpeg([
     "-y",
@@ -262,7 +282,8 @@ async function measureLoudness(
   tail: string,
 ): Promise<LoudnessStats | null> {
   const probe = `${bus}${tail},` +
-    `loudnorm=I=${TARGET_LUFS}:TP=${TRUE_PEAK_DB}:LRA=${LOUDNESS_RANGE}:print_format=json[out]`;
+    `loudnorm=I=${TARGET_LUFS}:TP=${TRUE_PEAK_DB}:LRA=${LOUDNESS_RANGE}:print_format=json,` +
+    `${FORMAT_OUT}[out]`;
   const stderr = await ffmpegProbe([
     "-y",
     ...sourceInputs,
