@@ -4,7 +4,8 @@ A design note for adding a soundtrack to a Reel demo — spoken narration, a
 music bed, and UI sound effects — without giving up the thing the tool is built
 on: the same spec against the same app renders byte-identical media.
 
-Status: proposed. Nothing here is implemented yet.
+Status: phases 1 and 2 are implemented. Phase 3 (sound design) and
+phase 4 (per-language voice tracks) are not.
 
 ## Why
 
@@ -201,6 +202,18 @@ One ffmpeg graph, built alongside the existing encode in `src/encode/`:
   which is what YouTube and LinkedIn normalise to anyway. Getting this right is
   the difference between "sounds produced" and "sounds like a screen capture".
 
+Ducking is not done with `sidechaincompress`, though that is the usual answer.
+A compressor cannot honour a number in dB — how far it pulls down depends on how
+loud the narrator happened to be, so `duck: -12` would mean "about twelve,
+sometimes". Reel already knows when every line starts and how long it runs, so
+the envelope is written out directly and the number means what it says. Measured
+on a rendered mix, `-15` comes back as 14.9dB and 15.5dB.
+
+For the same reason loudness is measured first and corrected with one constant
+gain rather than normalised in a single pass: one-pass `loudnorm` rides the
+level and, with a loudness-range target, lifts quiet passages back up —
+undoing the very envelope the mix just built.
+
 Reel should ship **no music and no sound effects**. Licensing makes bundling
 tracks a liability, and a bundled bed would be instantly recognisable across
 everyone's demos. `music.file` points at something the author supplies;
@@ -253,13 +266,19 @@ zero for iteration. The cost is not the constraint here — the script is.
 
 ## Phasing
 
-1. **`say:` + one provider + cache + stretch-to-fit + mux.** The whole win is
-   here. A good voice reading prose written for the ear, landing with the
-   picture. Ship this alone and the videos stop being silent.
-2. **Music bed with ducking**, and loudness normalisation. This is what makes
-   it sound produced rather than narrated.
+1. ~~**`say:` + one provider + cache + stretch-to-fit + mux.**~~ Done. A good
+   voice reading prose written for the ear, landing with the picture.
+2. ~~**Music bed with ducking**, and loudness normalisation.~~ Done, along with
+   per-cut mixing: a cut takes the lines that begin inside it, since one that
+   started earlier would arrive halfway through a word.
 3. **SFX** from the step timeline.
 4. **Per-language voice tracks**, reusing `translate.ts`.
+
+Two modes are deliberately absent. `fit: speed` needs re-synthesis at a computed
+rate, and a version that quietly rushed the delivery would be worse than its
+absence. And nothing here has been heard through a real vendor yet: the pipeline
+is verified end to end against a seeded cache, which exercises every stage except
+the HTTP call itself.
 
 Phase 1 is the only one with any design risk, and it is all in the retiming.
 

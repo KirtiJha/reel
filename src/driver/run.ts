@@ -430,51 +430,66 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
     }
 
-    // The soundtrack goes on last, onto finished video. The picture is
-    // stream-copied rather than re-encoded, so what was rendered and verified
-    // above is bit-for-bit what ships with audio on it.
-    if (spoken.length || spec.audio?.music) {
+    // The bed is named relative to the spec, like every other path a spec
+    // carries, so a demo stays portable regardless of where reel is invoked.
+    // Resolved before the cuts loop because a cut needs it too.
+    const bed = spec.audio?.music;
+    const music = bed
+      ? {
+          file: resolveOutput(loaded, bed.file),
+          gain: bed.gain,
+          duck: bed.duck,
+          fadeInMs: bed.fadeIn,
+          fadeOutMs: bed.fadeOut,
+        }
+      : undefined;
+    if (music && !existsSync(music.file)) {
+      throw new ReelError(
+        `The music bed ${bed!.file} does not exist.`,
+        `Looked for it at ${music.file}, relative to the spec.`,
+      );
+    }
+
+    /**
+     * Mix a soundtrack and put it on finished video.
+     *
+     * The picture is stream-copied rather than re-encoded, so what was rendered
+     * and verified stays bit-for-bit what ships with audio on it. Shared by the
+     * master and every cut, so the two cannot drift into different mixes.
+     */
+    const soundtrack = async (
+      lines: SpokenLine[],
+      totalMs: number,
+      videos: (string | undefined)[],
+      trackPath: string,
+      label?: string,
+    ): Promise<boolean> => {
+      if (!lines.length && !music) return false;
+      const carriers = videos.filter((v): v is string => Boolean(v));
+      if (!carriers.length) {
+        log.warn(`${label ?? "This spec"} has a soundtrack but renders no video to carry it.`);
+        return false;
+      }
+      await mixNarration(
+        lines.map((l) => ({ t: l.t, file: l.file, durationMs: l.durationMs })),
+        trackPath,
+        totalMs,
+        music,
+      );
+      for (const v of carriers) await muxAudio(v, trackPath);
+      return true;
+    };
+
+    if (spoken.length || music) {
       log.phase("Audio");
       const track = spec.output.audioTrack
         ? resolveOutput(loaded, spec.output.audioTrack)
         : join(workDir, "narration.m4a");
-      // The bed is named relative to the spec, like every other path a spec
-      // carries, so a demo stays portable regardless of where reel is invoked.
-      const bed = spec.audio?.music;
-      const music = bed
-        ? {
-            file: resolveOutput(loaded, bed.file),
-            gain: bed.gain,
-            duck: bed.duck,
-            fadeInMs: bed.fadeIn,
-            fadeOutMs: bed.fadeOut,
-          }
-        : undefined;
-      if (music && !existsSync(music.file)) {
-        throw new ReelError(
-          `The music bed ${bed!.file} does not exist.`,
-          `Looked for it at ${music.file}, relative to the spec.`,
-        );
+      if (music) {
+        log.step(`Bed ${bed!.file} at ${bed!.gain}dB, ducking ${bed!.duck}dB under the voice`);
       }
-      await mixNarration(
-        spoken.map((l) => ({ t: l.t, file: l.file, durationMs: l.durationMs })),
-        track,
-        durationMs,
-        music,
-      );
-      if (music) log.step(`Bed ${bed!.file} at ${bed!.gain}dB, ducking ${bed!.duck}dB under the voice`);
-      const videos = [targets.mp4, targets.webm].filter((v): v is string => Boolean(v));
-      for (const v of videos) await muxAudio(v, track);
-      if (spec.output.audioTrack) outputs.push(track);
-      if (!videos.length) {
-        log.warn("Narration was mixed but this spec renders no video to carry it.");
-      }
-      // Said rather than silently accepted: a cut is a slice of these same
-      // frames, but the mix here is one track for the whole recording, so a cut
-      // comes out silent until per-cut mixing lands.
-      if (spec.cuts?.length) {
-        log.warn(`Cuts do not carry narration yet — ${spec.cuts.length} will render silent.`);
-      }
+      const wrote = await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track);
+      if (wrote && spec.output.audioTrack) outputs.push(track);
     }
 
     // Cuts: shorter deliverables out of the recording that just happened. No
@@ -517,9 +532,25 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           sliceTimeline(zoom, range),
           sliceTimeline(beats, range, { carryIn: false }),
         );
+        // The cut's own soundtrack, from the same lines and the same bed.
+        //
+        // `carryIn: false` because narration is not like a caption: a caption
+        // that was already on screen when the cut opens is still true, but a
+        // sentence that started earlier arrives halfway through a word. A line
+        // belongs to a cut only if it begins inside it.
+        const cutLines = sliceTimeline(spoken, range, { carryIn: false });
+        await soundtrack(
+          cutLines,
+          cutDuration(range),
+          [cutTargets.mp4, cutTargets.webm],
+          join(workDir, `cut-${outputs.length}.m4a`),
+          `Cut "${cut.name}"`,
+        );
+
         log.step(
           `${cut.name} — ${formatMs(range.startMs)}–${formatMs(range.endMs)} ` +
-            `(${(cutDuration(range) / 1000).toFixed(1)}s)`,
+            `(${(cutDuration(range) / 1000).toFixed(1)}s)` +
+            (cutLines.length ? ` · ${cutLines.length} spoken` : ""),
         );
         for (const t of [cutTargets.gif, cutTargets.mp4, cutTargets.webm, cutSb]) {
           if (t) outputs.push(t);
