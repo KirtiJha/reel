@@ -28,6 +28,9 @@ export const metadata: Metadata = {
     "README",
     "CI",
     "demos as code",
+    "narration",
+    "voiceover",
+    "text to speech",
   ],
   openGraph: {
     type: "website",

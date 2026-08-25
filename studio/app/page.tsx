@@ -47,6 +47,54 @@ const FORMATS = [
   },
 ];
 
+/**
+ * The narrated demo, in each language it was rendered in.
+ *
+ * The same recording: one drive of the app, re-fitted to however long each
+ * language takes to say. Both carry the subtitle sidecar Reel wrote beside the
+ * video, which is also what gives this player its captions track.
+ */
+const TRACKS = [
+  {
+    id: "en",
+    label: "English",
+    lang: "en",
+    src: "/demo/narrated.mp4",
+    vtt: "/demo/narrated.vtt",
+    length: "26.6s",
+  },
+  {
+    id: "es",
+    label: "Español",
+    lang: "es",
+    src: "/demo/narrated.es.mp4",
+    vtt: "/demo/narrated.es.vtt",
+    length: "28.9s",
+  },
+];
+
+const AUDIO_SPEC = `audio:
+  voice: { provider: elevenlabs }
+  fit: stretch          # the picture waits for the voice
+  sfx: subtle           # a tick on a click, keys while typing
+  music:
+    file: bed.mp3       # yours; Reel ships no tracks
+    gain: -20
+    duck: -14           # how far it drops under the voice
+
+steps:
+  - caption:
+      text: "Two entries so far"
+      say: "The ledger opens with two entries already recorded."
+      sayIn:
+        es: "El libro se abre con dos asientos ya registrados."
+
+output:
+  mp4: out/demo.mp4
+  audio: true
+  subtitles: true
+  languages: [es]`;
+
 const FEATURES = [
   {
     title: "One spec, every format",
@@ -92,6 +140,21 @@ const FEATURES = [
     title: "Safe by construction",
     body: "Redact selectors, mock network calls, and freeze dates before a frame is captured — so a customer name never reaches a public GIF.",
     icon: "M12 3l8 4v6c0 4.4-3.4 8-8 9-4.6-1-8-4.6-8-9V7z",
+  },
+  {
+    title: "Demos that talk",
+    body: "Put say: beside the caption it belongs to and the demo narrates itself — voice, a ducked music bed, and a tick on every click. A caption is read and narration is heard, so the two are written separately.",
+    icon: "M5 9v6h4l5 4V5L9 9H5zM16.5 9.5a4 4 0 010 5M19.5 7a8 8 0 010 10",
+  },
+  {
+    title: "The picture waits for the voice",
+    body: "A hold written for reading is too short to say out loud. fit: stretch extends each one to fit the line it carries — the bundled example turns 11.4s of captions into 26.6s of narration, in sync, with nothing hand-tuned.",
+    icon: "M3 6v12M21 6v12M7 12h10M7 12l3-3M7 12l3 3M17 12l-3-3M17 12l-3 3",
+  },
+  {
+    title: "Nothing is ever spoken twice",
+    body: "A speech endpoint returns slightly different audio every time it is asked, which would be the end of byte-identical renders. Each line is synthesized once into a cache you commit — so a colleague, and CI, render the same demo with no API key at all.",
+    icon: "M12 5c4.4 0 8 1.1 8 2.5S16.4 10 12 10 4 8.9 4 7.5 7.6 5 12 5zM4 7.5v9c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-9",
   },
 ];
 
@@ -215,6 +278,7 @@ function PrimaryCta({ size = "" }: { size?: string }) {
 
 export default function Landing() {
   const [format, setFormat] = useState(FORMATS[0]!);
+  const [track, setTrack] = useState(TRACKS[0]!);
 
   return (
     <div className="min-h-screen">
@@ -231,6 +295,9 @@ export default function Landing() {
             </a>
             <a href="#features" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
               Features
+            </a>
+            <a href="#sound" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
+              Sound
             </a>
             <a href="#start" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
               Quickstart
@@ -462,6 +529,104 @@ export default function Landing() {
         </div>
       </section>
 
+
+      {/* ---------- sound ----------
+          The one section on this page with something to hear, so it is the one
+          player that doesn't autoplay: unmuted audio starting by itself is
+          hostile, and browsers block it anyway. */}
+      <section id="sound" className="border-t border-white/[0.05] py-24">
+        <div className="page px-6">
+          <div className="text-center">
+            <div className="eyebrow">Sound</div>
+            <h2 className="mt-3 text-[38px] font-bold tracking-[-0.02em] max-[720px]:text-[28px]">
+              Turn the sound on
+            </h2>
+            <p className="prose-muted mx-auto mt-3 max-w-[62ch]">
+              Narration, a music bed that ducks under it and sound design — written in the same
+              spec, rendered by the same command. This one is a real render, not a mockup.
+            </p>
+          </div>
+
+          <div className="mt-12 grid grid-cols-2 items-start gap-6 max-[900px]:grid-cols-1">
+            <div className="flex flex-col gap-6">
+            <div className="card !p-0">
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2.5">
+                {TRACKS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTrack(t)}
+                    className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${
+                      track.id === t.id
+                        ? "bg-brand-soft text-ink"
+                        : "text-muted hover:bg-panel2 hover:text-ink"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+                <span className="ml-auto font-mono text-[12px] text-faint">{track.length}</span>
+              </div>
+              <div className="bg-[#05070c] p-4">
+                <video
+                  key={track.id}
+                  className="block w-full rounded-lg"
+                  src={track.src}
+                  poster="/demo/narrated.png"
+                  controls
+                  preload="metadata"
+                  playsInline
+                >
+                  <track
+                    kind="captions"
+                    src={track.vtt}
+                    srcLang={track.lang}
+                    label={track.label}
+                    default
+                  />
+                </video>
+              </div>
+              <p className="px-5 py-4 text-[13.5px] text-muted">
+                One recording, both languages. The subtitles on this player are the sidecar Reel
+                wrote beside the video.
+              </p>
+            </div>
+              <div className="card">
+                <h3 className="text-[15px] font-semibold">A voice per language</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-muted">
+                  A sentence takes a different time to say in Spanish than in English, so each
+                  language re-fits the same frames to its own speech and encodes its own mp4 —{" "}
+                  {TRACKS[0]!.length} and {TRACKS[1]!.length} from one drive of the app. No second
+                  capture, and Reel says which lines a person translated and which a model did.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-6">
+              <div className="card overflow-hidden !p-0">
+                <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+                  <span className="font-mono text-[12px] text-muted">demo.reel.yaml</span>
+                  <span className="tag">what makes it talk</span>
+                </div>
+                <pre className="overflow-x-auto p-5 font-mono text-[12.5px] leading-[1.65] text-muted">
+                  {AUDIO_SPEC}
+                </pre>
+              </div>
+              <div className="card">
+                <h3 className="text-[15px] font-semibold">Mixed, not just muxed</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-muted">
+                  The bed drops by the number you wrote: the envelope is built from the narration
+                  timings rather than a compressor listening to the voice, so{" "}
+                  <span className="font-mono text-ink">duck: -14</span> means fourteen decibels, not
+                  &ldquo;about fourteen, sometimes&rdquo;. Effects are synthesized from oscillators
+                  — nothing to license, and no two projects sharing a recognisable click. The
+                  finished track is normalised to &minus;14 LUFS, which is what YouTube and LinkedIn
+                  normalise to anyway.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ---------- the point: it lands in your README ---------- */}
       <section className="border-t border-white/[0.05] py-24">
