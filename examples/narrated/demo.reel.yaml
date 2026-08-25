@@ -34,6 +34,15 @@ polish:
 audio:
   voice:
     provider: elevenlabs
+    # Pin the voice. Left unset, Reel asks the vendor for its default, and on a
+    # free ElevenLabs account that is a Voice Library voice the API will not
+    # serve — a 402 before a word is spoken. List what your account can use:
+    #   curl -s -H "xi-api-key: $ELEVENLABS_API_KEY" \
+    #     https://api.elevenlabs.io/v1/voices
+    # Pinning it also keeps the render reproducible: the voice is part of the
+    # cache key, so naming it here is what stops a changed account default
+    # silently re-synthesizing every line.
+    # id: <voice_id>
   # Captions are written for the eye and are short; spoken aloud they run
   # longer, so the picture waits for the voice rather than racing it.
   fit: stretch
