@@ -1,5 +1,5 @@
 import { rename, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { ffmpeg, ffmpegProbe } from "./ffmpeg.js";
 import { BITEXACT } from "./encode.js";
 import { log, ReelError } from "../util/log.js";
@@ -319,10 +319,10 @@ async function measureLoudness(
  * picture that was verified is bit-for-bit the picture that ships.
  */
 export async function muxAudio(video: string, audio: string): Promise<void> {
-  const tmp = join(
-    video.slice(0, video.lastIndexOf("/") + 1) || ".",
-    `.reel-mux-${Date.now().toString(36)}.mp4`,
-  );
+  // Beside the video, so the rename below is a move within one filesystem.
+  // Slicing at the last "/" put it in the cwd on Windows, where the separator
+  // is a backslash — and renaming across volumes fails.
+  const tmp = join(dirname(video), `.reel-mux-${Date.now().toString(36)}.mp4`);
   try {
     await ffmpeg([
       "-y",
