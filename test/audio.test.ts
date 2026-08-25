@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildAudioRetime } from "../src/polish/retime.js";
 import { voiceKey, resolveVoice, findVoiceProvider, type ResolvedVoice } from "../src/narrate/voice.js";
 import { audioEnabled } from "../src/narrate/audio.js";
+import { duckEnvelope } from "../src/encode/audio.js";
 import { audioSchema, specSchema } from "../src/spec/schema.js";
 
 /* ------------------------- Fitting the timeline ------------------------- */
@@ -259,5 +260,66 @@ describe("audioEnabled", () => {
     assert.equal(audioEnabled(undefined, true, cues), false, "no audio block");
     assert.equal(audioEnabled(cfg, false, cues), false, "explicitly disabled");
     assert.equal(audioEnabled(cfg, true, []), false, "nothing to say");
+  });
+});
+
+/* ------------------------- The music bed envelope ----------------------- */
+
+describe("duckEnvelope", () => {
+  const line = (t: number) => ({ t, file: "x.mp3" });
+
+  test("is flat when nobody speaks", () => {
+    assert.equal(duckEnvelope([], [], -12), "1");
+    // A line with no audio behind it must not duck either.
+    assert.equal(duckEnvelope([line(0)], [0], -12), "1");
+  });
+
+  test("uses the requested depth as a linear floor", () => {
+    // -6dB is half amplitude, so the envelope bottoms out at 0.5: 1 - 0.5*D.
+    assert.match(duckEnvelope([line(1000)], [2000], -6), /^1-0\.4988\*/);
+    // -20dB is a tenth: 1 - 0.9*D.
+    assert.match(duckEnvelope([line(1000)], [2000], -20), /^1-0\.9000\*/);
+  });
+
+  test("0dB asks for no duck at all", () => {
+    assert.match(duckEnvelope([line(1000)], [2000], 0), /^1-0\.0000\*/);
+  });
+
+  test("ramps in before the line and out after it", () => {
+    // A line at 1.0s lasting 2.0s, with a 220ms ramp either side, must start
+    // easing at 0.78 and finish returning at 3.22.
+    const e = duckEnvelope([line(1000)], [2000], -12);
+    assert.ok(e.includes("0.780"), `ramp-in start missing: ${e}`);
+    assert.ok(e.includes("3.220"), `ramp-out end missing: ${e}`);
+  });
+
+  test("overlapping lines take the deepest duck rather than stacking", () => {
+    const e = duckEnvelope([line(0), line(500)], [2000, 2000], -12);
+    // One `max` joins the two spans; summing them would duck twice as far and
+    // drive the bed to silence wherever two lines meet.
+    assert.equal((e.match(/max\(/g) ?? []).length - (e.match(/max\(0/g) ?? []).length, 1);
+  });
+
+  test("parenthesises a ramp that starts before zero", () => {
+    // A line at t=0 puts the ramp origin at -0.22, and `t--0.220` is only
+    // correct by way of how the parser treats a subtracted negative.
+    const e = duckEnvelope([line(0)], [2000], -12);
+    assert.ok(e.includes("(t-(-0.220))"), `wanted an explicit negative: ${e}`);
+    assert.ok(!e.includes("--"), `a double negative is too clever to rely on: ${e}`);
+  });
+
+  test("scales to a demo with many lines", () => {
+    const many = Array.from({ length: 30 }, (_, i) => line(i * 3000));
+    const e = duckEnvelope(many, many.map(() => 2500), -12);
+    assert.ok(e.startsWith("1-"));
+    // Balanced parentheses, or the filtergraph fails to parse at render time —
+    // which is minutes into a recording, long after the mistake was made.
+    let depth = 0;
+    for (const c of e) {
+      if (c === "(") depth++;
+      else if (c === ")") depth--;
+      assert.ok(depth >= 0, "unbalanced parentheses");
+    }
+    assert.equal(depth, 0, "unbalanced parentheses");
   });
 });

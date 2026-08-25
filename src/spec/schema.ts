@@ -197,6 +197,34 @@ export const audioSchema = z.object({
   fit: z.enum(["stretch", "none"]).default("stretch"),
   /** Silence between consecutive spoken lines, so delivery has room to breathe. */
   breathMs: z.number().int().nonnegative().default(350),
+  /**
+   * A music bed under the whole demo.
+   *
+   * Reel ships no tracks. Licensing makes bundling them a liability, and a
+   * bundled bed would be instantly recognisable across everyone's demos — point
+   * `file` at something you have the right to use.
+   */
+  music: z
+    .object({
+      /** Path to the audio file, relative to the spec. Looped to fit. */
+      file: z.string().min(1),
+      /** Level before ducking, in dB. Beds belong well under the voice. */
+      gain: z.number().max(0).default(-22),
+      /**
+       * How far the bed drops while someone is speaking, in dB.
+       *
+       * Honoured exactly: the envelope is built from the narration timings
+       * rather than from a compressor listening to the voice, so this number
+       * means what it says.
+       */
+      duck: z.number().max(0).default(-12),
+      // Spelled out rather than sharing the `durationMs` helper: that const is
+      // declared with the step grammar far below this point, and a module-scope
+      // const used above its declaration is a runtime error, not a type error.
+      fadeIn: z.number().int().nonnegative().default(1200),
+      fadeOut: z.number().int().nonnegative().default(2500),
+    })
+    .optional(),
 });
 export type AudioConfig = z.infer<typeof audioSchema>;
 

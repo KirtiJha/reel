@@ -100,11 +100,18 @@ export async function missingVoiceLines(
   return missing;
 }
 
-/** Whether this spec asks for a soundtrack at all. */
+/**
+ * Whether this spec asks for a soundtrack at all.
+ *
+ * A music bed counts on its own. Plenty of demos want atmosphere and no
+ * narrator, and requiring a spoken line before the bed is mixed would make
+ * `music:` silently do nothing — the exact failure this returns false to avoid.
+ */
 export function audioEnabled(
   audio: AudioConfig | undefined,
   outputAudio: boolean | undefined,
   cues: SpokenCue[],
 ): audio is AudioConfig {
-  return Boolean(audio) && outputAudio !== false && cues.length > 0;
+  if (!audio || outputAudio === false) return false;
+  return cues.length > 0 || Boolean(audio.music);
 }

@@ -279,6 +279,44 @@
           "minimum": 0,
           "default": 350,
           "description": "Silence between consecutive spoken lines, so delivery has room to breathe."
+        },
+        "music": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Path to the audio file, relative to the spec. Looped to fit."
+            },
+            "gain": {
+              "type": "number",
+              "maximum": 0,
+              "default": -22,
+              "description": "Level before ducking, in dB. Beds belong well under the voice."
+            },
+            "duck": {
+              "type": "number",
+              "maximum": 0,
+              "default": -12,
+              "description": "How far the bed drops while someone is speaking, in dB.\n\nHonoured exactly: the envelope is built from the narration timings\nrather than from a compressor listening to the voice, so this number\nmeans what it says."
+            },
+            "fadeIn": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 1200,
+              "description": "const used above its declaration is a runtime error, not a type error."
+            },
+            "fadeOut": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 2500
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "additionalProperties": false,
+          "description": "A music bed under the whole demo.\n\nReel ships no tracks. Licensing makes bundling them a liability, and a\nbundled bed would be instantly recognisable across everyone's demos — point\n`file` at something you have the right to use."
         }
       },
       "additionalProperties": false,

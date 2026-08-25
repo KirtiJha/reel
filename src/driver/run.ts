@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
@@ -432,12 +433,36 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // The soundtrack goes on last, onto finished video. The picture is
     // stream-copied rather than re-encoded, so what was rendered and verified
     // above is bit-for-bit what ships with audio on it.
-    if (spoken.length) {
+    if (spoken.length || spec.audio?.music) {
       log.phase("Audio");
       const track = spec.output.audioTrack
         ? resolveOutput(loaded, spec.output.audioTrack)
         : join(workDir, "narration.m4a");
-      await mixNarration(spoken.map((l) => ({ t: l.t, file: l.file })), track, durationMs);
+      // The bed is named relative to the spec, like every other path a spec
+      // carries, so a demo stays portable regardless of where reel is invoked.
+      const bed = spec.audio?.music;
+      const music = bed
+        ? {
+            file: resolveOutput(loaded, bed.file),
+            gain: bed.gain,
+            duck: bed.duck,
+            fadeInMs: bed.fadeIn,
+            fadeOutMs: bed.fadeOut,
+          }
+        : undefined;
+      if (music && !existsSync(music.file)) {
+        throw new ReelError(
+          `The music bed ${bed!.file} does not exist.`,
+          `Looked for it at ${music.file}, relative to the spec.`,
+        );
+      }
+      await mixNarration(
+        spoken.map((l) => ({ t: l.t, file: l.file, durationMs: l.durationMs })),
+        track,
+        durationMs,
+        music,
+      );
+      if (music) log.step(`Bed ${bed!.file} at ${bed!.gain}dB, ducking ${bed!.duck}dB under the voice`);
       const videos = [targets.mp4, targets.webm].filter((v): v is string => Boolean(v));
       for (const v of videos) await muxAudio(v, track);
       if (spec.output.audioTrack) outputs.push(track);
