@@ -198,6 +198,16 @@ export const audioSchema = z.object({
   /** Silence between consecutive spoken lines, so delivery has room to breathe. */
   breathMs: z.number().int().nonnegative().default(350),
   /**
+   * UI sound design: a tick on a click, key texture while typing, a low sweep
+   * under a title card.
+   *
+   * Synthesized, not sampled — there is nothing to license and nothing shipped.
+   * Off by default: it is a taste, and a demo that started making noises
+   * because narration was switched on would be a surprise rather than a
+   * feature.
+   */
+  sfx: z.enum(["none", "subtle", "full"]).default("none"),
+  /**
    * A music bed under the whole demo.
    *
    * Reel ships no tracks. Licensing makes bundling them a liability, and a

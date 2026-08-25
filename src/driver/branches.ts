@@ -138,6 +138,7 @@ export async function recordAlternatePaths(opts: AlternateOptions): Promise<Alte
           // position, and narration for steps the viewer already heard would be
           // spoken a second time.
           say: [],
+          sfx: [],
           rec,
           term,
           scenes: [],

@@ -14,6 +14,7 @@ import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
 import type { SpokenCue } from "../narrate/voice.js";
+import type { SfxCue } from "../encode/sfx.js";
 import { compositesCaptions } from "../polish/frame.js";
 import type { Rect, ZoomKey } from "../polish/zoom.js";
 import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../terminal/grid.js";
@@ -47,6 +48,12 @@ export interface StepContext {
    * endpoint being up.
    */
   say: SpokenCue[];
+  /**
+   * What the demo sounded like: a tick per click, a run of key texture per
+   * typed field, a sweep per card. Collected alongside the narration cues and
+   * for the same reason — the track is built after the drive, from timings.
+   */
+  sfx: SfxCue[];
   /** The running capture, when recording — lets steps synthesize their own frames. */
   capture?: ScreenshotCapture | null;
   /** Owns the demo clock and every operation that consumes demo time. */
@@ -183,6 +190,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // Snap before the click: the interactive build shows the state you act on,
     // with the target as its hotspot, and advances to the result.
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+    if (cinematic) ctx.sfx.push({ t: ctx.now(), kind: "click" });
     await locate(page, step.click).click();
     await ctx.rec.hold(HOLD.afterClick);
     return;
@@ -239,8 +247,14 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const box = await pointAt(ctx, selector, cinematic);
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     const loc = locate(page, selector);
+    if (cinematic) ctx.sfx.push({ t: ctx.now(), kind: "click" });
     await loc.click();
+    // One cue spanning the whole burst; the track spreads ticks across it. The
+    // span is measured rather than predicted, because `typeInto` decides the
+    // per-character delay and a guess here would drift out of sync with it.
+    const from = ctx.now();
     await ctx.rec.typeInto(loc, text, delay);
+    if (cinematic) ctx.sfx.push({ t: from, kind: "type", durationMs: ctx.now() - from });
     await ctx.rec.hold(HOLD.afterType);
     return;
   }
@@ -403,6 +417,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // `reel check` can audit it.
     if (c.say) ctx.say.push({ t: ctx.now(), text: c.say });
     if (cinematic) {
+      ctx.sfx.push({ t: ctx.now(), kind: "card" });
       zoomOut(ctx); // never crop into a full-screen card
       await showCard(page, c.title, c.subtitle);
       await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap

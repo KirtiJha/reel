@@ -280,6 +280,16 @@
           "default": 350,
           "description": "Silence between consecutive spoken lines, so delivery has room to breathe."
         },
+        "sfx": {
+          "type": "string",
+          "enum": [
+            "none",
+            "subtle",
+            "full"
+          ],
+          "default": "none",
+          "description": "UI sound design: a tick on a click, key texture while typing, a low sweep\nunder a title card.\n\nSynthesized, not sampled — there is nothing to license and nothing shipped.\nOff by default: it is a taste, and a demo that started making noises\nbecause narration was switched on would be a surprise rather than a\nfeature."
+        },
         "music": {
           "type": "object",
           "properties": {

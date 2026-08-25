@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +31,7 @@ import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 import { narrate } from "../narrate/index.js";
 import { audioEnabled, missingVoiceLines, planAudio } from "../narrate/audio.js";
 import type { SpokenCue, SpokenLine } from "../narrate/voice.js";
+import { renderSfx, toWav, type SfxCue } from "../encode/sfx.js";
 import { mixNarration, muxAudio } from "../encode/audio.js";
 import { buildAudioRetime, buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
@@ -143,6 +144,8 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // Collected during the drive, spoken after it: synthesis is a post-process,
     // so a recording never waits on a TTS endpoint.
     const say: SpokenCue[] = [];
+    // What the demo sounded like, for the optional effects track.
+    const sfx: SfxCue[] = [];
     const scenes: Scene[] = [];
     const rec = new Recorder(page, capture, timeline, {
       fps: profile.fps,
@@ -183,6 +186,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       zoom,
       captions,
       say,
+      sfx,
       capture,
       rec,
       term,
@@ -457,30 +461,41 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
      * and verified stays bit-for-bit what ships with audio on it. Shared by the
      * master and every cut, so the two cannot drift into different mixes.
      */
+    const sfxProfile = spec.audio?.sfx ?? "none";
     const soundtrack = async (
       lines: SpokenLine[],
       totalMs: number,
       videos: (string | undefined)[],
       trackPath: string,
+      cues: SfxCue[],
       label?: string,
     ): Promise<boolean> => {
-      if (!lines.length && !music) return false;
+      const wantsSfx = sfxProfile !== "none" && cues.length > 0;
+      if (!lines.length && !music && !wantsSfx) return false;
       const carriers = videos.filter((v): v is string => Boolean(v));
       if (!carriers.length) {
         log.warn(`${label ?? "This spec"} has a soundtrack but renders no video to carry it.`);
         return false;
+      }
+      // Synthesized here rather than fetched or bundled, which is what keeps
+      // the effects free of licensing and identical on every machine.
+      let sfxFile: string | undefined;
+      if (wantsSfx) {
+        sfxFile = `${trackPath}.fx.wav`;
+        await writeFile(sfxFile, toWav(renderSfx(cues, totalMs, sfxProfile)));
       }
       await mixNarration(
         lines.map((l) => ({ t: l.t, file: l.file, durationMs: l.durationMs })),
         trackPath,
         totalMs,
         music,
+        sfxFile,
       );
       for (const v of carriers) await muxAudio(v, trackPath);
       return true;
     };
 
-    if (spoken.length || music) {
+    if (spoken.length || music || (sfxProfile !== "none" && sfx.length)) {
       log.phase("Audio");
       const track = spec.output.audioTrack
         ? resolveOutput(loaded, spec.output.audioTrack)
@@ -488,7 +503,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       if (music) {
         log.step(`Bed ${bed!.file} at ${bed!.gain}dB, ducking ${bed!.duck}dB under the voice`);
       }
-      const wrote = await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track);
+      if (sfxProfile !== "none" && sfx.length) {
+        log.step(`${sfx.length} sound cues (${sfxProfile})`);
+      }
+      const wrote = await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track, sfx);
       if (wrote && spec.output.audioTrack) outputs.push(track);
     }
 
@@ -544,6 +562,10 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           cutDuration(range),
           [cutTargets.mp4, cutTargets.webm],
           join(workDir, `cut-${outputs.length}.m4a`),
+          // Effects are placed, not spoken, so unlike narration a cue that
+          // began before the cut has nothing to be halfway through — it either
+          // lands inside the window or it does not.
+          sliceTimeline(sfx, range, { carryIn: false }),
           `Cut "${cut.name}"`,
         );
 

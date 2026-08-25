@@ -4,6 +4,7 @@ import { buildAudioRetime } from "../src/polish/retime.js";
 import { voiceKey, resolveVoice, findVoiceProvider, type ResolvedVoice } from "../src/narrate/voice.js";
 import { audioEnabled } from "../src/narrate/audio.js";
 import { duckEnvelope } from "../src/encode/audio.js";
+import { placeHits, renderSfx, synthesize, toWav, SFX_SAMPLE_RATE } from "../src/encode/sfx.js";
 import { audioSchema, specSchema } from "../src/spec/schema.js";
 
 /* ------------------------- Fitting the timeline ------------------------- */
@@ -321,5 +322,144 @@ describe("duckEnvelope", () => {
       assert.ok(depth >= 0, "unbalanced parentheses");
     }
     assert.equal(depth, 0, "unbalanced parentheses");
+  });
+});
+
+/* ----------------------------- Sound design ----------------------------- */
+
+describe("synthesize", () => {
+  test("produces a normalized, non-silent burst for every kind", () => {
+    for (const kind of ["click", "type", "card"] as const) {
+      const s = synthesize(kind);
+      assert.ok(s.length > 0, `${kind} is empty`);
+      const peak = Math.max(...Array.from(s, Math.abs));
+      assert.ok(Math.abs(peak - 1) < 1e-6, `${kind} peak is ${peak}, wanted 1`);
+    }
+  });
+
+  test("is identical every call — noise is seeded, not random", () => {
+    // Math.random() here would make every render's soundtrack different, which
+    // is the one thing the whole pipeline is built to prevent.
+    for (const kind of ["click", "type", "card"] as const) {
+      assert.deepEqual(Array.from(synthesize(kind)), Array.from(synthesize(kind)));
+    }
+  });
+
+  test("a card sweep is long and a keystroke is short", () => {
+    assert.ok(synthesize("card").length > synthesize("click").length);
+    assert.ok(synthesize("click").length > synthesize("type").length);
+  });
+});
+
+describe("placeHits", () => {
+  test("passes discrete cues through untouched", () => {
+    const hits = placeHits([{ t: 100, kind: "click" }, { t: 900, kind: "card" }], "full");
+    assert.deepEqual(hits, [{ t: 100, kind: "click" }, { t: 900, kind: "card" }]);
+  });
+
+  test("spreads a typing span into repeated ticks", () => {
+    const hits = placeHits([{ t: 0, kind: "type", durationMs: 425 }], "full");
+    assert.equal(hits.length, 5); // 85ms apart across 425ms
+    assert.deepEqual(hits.map((h) => h.t), [0, 85, 170, 255, 340]);
+  });
+
+  test("subtle types at half the rate", () => {
+    const full = placeHits([{ t: 0, kind: "type", durationMs: 425 }], "full");
+    const subtle = placeHits([{ t: 0, kind: "type", durationMs: 425 }], "subtle");
+    assert.ok(subtle.length < full.length);
+    assert.deepEqual(subtle.map((h) => h.t), [0, 170, 340]);
+  });
+
+  test("a typing cue with no duration makes no sound", () => {
+    assert.deepEqual(placeHits([{ t: 0, kind: "type" }], "full"), []);
+  });
+
+  test("returns hits in time order", () => {
+    const hits = placeHits(
+      [{ t: 500, kind: "click" }, { t: 0, kind: "type", durationMs: 300 }],
+      "full",
+    );
+    for (let i = 1; i < hits.length; i++) assert.ok(hits[i]!.t >= hits[i - 1]!.t);
+  });
+});
+
+describe("renderSfx", () => {
+  const energyNear = (track: Float32Array, ms: number, windowMs = 30) => {
+    const from = Math.round((ms / 1000) * SFX_SAMPLE_RATE);
+    const to = Math.min(track.length, from + Math.round((windowMs / 1000) * SFX_SAMPLE_RATE));
+    let sum = 0;
+    for (let i = Math.max(0, from); i < to; i++) sum += track[i]! ** 2;
+    return sum;
+  };
+
+  test("is silent when switched off", () => {
+    const t = renderSfx([{ t: 100, kind: "click" }], 1000, "none");
+    assert.ok(t.every((v) => v === 0));
+  });
+
+  test("puts a hit where the cue was, and silence where it wasn't", () => {
+    const t = renderSfx([{ t: 500, kind: "click" }], 2000, "full");
+    assert.ok(energyNear(t, 500) > 0, "nothing at the cue");
+    assert.equal(energyNear(t, 1200), 0, "sound away from the cue");
+  });
+
+  test("runs exactly as long as the video", () => {
+    const t = renderSfx([{ t: 0, kind: "click" }], 1500, "full");
+    assert.equal(t.length, Math.round(1.5 * SFX_SAMPLE_RATE));
+  });
+
+  test("truncates a hit at the end rather than dropping or overflowing it", () => {
+    // The cue lands 5ms before the end; the click is 22ms long.
+    const t = renderSfx([{ t: 995, kind: "click" }], 1000, "full");
+    assert.equal(t.length, Math.round(1.0 * SFX_SAMPLE_RATE));
+    assert.ok(energyNear(t, 995, 5) > 0, "the attack should still land");
+  });
+
+  test("subtle is quieter than full", () => {
+    const cues = [{ t: 100, kind: "click" as const }];
+    assert.ok(energyNear(renderSfx(cues, 1000, "subtle"), 100) <
+              energyNear(renderSfx(cues, 1000, "full"), 100));
+  });
+
+  test("never clips, even when every effect lands at once", () => {
+    const together = Array.from({ length: 40 }, () => ({ t: 200, kind: "click" as const }));
+    const t = renderSfx(together, 1000, "full");
+    assert.ok(t.every((v) => v >= -1 && v <= 1), "soft clip should hold the track in range");
+  });
+
+  test("renders the same bytes twice", () => {
+    const cues = [{ t: 0, kind: "click" as const }, { t: 40, kind: "type" as const, durationMs: 300 }];
+    assert.deepEqual(
+      Array.from(renderSfx(cues, 1000, "full")),
+      Array.from(renderSfx(cues, 1000, "full")),
+    );
+  });
+});
+
+describe("toWav", () => {
+  test("writes a mono 16-bit header ffmpeg can read without guessing", () => {
+    const wav = toWav(new Float32Array(10));
+    assert.equal(wav.subarray(0, 4).toString(), "RIFF");
+    assert.equal(wav.subarray(8, 12).toString(), "WAVE");
+    assert.equal(wav.readUInt16LE(20), 1, "PCM");
+    assert.equal(wav.readUInt16LE(22), 1, "mono");
+    assert.equal(wav.readUInt32LE(24), SFX_SAMPLE_RATE);
+    assert.equal(wav.readUInt16LE(34), 16, "bit depth");
+    assert.equal(wav.readUInt32LE(40), 20, "data length");
+    assert.equal(wav.length, 44 + 20);
+  });
+
+  test("full scale does not wrap to the opposite sign", () => {
+    // 16-bit reaches -32768 but only +32767. Scaling +1.0 by 32768 overflows to
+    // full-scale negative — an audible tick exactly where the signal is loudest.
+    const wav = toWav(Float32Array.from([1, -1]));
+    assert.equal(wav.readInt16LE(44), 32767);
+    assert.equal(wav.readInt16LE(46), -32768);
+  });
+
+  test("clamps anything the mix pushed out of range", () => {
+    const wav = toWav(Float32Array.from([2, -2]));
+    assert.equal(wav.readInt16LE(44), 32767);
+    assert.equal(wav.readInt16LE(46), -32768);
   });
 });

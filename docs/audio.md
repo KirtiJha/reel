@@ -4,8 +4,8 @@ A design note for adding a soundtrack to a Reel demo — spoken narration, a
 music bed, and UI sound effects — without giving up the thing the tool is built
 on: the same spec against the same app renders byte-identical media.
 
-Status: phases 1 and 2 are implemented. Phase 3 (sound design) and
-phase 4 (per-language voice tracks) are not.
+Status: phases 1, 2 and 3 are implemented. Phase 4 (per-language voice
+tracks) is not.
 
 ## Why
 
@@ -196,8 +196,14 @@ One ffmpeg graph, built alongside the existing encode in `src/encode/`:
   `sidechaincompress` keyed on the narration bus so it ducks automatically
   instead of needing hand-drawn envelopes. Fades at the ends.
 - **SFX** — a soft tick on `click`, key texture under `type`, a low sweep on
-  card transitions. Placed from the step timeline, which already records when
-  each of those happened.
+  card transitions, placed from the step timeline. Synthesized from oscillators
+  and shaped noise rather than sampled, so there is nothing to license and
+  nothing shipped, and summed into one PCM buffer rather than built as a filter
+  graph: a demo with fifty clicks would otherwise mean fifty inputs and fifty
+  `adelay`s. The noise is seeded — `Math.random()` would give every render a
+  different soundtrack. Effects are deliberately not ducked; they are transient
+  and quiet, and pulling them under the voice would silence exactly the clicks
+  being talked about.
 - **Out** — `-c:a aac -b:a 192k`, loudness-normalised to about **-14 LUFS**,
   which is what YouTube and LinkedIn normalise to anyway. Getting this right is
   the difference between "sounds produced" and "sounds like a screen capture".
@@ -271,7 +277,9 @@ zero for iteration. The cost is not the constraint here — the script is.
 2. ~~**Music bed with ducking**, and loudness normalisation.~~ Done, along with
    per-cut mixing: a cut takes the lines that begin inside it, since one that
    started earlier would arrive halfway through a word.
-3. **SFX** from the step timeline.
+3. ~~**SFX** from the step timeline.~~ Done, off by default: it is a taste, and
+   a demo that started making noises because narration was switched on would be
+   a surprise rather than a feature.
 4. **Per-language voice tracks**, reusing `translate.ts`.
 
 Two modes are deliberately absent. `fit: speed` needs re-synthesis at a computed

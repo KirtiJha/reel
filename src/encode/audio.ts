@@ -129,8 +129,11 @@ export async function mixNarration(
   out: string,
   durationMs: number,
   music?: MusicBed,
+  sfxFile?: string,
 ): Promise<void> {
-  if (lines.length === 0 && !music) throw new ReelError("Nothing to mix — no spoken lines.");
+  if (lines.length === 0 && !music && !sfxFile) {
+    throw new ReelError("Nothing to mix — no spoken lines, no bed, no effects.");
+  }
   const seconds = (durationMs / 1000).toFixed(3);
 
   const inputs = lines.flatMap((l) => ["-i", l.file]);
@@ -147,7 +150,7 @@ export async function mixNarration(
   const graph: string[] = [...delayed];
   if (lines.length) graph.push(merged);
 
-  let bus = "[m]";
+  let bus = lines.length ? "[m]" : "";
   if (music) {
     const mi = lines.length; // the bed is the input after the spoken lines
     const durations = lines.map((l) => l.durationMs ?? 0);
@@ -169,10 +172,30 @@ export async function mixNarration(
     }
   }
 
+  if (sfxFile) {
+    // The effects arrive already mixed, placed and levelled — one stereo-safe
+    // input rather than one per tick, which for a demo with fifty clicks is the
+    // difference between a readable filter graph and an unreadable one. They
+    // are deliberately not ducked: they are transient and quiet, and pulling
+    // them down under the voice would leave the clicks that matter most, the
+    // ones being talked over, inaudible.
+    const si = lines.length + (music ? 1 : 0);
+    graph.push(`[${si}:a]aresample=${SAMPLE_RATE},atrim=0:${seconds}[fx]`);
+    if (bus) {
+      graph.push(`${bus}[fx]amix=inputs=2:normalize=0:duration=longest[withfx]`);
+      bus = "[withfx]";
+    } else {
+      // Effects on their own — no narration, no bed. `amix` with one input is
+      // an error, not a no-op, so the effects simply become the bus.
+      bus = "[fx]";
+    }
+  }
+
   const sourceInputs = [
     ...inputs,
     // Looped so a short bed covers a long demo; the atrim above cuts it back.
     ...(music ? ["-stream_loop", "-1", "-i", music.file] : []),
+    ...(sfxFile ? ["-i", sfxFile] : []),
   ];
   const tail = `aresample=${SAMPLE_RATE},apad,atrim=0:${seconds},` +
     `aformat=sample_fmts=fltp:channel_layouts=stereo`;
