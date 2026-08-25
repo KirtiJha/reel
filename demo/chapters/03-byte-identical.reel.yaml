@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 3 — the guarantee everything else rests on.
+name: Byte-identical, every time
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node, md5sum]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "03 — Byte-identical"
+      subtitle: Run it again
+      ms: 2200
+      say: >-
+        Here is the property everything else in this tool rests on.
+
+  - run: md5sum demo/out/tuitions.mp4
+  - beat: first-hash
+  - say:
+      ms: 900
+      text: >-
+        That is the checksum of the video we just rendered. Now run exactly the
+        same command again.
+
+  - run: reel record demo/example.reel.yaml
+  - expectOutput: tuitions
+  - run: md5sum demo/out/tuitions.mp4
+  - beat: second-hash
+  - say:
+      ms: 900
+      text: >-
+        Same spec, same app, same bytes. Not similar — identical.
+  - say:
+      ms: 900
+      text: >-
+        A virtual timeline and a frozen clock mean nothing drifts between runs:
+        not a slow network, not a faster machine, not the time of day.
+  - say:
+      ms: 900
+      text: >-
+        So when the media in a pull request changes, something in the product
+        really changed. That is what makes a demo diff worth reading.
+
+output:
+  preset: hq
+  mp4: ../out/03-byte-identical.mp4
+  audio: true

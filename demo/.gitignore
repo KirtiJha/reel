@@ -1,0 +1,13 @@
+# A live session for a real account. Never committed.
+.auth/
+
+# Scratch: the app's web export and the snapshot chapter 4 heals. Rebuilt by
+# build.mjs, and large.
+.work/
+
+# Everything the build renders is ignored except the two finished masters —
+# the per-chapter files, the tiffin/tuitions renders, the cuts and the CI
+# comment are all intermediates that build.mjs regenerates.
+out/*
+!out/reel-tour.mp4
+!out/reel-tour-1080p.mp4

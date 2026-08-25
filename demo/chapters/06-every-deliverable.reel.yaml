@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 6 — one drive of the app, four deliverables.
+name: Every deliverable, one recording
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "06 — Every deliverable"
+      subtitle: One recording, four files
+      ms: 2200
+      say: >-
+        One demo is never one video.
+
+  - say:
+      ms: 900
+      text: >-
+        There is a long one for the docs, a minute for a feed, forty seconds for
+        the top of a readme. Written as separate specs they drift apart within a
+        month — someone fixes a caption in one and forgets the other three.
+
+  - run: sed -n '/^cuts:/,$p' demo/cuts.reel.yaml
+  - beat: cuts-spec
+  - say:
+      ms: 900
+      text: >-
+        So a cut is not a second recording. It names a range of the demo you
+        already filmed — by beat, not by timestamp, so inserting a step earlier
+        cannot silently shift what a cut contains.
+
+  - run: reel record demo/cuts.reel.yaml
+  - expectOutput: cuts
+  - beat: rendered
+  - run: ls -lh demo/out/cuts
+  - beat: files
+  - say:
+      ms: 900
+      text: >-
+        Four deliverables, each at its own size and frame rate, out of a single
+        drive of the app. They cannot disagree with each other about what
+        happened, because they are the same frames.
+
+output:
+  preset: hq
+  mp4: ../out/06-every-deliverable.mp4
+  audio: true

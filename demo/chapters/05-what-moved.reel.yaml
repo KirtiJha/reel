@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 5 — passing is not the same as being true.
+#
+# The change here is deliberately one that does not break a single step: a line
+# of copy on the home screen. Every check still passes; only the pixels differ.
+# That is the case `diff` exists for.
+name: What moved
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node, sed]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "05 — What moved"
+      subtitle: Passing is not the same as true
+      ms: 2200
+      say: >-
+        A demo can pass every step it has and still be wrong.
+
+  - run: cp demo/out/tuitions.mp4 demo/out/before.mp4
+  - beat: before
+  - say:
+      ms: 900
+      text: >-
+        Here is the render we already have. Keep it as the before.
+
+  - run: sed -i "s/What can your society help you with today?/Ask a neighbour, or the whole building./" "../../senate-chef/src/app/(tabs)/index.tsx"
+  - beat: copy-change
+  - say:
+      ms: 900
+      text: >-
+        Now a copy change on the home screen. No selector moves, no step breaks —
+        check would stay green through this, and it should.
+  - run:
+      cmd: cd ../../senate-chef && npx expo export --platform web --output-dir ../reel/reel/demo/.work/aangan-web
+      hidden: true
+
+  - run: reel record demo/example.reel.yaml
+  - expectOutput: tuitions
+  - beat: after
+  - say:
+      ms: 900
+      text: >-
+        Record it again, and ask Reel what changed between the two.
+
+  - run: reel diff demo/out/before.mp4 demo/out/tuitions.mp4
+  - beat: diff
+  - say:
+      ms: 900
+      text: >-
+        It compares the two renders and reports where they diverge: which
+        seconds, how much of the frame, and which beat of the demo those seconds
+        belong to.
+  - say:
+      ms: 900
+      text: >-
+        Not the file changed. The part of the story that changed — which is the
+        only version of that sentence a reviewer can act on.
+
+output:
+  preset: hq
+  mp4: ../out/05-what-moved.mp4
+  audio: true

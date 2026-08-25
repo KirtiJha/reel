@@ -1,0 +1,126 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 4 — drift, caught and repaired.
+#
+# The break is real: it edits Aangan's own source, rebuilds the web export the
+# rest of the tour is served from, and lets `reel check` discover the damage.
+# demo/build.mjs restores the file and rebuilds afterwards, so the app repo ends
+# the run exactly as it started.
+name: When the app changes
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  # A rebuild of the app runs off camera inside this chapter, and the default
+  # two-minute ceiling is not enough for it.
+  timeout: 900000
+  replayMs: 2600
+  require: [node, sed, git]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "04 — When the app changes"
+      subtitle: Drift, caught and repaired
+      ms: 2200
+      say: >-
+        Now the part that decides whether a demo is worth keeping. Products
+        change.
+
+  - run: reel check demo/example.reel.yaml
+  - expectOutput: passed
+  - beat: green
+  - say:
+      ms: 900
+      text: >-
+        Check re-runs the whole demo headlessly. No rendering, no video — just
+        the question: does every step still do what it says?
+
+  # Folded, not inline: the colon inside the sed expression would otherwise
+  # read as a nested mapping and fail to parse.
+  - run:
+      cmd: >-
+        sed -i "s/label: 'Listings'/label: 'Marketplace'/"
+        ../../senate-chef/src/components/NavRail.tsx
+  - beat: renamed
+  - say:
+      ms: 900
+      text: >-
+        So let us change the product. Someone renames a navigation item from
+        Listings to Marketplace — one word, in the app's real source.
+  - run:
+      cmd: cd ../../senate-chef && npx expo export --platform web --output-dir ../reel/reel/demo/.work/aangan-web
+      hidden: true
+
+  - run:
+      cmd: reel check demo/example.reel.yaml
+      expectCode: 1
+  - beat: failed
+  - say:
+      ms: 900
+      text: >-
+        And the demo breaks. Not vaguely — it names the step, the selector that
+        no longer resolves, and writes out the page and the screenshot from the
+        moment it gave up.
+  - say:
+      ms: 900
+      text: >-
+        Nobody had to notice. In continuous integration this is a red build,
+        instead of a picture quietly showing a button that no longer exists.
+
+  - run: reel heal demo/example.reel.yaml --write
+  - beat: healed
+  - say:
+      ms: 900
+      text: >-
+        Then heal. It re-resolves the broken step against the app as it is now,
+        looking for the control that means the same thing rather than the one
+        that happens to sit in the same place.
+  - say:
+      ms: 900
+      text: >-
+        It found the renamed item, finished the run, and wrote the repair back
+        into the spec — a one-line diff you review like any other change.
+
+  - run: reel check demo/example.reel.yaml
+  - expectOutput: passed
+  - beat: green-again
+  - say:
+      ms: 900
+      text: >-
+        Green again. The demo survived a change to the product, and nobody
+        re-recorded anything.
+
+output:
+  preset: hq
+  mp4: ../out/04-when-the-app-changes.mp4
+  audio: true

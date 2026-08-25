@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=../schema/reel.schema.json
+#
+# The spec the tour puts on screen, and then runs. Short enough to read in one
+# shot at 34 terminal rows.
+name: Aangan — find a tuition class
+url: http://localhost:4600
+viewport: { width: 1280, height: 800, scale: 2 }
+storageState: .auth/aangan-localhost-4600.json
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: auto
+  cursor: smooth
+  frame: browser
+  frameUrl: my-aangan.vercel.app
+
+steps:
+  - caption: "Everything a society needs, in one place"
+  - beat: home
+  - click: '[aria-label="Listings"]'
+  - waitFor: text=All listings
+  # The heading paints before the query returns; a row is the real signal.
+  - waitFor: text=View
+  - caption: "Filter to tuition classes in the building"
+  - click: text=Tuitions
+  - beat: tuitions
+
+output:
+  preset: share
+  gif: out/tuitions.gif
+  mp4: out/tuitions.mp4
+  storyboard: out/tuitions-storyboard
+  html: out/tuitions.html
+  subtitles: true

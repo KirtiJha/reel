@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../schema/reel.schema.json
+#
+# One drive of the app, four deliverables — the spec chapter 6 runs on camera.
+#
+# The cuts are ranges of this same recording, named by beat rather than by
+# timestamp, so editing a step earlier in the demo cannot silently shift what a
+# cut contains.
+name: Aangan — one recording, four cuts
+url: http://localhost:4600
+viewport: { width: 1280, height: 800, scale: 2 }
+storageState: .auth/aangan-localhost-4600.json
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: auto
+  cursor: smooth
+  captions: true
+  frame: browser
+  frameUrl: my-aangan.vercel.app
+
+steps:
+  - caption: "Your society, in one app"
+  - beat: open
+  - click: '[aria-label="Listings"]'
+  - waitFor: text=All listings
+  - waitFor: text=View
+  - caption: "Everything neighbours offer, in one list"
+  - beat: listings
+  - click: text=Tuitions
+  - caption: "Filtered to tuition classes"
+  - beat: tuitions
+  - click: '[aria-label="Polls"]'
+  - caption: "And decisions the whole building votes on"
+  - beat: polls
+
+output:
+  preset: share
+  mp4: out/cuts/full.mp4
+
+cuts:
+  # The top of a README: the shortest thing that still says what the app is.
+  - name: readme
+    to: listings
+    output:
+      preset: readme
+      gif: out/cuts/readme.gif
+  # A minute for a feed post.
+  - name: social
+    from: listings
+    to: polls
+    output:
+      preset: social
+      mp4: out/cuts/social.mp4
+  # The single beat a docs page wants beside the marketplace section.
+  - name: marketplace
+    from: listings
+    to: tuitions
+    output:
+      preset: docs
+      gif: out/cuts/marketplace.gif

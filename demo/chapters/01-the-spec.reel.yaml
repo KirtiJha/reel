@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 1 — the spec itself.
+name: The spec
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "01 — The spec"
+      subtitle: A demo you can read
+      ms: 2200
+      say: >-
+        So what is a demo, if nobody records it? It is a file that sits beside
+        your code.
+
+  - run: cat demo/example.reel.yaml
+  - expectOutput: steps
+  - beat: spec
+  - say:
+      ms: 900
+      text: >-
+        This is the whole thing. It opens by naming the app, the address to visit,
+        and the size of the window to film it in.
+  - say:
+      ms: 900
+      text: >-
+        Then the steps, in order. Click this. Wait for that. It reads like a
+        description of the demo, because that is exactly what it is.
+  - say:
+      ms: 900
+      text: >-
+        A caption is text on screen. A beat is a moment worth holding on, and the
+        output block says which files to render when the run is done.
+  - say:
+      ms: 900
+      text: >-
+        There are no timings to hand-tune here, and no recording buried in a
+        binary. You describe the demo; Reel works out the pacing.
+
+  - run: reel schema --to schema
+  - beat: schema
+  - say:
+      ms: 900
+      text: >-
+        Reel writes out its own JSON Schema, so your editor autocompletes every
+        key in that file, and underlines the ones that do not exist.
+
+output:
+  preset: hq
+  mp4: ../out/01-the-spec.mp4
+  audio: true

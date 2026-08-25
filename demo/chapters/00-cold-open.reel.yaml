@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 0 — the cold open.
+#
+# Every chapter of the tour shares this header: same viewport, same scale, same
+# preset, same padding, and a frame of some kind. That is not house style, it is
+# a requirement — the chapters are concatenated by stream copy, so any of those
+# changing would change the output dimensions and the join would fail.
+name: Reel — demos as code
+url: http://localhost:4600
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: light
+
+# The session was saved once, off camera, by demo/save-auth.mjs. A spec has
+# nowhere to put a password, which is the whole point.
+storageState: ../.auth/aangan-localhost-4600.json
+
+deterministic:
+  disableAnimations: true
+  # No freezeClock here, deliberately. The session token carries an expiry,
+  # and a frozen clock makes the client judge it invalid — the listings query
+  # then returns nothing and the demo films an empty app. The cost is that the
+  # time-of-day greeting can differ between runs; the data being real matters
+  # more than the word "evening".
+
+polish:
+  zoom: auto
+  cursor: smooth
+  # No captions anywhere in this tour: the narration carries it, and burned-in
+  # text competing with a voice reads as a subtitle for someone who cannot hear
+  # the voice — which is what the .vtt sidecar is for.
+  captions: false
+  frame: browser
+  frameUrl: my-aangan.vercel.app   # cosmetic: the pill should not read a port
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music:
+    file: ../bed.mp3
+    gain: -21
+    duck: -13
+    fadeIn: 1400
+    fadeOut: 1200
+
+steps:
+  - card:
+      title: Reel
+      subtitle: Demos as code — for web apps and CLIs
+      ms: 2600
+      say: >-
+        This is a product demo of a tool that makes product demos. Every frame
+        of it was rendered from a file in a repository.
+
+  - beat: hero
+  - say:
+      ms: 900
+      text: >-
+        The app is Aangan — a private super-app for a residential society. What
+        you are watching is a real browser, driving the real thing.
+
+  - click: '[aria-label="Listings"]'
+  - waitFor: text=All listings
+  - waitFor: text=View
+  - beat: listings
+  - say:
+      ms: 900
+      text: >-
+        Nobody screen-recorded this. There was no take, no editor, and no cursor
+        moved by hand. The pointer you are watching is drawn from the timeline.
+
+  - click: '[aria-label="Ask Aangan"]'
+  - beat: ask
+  - say:
+      ms: 900
+      text: >-
+        Every click, every pause, and every word I am saying is written down,
+        reviewed like code, and rendered the same way every single time.
+  - say:
+      ms: 900
+      text: >-
+        This is Reel.
+
+output:
+  preset: hq
+  mp4: ../out/00-cold-open.mp4
+  audio: true

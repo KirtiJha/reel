@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 9 — the close. Back to the app, then the one command it takes.
+name: Close
+url: http://localhost:4600
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: light
+
+storageState: ../.auth/aangan-localhost-4600.json
+
+deterministic:
+  disableAnimations: true
+  # No freezeClock here, deliberately. The session token carries an expiry, and
+  # a frozen clock makes the client judge it invalid — the listings query then
+  # returns nothing and the demo films an empty app.
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: browser
+  frameUrl: my-aangan.vercel.app
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is the closing minute of a product tour.
+  fit: stretch
+  breathMs: 420
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 4000 }
+
+steps:
+  - card:
+      title: "09 — Where this leaves you"
+      ms: 2000
+      say: >-
+        So: the demo is a file. It drives your real app, and renders the same
+        bytes every time it runs.
+
+  - beat: app
+  - say:
+      ms: 900
+      text: >-
+        When the product changes, the demo fails out loud instead of ageing
+        quietly — and repairs itself where it can.
+
+  - click: '[aria-label="Listings"]'
+  - waitFor: text=All listings
+  - waitFor: text=View
+  - beat: listings
+  - say:
+      ms: 900
+      text: >-
+        One recording becomes every format your channels need, in every language
+        you write, with narration written beside the captions it belongs to.
+
+  - card:
+      title: npx @kirti_jha/reel init
+      subtitle: MIT · runs locally and in CI · no service, no account
+      ms: 3600
+      say: >-
+        It is one command to start, it runs on your machine and on a runner,
+        and there is nothing to sign up for.
+  - say:
+      ms: 900
+      text: >-
+        Reel. Lights, camera, code.
+
+output:
+  preset: hq
+  mp4: ../out/09-close.mp4
+  audio: true

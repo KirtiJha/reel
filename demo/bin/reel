@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# `reel` as a viewer expects to type it.
+#
+# The tour films real commands, and `npm run reel --` or `npx tsx src/cli.ts`
+# on screen would be filming this repository's plumbing rather than the tool.
+# demo/build.mjs puts this directory first on PATH, so the terminal chapters
+# type what an installed user types.
+exec node "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/dist/cli.js" "$@"

@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 2 — one command, every deliverable.
+#
+# The record on camera is a real one: it opens a browser, signs in with the
+# saved session and drives the live app. Which is why the terminal timeout here
+# is minutes rather than the default two.
+name: It drives your real app
+url: http://localhost:4599   # demo/build.mjs serves demo/out here
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  frameUrl: localhost:4599
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "02 — It drives your real app"
+      subtitle: One command
+      ms: 2200
+      say: >-
+        Recording is one command.
+
+  - run: reel record demo/example.reel.yaml
+  - expectOutput: tuitions
+  - beat: recorded
+  - say:
+      ms: 900
+      text: >-
+        That opened a real browser, signed in with a session saved off camera,
+        and performed the steps against the live app.
+  - say:
+      ms: 900
+      text: >-
+        Nothing here is mocked. If the app were broken, this would not produce a
+        prettier video — it would fail.
+  - say:
+      ms: 900
+      text: >-
+        The cursor easing toward each control and the camera pushing in were
+        added afterwards, from the timeline Reel already had. The app never knew
+        it was being filmed.
+
+  - run: ls -lh demo/out
+  - beat: deliverables
+  - say:
+      ms: 900
+      text: >-
+        And out of that single run: a GIF for the readme, an MP4 for social, a
+        storyboard with one still per beat, subtitles, and a self-contained page
+        you can click through.
+
+  - show: app
+  - goto: /tuitions.html
+  - waitForNetworkIdle: true
+  - beat: interactive
+  - say:
+      ms: 900
+      text: >-
+        This is that page. It is the same recording, rebuilt as something a
+        reader drives themselves — no video player, no hosting, one file.
+
+output:
+  preset: hq
+  mp4: ../out/02-drives-your-app.mp4
+  audio: true

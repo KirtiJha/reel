@@ -1,0 +1,93 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 8 — Studio, the local workspace.
+#
+# Filmed against the real thing: `reel ui` must be running on 4488 before this
+# chapter records, which demo/build.mjs checks.
+name: Studio
+url: http://localhost:4488
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: browser
+  frameUrl: localhost:4488
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "08 — Studio"
+      subtitle: The same engine, with a window
+      ms: 2200
+      say: >-
+        Everything you have seen is the command line, because that is the whole
+        tool. But you do not have to live there.
+
+  - goto: /gallery
+  - waitFor: text=Gallery
+  - beat: gallery
+  - say:
+      ms: 900
+      text: >-
+        Studio runs on your machine, from your project directory. Nothing is
+        uploaded, and there is no account. This is every spec in the workspace,
+        with whatever each one last rendered.
+
+  - click: text=Aangan — find a tuition class
+  - waitFor: text=Output & polish
+  - beat: spec
+  - say:
+      ms: 900
+      text: >-
+        Open one and you get the file itself, editable, with the render controls
+        and the result beside it rather than three windows away.
+
+  - click: text=Steps
+  - beat: steps
+  - say:
+      ms: 900
+      text: >-
+        The steps are read out of the same schema the command line validates
+        against, so a step kind added to Reel appears here without anyone
+        maintaining a second list of them.
+
+  - click: text=Output & polish
+  - beat: output
+  - say:
+      ms: 900
+      text: >-
+        Presets, device frames, pacing and the deterministic settings are all
+        here — and every one of them is written back into the spec, not stored
+        in the app. Close Studio and your demo is still a file in git.
+
+  - click: text=Check drift
+  - waitForNetworkIdle: true
+  - beat: checking
+  - say:
+      ms: 900
+      text: >-
+        And the commands are buttons. Record, check for drift, heal — the same
+        engine, reporting into the same window.
+
+output:
+  preset: hq
+  mp4: ../out/08-studio.mp4
+  audio: true

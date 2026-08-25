@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../../schema/reel.schema.json
+#
+# Chapter 7 — the same commands, on a runner.
+name: In CI
+url: about:blank
+viewport: { width: 1280, height: 800, scale: 2 }
+theme: dark
+
+terminal:
+  cols: 100
+  rows: 34
+  cwd: ../..
+  prompt: "~/reel $ "
+  title: "reel"
+  fontSize: 12
+  typing: 38
+  timeout: 900000
+  replayMs: 2600
+  require: [node]
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  zoom: false
+  cursor: smooth
+  captions: false
+  frame: window
+  background: "linear-gradient(135deg, #10251d, #070c0a)"
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+      Short pauses at full stops. This is a product tour for engineers.
+  fit: stretch
+  breathMs: 380
+  sfx: subtle
+  music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
+
+steps:
+  - card:
+      title: "07 — In CI"
+      subtitle: Demos that fail the build
+      ms: 2200
+      say: >-
+        Everything so far runs the same way on a continuous integration runner,
+        with no service to sign up for and nothing to host.
+
+  - run: reel ci --mode check --comment demo/out/comment.md demo/example.reel.yaml demo/cuts.reel.yaml
+  - beat: ci
+  - say:
+      ms: 900
+      text: >-
+        One command runs every demo in the repository and reports a single
+        result. A step that cannot complete is a failing build.
+
+  - run: cat demo/out/comment.md
+  - beat: comment
+  - say:
+      ms: 900
+      text: >-
+        On a pull request it writes one comment, updated in place rather than
+        added to, so a long-running branch does not collect a column of stale
+        bot noise.
+
+  - run: sed -n '18,34p' .github/workflows/reel.yml
+  - beat: workflow
+  - say:
+      ms: 900
+      text: >-
+        And because the renders are deterministic, regenerating the media is a
+        no-op unless the demo really changed. A picture that moves in a diff
+        means the product moved.
+
+output:
+  preset: hq
+  mp4: ../out/07-in-ci.mp4
+  audio: true
