@@ -1,6 +1,7 @@
 import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ffmpeg, ffmpegProbe } from "./ffmpeg.js";
+import { BITEXACT } from "./encode.js";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -96,6 +97,10 @@ export async function mixNarration(
     "aac",
     "-b:a",
     BITRATE,
+    // Output-side: `-map_metadata -1` belongs before the file it applies to.
+    // Without these, ffmpeg stamps a fresh creation time into the container on
+    // every run and the demo stops rendering the same bytes twice.
+    ...BITEXACT,
     out,
   ]);
 }
@@ -129,6 +134,7 @@ export async function muxAudio(video: string, audio: string): Promise<void> {
       "-shortest",
       "-movflags",
       "+faststart",
+      ...BITEXACT,
       tmp,
     ]);
     await rename(tmp, video);

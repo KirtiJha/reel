@@ -332,11 +332,16 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const cue = typeof step.caption === "string"
       ? { text: step.caption, ms: undefined as number | undefined, position: "bottom" as const, say: undefined }
       : step.caption;
+    // A caption's own text is what gets spoken unless the author wrote
+    // something better for the ear, or `false` to keep this one silent.
+    //
+    // Collected in every mode, not just while filming: `reel check` audits the
+    // voice cache, and it can only do that if it knows what the demo intends to
+    // say. Only `t` differs between modes — check runs no holds — and the audit
+    // reads the text alone.
+    const spoken = cue.say === undefined ? cue.text : cue.say;
+    if (spoken) ctx.say.push({ t: ctx.now(), text: spoken });
     if (cinematic) {
-      // A caption's own text is what gets spoken unless the author wrote
-      // something better for the ear, or `false` to keep this one silent.
-      const spoken = cue.say === undefined ? cue.text : cue.say;
-      if (spoken) ctx.say.push({ t: ctx.now(), text: spoken });
       // Measure with the browser's own text engine so the renderer can wrap at
       // real word boundaries instead of guessing an average glyph width.
       const measure = await measureText(page, cue.text);
@@ -365,10 +370,8 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
    */
   if ("say" in step) {
     const cue = typeof step.say === "string" ? { text: step.say, ms: undefined } : step.say;
-    if (cinematic) {
-      ctx.say.push({ t: ctx.now(), text: cue.text });
-      await ctx.rec.hold(cue.ms ?? 0);
-    }
+    ctx.say.push({ t: ctx.now(), text: cue.text });
+    if (cinematic) await ctx.rec.hold(cue.ms ?? 0);
     return;
   }
 
@@ -395,10 +398,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       : step.card;
     // A title card is a natural chapter boundary — worth a storyboard frame.
     ctx.beats.push({ label: c.title, t: ctx.now() });
+    // No fallback here: a title read aloud sounds like a title, so a card is
+    // silent unless the author wrote a line for it. Recorded in every mode so
+    // `reel check` can audit it.
+    if (c.say) ctx.say.push({ t: ctx.now(), text: c.say });
     if (cinematic) {
-      // No fallback here: a title read aloud sounds like a title, so a card is
-      // silent unless the author wrote a line for it.
-      if (c.say) ctx.say.push({ t: ctx.now(), text: c.say });
       zoomOut(ctx); // never crop into a full-screen card
       await showCard(page, c.title, c.subtitle);
       await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap
