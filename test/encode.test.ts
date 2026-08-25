@@ -1,6 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildConcatManifest } from "../src/encode/encode.js";
+import { isAbsolute, resolve } from "node:path";
+import { buildConcatManifest, outPath } from "../src/encode/encode.js";
 import type { CapturedFrame } from "../src/capture/frames.js";
 
 /** Sum every `duration` directive — the playback length ffmpeg will produce. */
@@ -80,5 +81,41 @@ describe("buildConcatManifest", () => {
     const a = buildConcatManifest(frames([200, 900, 1500]), 900, 4000);
     const b = buildConcatManifest(frames([200, 900, 1500]), 900, 4000);
     assert.equal(a, b);
+  });
+});
+
+describe("outPath", () => {
+  // The rule, stated once: a path the platform already calls absolute is left
+  // exactly as it is. The old test was `startsWith("/")`, which is true of
+  // every absolute POSIX path and of no absolute Windows one — so a spec whose
+  // outputs had been resolved to `C:\demos\out\demo.mp4` got that joined onto
+  // the cwd, and a render that had already captured, narrated and encoded died
+  // on `mkdir 'C:\repo\C:\demos\out'`. Written this way the test carries the
+  // rule on both platforms rather than passing on Linux by luck.
+  const paths = [
+    "/demos/out/demo.mp4",
+    "C:\demos\out\demo.mp4",
+    "\\server\share\demo.mp4",
+    "out/demo.mp4",
+    "demo.mp4",
+  ];
+
+  test("never joins an absolute path onto the working directory", () => {
+    for (const p of paths) {
+      if (!isAbsolute(p)) continue;
+      assert.equal(outPath(p), p, `${p} was rewritten`);
+    }
+  });
+
+  test("resolves a relative path against the directory reel was invoked from", () => {
+    // ffmpeg runs with its cwd set to the temp frames directory, so a relative
+    // target that stayed relative would be written among the frames and deleted
+    // with them.
+    for (const p of paths) {
+      if (isAbsolute(p)) continue;
+      const got = outPath(p);
+      assert.ok(isAbsolute(got), `${p} stayed relative`);
+      assert.equal(got, resolve(process.cwd(), p));
+    }
   });
 });

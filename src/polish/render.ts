@@ -1,10 +1,18 @@
 import { mkdir, readdir, rm, writeFile, copyFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { cpus } from "node:os";
 import type { CapturedFrame } from "../capture/frames.js";
 import { ffmpeg } from "../encode/ffmpeg.js";
 import { assertGifComplete } from "../encode/verify.js";
-import { BITEXACT, H264, buildConcatManifest, type EncodeTargets, type EncodeOptions } from "../encode/encode.js";
+import {
+  BITEXACT,
+  H264,
+  buildConcatManifest,
+  ensureOutDir,
+  outPath,
+  type EncodeTargets,
+  type EncodeOptions,
+} from "../encode/encode.js";
 import {
   resolveTimeline,
   sampleRect,
@@ -150,13 +158,13 @@ export async function renderWithZoom(
   const seqInput = ["-framerate", String(opts.fps), "-i", "proc/%06d.png"];
 
   if (targets.mp4) {
-    await ensureDir(targets.mp4);
+    await ensureOutDir(targets.mp4);
     await ffmpeg(
       [
         "-y", ...seqInput,
         "-vf", "format=yuv420p",
         ...H264, ...BITEXACT,
-        abspath(targets.mp4),
+        outPath(targets.mp4),
       ],
       framesDir,
     );
@@ -164,16 +172,16 @@ export async function renderWithZoom(
   }
 
   if (targets.webm) {
-    await ensureDir(targets.webm);
+    await ensureOutDir(targets.webm);
     await ffmpeg(
-      ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT, abspath(targets.webm)],
+      ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT, outPath(targets.webm)],
       framesDir,
     );
     log.ok(`webm → ${targets.webm}`);
   }
 
   if (targets.gif) {
-    await ensureDir(targets.gif);
+    await ensureOutDir(targets.gif);
     // GIF params come from the resolved output preset (camera motion defeats
     // frame dedup, so GIFs are typically capped smaller than the video).
     const gifFps = Math.min(opts.gif.fps, opts.fps);
@@ -201,7 +209,7 @@ export async function renderWithZoom(
         `fps=${gifFps},scale=${gifW}:-2:flags=lanczos,split[a][b];` +
           `[a]palettegen=stats_mode=diff:max_colors=${opts.gif.colors}[p];` +
           `[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
-        abspath(targets.gif),
+        outPath(targets.gif),
       ],
       framesDir,
     );
@@ -209,7 +217,7 @@ export async function renderWithZoom(
     // that holds a fraction of the demo. Catch it here rather than letting a
     // truncated demo ship.
     await assertGifComplete(
-      abspath(targets.gif),
+      outPath(targets.gif),
       Math.round(cfrFiles.length * (gifFps / opts.fps)),
       targets.gif,
     );
@@ -217,14 +225,14 @@ export async function renderWithZoom(
   }
 
   if (targets.storyboard) {
-    await mkdir(abspath(targets.storyboard), { recursive: true });
+    await mkdir(outPath(targets.storyboard), { recursive: true });
     let n = 0;
     for (const [b, beat] of beats.entries()) {
       const idx = storyboardFrame(beats, b, opts.fps, cfg.transitionMs, cfrFiles.length);
       const file = cfrFiles[idx];
       if (!file) continue;
       const safe = beat.label.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || `beat-${n}`;
-      await copyFile(join(procDir, file), join(abspath(targets.storyboard), `${String(n++).padStart(2, "0")}-${safe}.png`));
+      await copyFile(join(procDir, file), join(outPath(targets.storyboard), `${String(n++).padStart(2, "0")}-${safe}.png`));
     }
     log.ok(`storyboard → ${targets.storyboard} (${n} frames)`);
   }
@@ -290,10 +298,3 @@ function clampInt(v: number, lo: number, hi: number): number {
   return Math.min(Math.max(lo, v), Math.max(lo, hi));
 }
 
-function abspath(p: string): string {
-  return p.startsWith("/") ? p : join(process.cwd(), p);
-}
-
-async function ensureDir(file: string): Promise<void> {
-  await mkdir(dirname(abspath(file)), { recursive: true });
-}

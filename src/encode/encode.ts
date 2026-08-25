@@ -1,5 +1,5 @@
 import { writeFile, mkdir, copyFile } from "node:fs/promises";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute, resolve } from "node:path";
 import type { CapturedFrame } from "../capture/frames.js";
 import { ffmpeg } from "./ffmpeg.js";
 import { log, ReelError } from "../util/log.js";
@@ -50,14 +50,14 @@ export async function encode(
   const scale = scaleFilter(opts.maxWidth);
 
   if (targets.mp4) {
-    await ensureDir(targets.mp4);
+    await ensureOutDir(targets.mp4);
     await ffmpeg(
       [
         "-y",
         "-f", "concat", "-safe", "0", "-i", "frames.concat",
         "-vf", `fps=${opts.fps},${scale},format=yuv420p`,
         ...H264, ...BITEXACT,
-        abspath(framesDir, targets.mp4),
+        outPath(targets.mp4),
       ],
       framesDir,
     );
@@ -65,14 +65,14 @@ export async function encode(
   }
 
   if (targets.webm) {
-    await ensureDir(targets.webm);
+    await ensureOutDir(targets.webm);
     await ffmpeg(
       [
         "-y",
         "-f", "concat", "-safe", "0", "-i", "frames.concat",
         "-vf", `fps=${opts.fps},${scale}`,
         "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT,
-        abspath(framesDir, targets.webm),
+        outPath(targets.webm),
       ],
       framesDir,
     );
@@ -80,7 +80,7 @@ export async function encode(
   }
 
   if (targets.gif) {
-    await ensureDir(targets.gif);
+    await ensureOutDir(targets.gif);
     // Two-pass palette for a clean GIF, tuned by the resolved output preset.
     const gifScale = scaleFilter(opts.gif.maxWidth);
     const palette = join(framesDir, "palette.png");
@@ -100,7 +100,7 @@ export async function encode(
         "-i", "palette.png",
         "-lavfi",
         `fps=${opts.gif.fps},${gifScale}:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
-        abspath(framesDir, targets.gif),
+        outPath(targets.gif),
       ],
       framesDir,
     );
@@ -205,12 +205,24 @@ function scaleFilter(maxWidth?: number): string {
   return `scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 }
 
-function abspath(cwd: string, p: string): string {
-  return p.startsWith("/") ? p : join(process.cwd(), p);
+/**
+ * Where ffmpeg should write a deliverable.
+ *
+ * Every ffmpeg invocation on this path runs with its cwd set to the temp frames
+ * directory, so a relative target would land among the frames and vanish with
+ * them; it is resolved against the directory reel was invoked from instead.
+ *
+ * The absolute test is `isAbsolute`, not a leading slash. `C:\demos\out.mp4`
+ * has no leading slash and is absolute all the same, so joining it to the cwd
+ * produced `C:\repo\C:\demos\out.mp4` — a path Windows cannot create, failing
+ * an entire render at the last step with an ENOENT naming a directory the
+ * author never typed.
+ */
+export function outPath(p: string): string {
+  return isAbsolute(p) ? p : resolve(process.cwd(), p);
 }
 
-async function ensureDir(file: string): Promise<void> {
-  await mkdir(dirname(file.startsWith("/") ? file : join(process.cwd(), file)), {
-    recursive: true,
-  });
+/** Create the directory a deliverable is about to be written into. */
+export async function ensureOutDir(file: string): Promise<void> {
+  await mkdir(dirname(outPath(file)), { recursive: true });
 }
