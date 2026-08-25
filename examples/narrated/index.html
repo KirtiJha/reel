@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Ledger</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 0; background: #0f1720; color: #e8eef5; }
+  header { padding: 22px 28px; border-bottom: 1px solid #22303d; }
+  h1 { margin: 0; font-size: 20px; }
+  main { padding: 28px; }
+  .row { display: flex; justify-content: space-between; padding: 14px 16px;
+         border: 1px solid #22303d; border-radius: 10px; margin-bottom: 10px; background: #141e28; }
+  .amt { font-variant-numeric: tabular-nums; color: #7cf3c4; }
+  button { margin-top: 8px; padding: 10px 16px; border-radius: 8px; border: 0;
+           background: #2f81f7; color: #fff; font-size: 15px; cursor: pointer; }
+</style>
+<header><h1>Ledger</h1></header>
+<main>
+  <div id="list">
+    <div class="row"><span>Rent</span><span class="amt">₹18,000</span></div>
+    <div class="row"><span>Groceries</span><span class="amt">₹4,250</span></div>
+  </div>
+  <button id="add">Add entry</button>
+</main>
+<script>
+  document.getElementById("add").onclick = () => {
+    const d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = '<span>Electricity</span><span class="amt">₹1,980</span>';
+    document.getElementById("list").appendChild(d);
+  };
+</script>

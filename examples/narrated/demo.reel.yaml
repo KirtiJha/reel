@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# A narrated demo — the audio feature, end to end.
+#
+# Before recording:
+#   node bed.mjs                       # synthesize the music bed
+#   export REEL_VOICE_API_KEY=...      # ElevenLabs or OpenAI
+#   npx reel record examples/narrated/demo.reel.yaml
+#
+# Every spoken line is cached under .reel-cache/voice by a hash of its text and
+# voice settings. Commit that directory and the demo renders the same bytes on
+# any machine, and in CI, with no key present — which is the point: a TTS
+# endpoint returns slightly different audio each time it is asked, so nothing
+# here is ever spoken twice.
+name: Ledger — a demo that talks
+url: http://localhost:4713
+viewport: { width: 900, height: 600, scale: 2 }
+theme: dark
+
+run:
+  cmd: node server.mjs
+  cwd: .
+  readyOn: http://localhost:4713
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-08-24T06:30:00Z"
+
+polish:
+  captions: true
+  cursor: smooth
+  zoom: auto
+
+audio:
+  voice:
+    provider: elevenlabs
+  # Captions are written for the eye and are short; spoken aloud they run
+  # longer, so the picture waits for the voice rather than racing it.
+  fit: stretch
+  breathMs: 320
+  sfx: subtle
+  music:
+    file: bed.mp3
+    gain: -20
+    # Honoured exactly: the envelope is built from the narration timings, not
+    # from a compressor listening to the voice.
+    duck: -14
+    fadeIn: 900
+    fadeOut: 1800
+
+steps:
+  # `say` is separate from `text` on purpose. A caption is read; narration is
+  # heard. The same words rarely serve both.
+  - caption:
+      text: "A demo that is written down"
+      say: "This whole demo is a file in the repository. Nobody recorded a screen, and nobody edited a video."
+      sayIn:
+        es: "Toda esta demostración es un archivo del repositorio. Nadie grabó una pantalla y nadie editó un vídeo."
+      ms: 1600
+  - beat: open
+
+  - caption:
+      text: "Two entries so far"
+      say: "The ledger opens with two entries already recorded."
+      sayIn:
+        es: "El libro se abre con dos asientos ya registrados."
+      ms: 1400
+
+  - click: "#add"
+  - caption:
+      text: "A third lands"
+      say: "Adding a third entry updates the list straight away — and the narration you are hearing was written beside the step that does it."
+      sayIn:
+        es: "Al añadir un tercer asiento la lista se actualiza al instante, y la narración que escuchas se escribió junto al paso que lo hace."
+      ms: 1600
+  - beat: added
+
+  - caption:
+      text: "Same bytes, every time"
+      say: "Render it again tomorrow and you get the same video, down to the byte."
+      sayIn:
+        es: "Vuelve a renderizarlo mañana y obtendrás el mismo vídeo, hasta el último byte."
+      ms: 1600
+  - beat: close
+
+output:
+  preset: hq
+  mp4: out/narrated.mp4
+  subtitles: true
+  audio: true
+  audioTrack: out/narration.m4a
+  # One recording, a voice per language. No second drive: the frames are the
+  # same frames, re-fitted to however long the Spanish takes to say.
+  languages: [es]
