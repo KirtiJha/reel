@@ -162,87 +162,133 @@ auto-direction can be specific enough to be useful.
 
 ---
 
-# Part 3 — Studio as the place you build a demo
+# Part 3 — Two surfaces, one spec
 
-Today Studio edits a spec's *options*. It should become where the demo is
-authored — the equivalent of an invideo timeline, with the spec underneath
-rather than a proprietary project file.
+Everything above is a change to the *file*. That is deliberate, and it is the
+part of Reel that must not move: a demo is a text file in a repository, it
+diffs in a pull request, and CI can run it. The CLI is how that file is worked
+on, and it stays the complete interface — nothing below is reachable only by
+clicking.
 
-The rule that keeps this honest: **every action writes YAML.** The spec stays
-the source of truth, so a demo built entirely in the UI still diffs in a pull
-request, still runs in CI, still renders the same bytes. Nothing becomes
-editable only through the UI.
+So the shape is not "Studio becomes the editor". It is:
 
-## 3.1 The beat strip
+**Every capability is a command. Studio is a view onto the same commands.**
 
-The main surface. Not a frame-accurate timeline — Reel's unit is the beat, and
-pretending otherwise would invent precision the model does not have.
+Which means each new affordance is designed as a CLI verb first, and the UI is
+built on top of that verb rather than beside it. Two consequences worth stating,
+because they are what keeps this honest: a demo can be authored start to finish
+without ever opening Studio, and anything Studio can do can be scripted, put in
+a Makefile, or run in CI.
+
+| Capability | Command | Studio view |
+|---|---|---|
+| Propose camera + annotation | `reel direct <spec>` | Diff, accept per item |
+| Draft narration | `reel narrate --draft <spec>` | Script panel, editable in place |
+| Hear one line | `reel say "<text>"` | ▶ beside the line |
+| Render one beat | `reel record --only <beat>` | Live preview while editing |
+| Cheap whole-film render | `reel record --draft` | Preview button |
+| Structure preview | `reel record --html` (exists) | Embedded click-through |
+| Pick an element by clicking | `reel capture` (exists) | Click the thumbnail |
+| Add an asset | copy the file / `reel assets add <url>` | Drag-and-drop |
+
+The last two are the interesting ones. Choosing a selector by pointing at it is
+not a UI-only idea — `reel capture` already does exactly that, by driving a real
+browser and letting you click. What it lacks is the vocabulary added in Part 1:
+it can write a `click`, but not a `highlight`, an `image` or a `say`. Teaching
+`capture` the new step kinds is what keeps the two surfaces equal, and it is the
+gap I flagged when the audio work landed.
+
+## 3.1 Where each surface is actually better
+
+Not everything should be done in both, and pretending otherwise produces a
+worse version of each. Where they genuinely differ:
+
+**The CLI is better for** CI and batch, scripting a re-render across many specs,
+working beside the spec in your own editor, and anything that has to be
+reproducible without a person present. It is also the only one that works over
+SSH, which is where a lot of this runs.
+
+**Studio is better for** the parts that are irreducibly visual or aural: seeing
+the beats laid out in order, hearing whether a sentence lands, pointing at an
+element instead of writing a selector, and judging whether a film flows — which
+is a question no log output can answer.
+
+**Both, equally**: editing narration, setting camera direction, adding
+annotations. These are the ones to hold to the rule strictly, because they are
+where a UI-only affordance would be most tempting and most damaging.
+
+## 3.2 The beat strip
+
+The main Studio surface. Not a frame-accurate timeline — Reel's unit is the
+beat, and pretending otherwise would invent precision the model does not have.
 
 Each beat shows its storyboard thumbnail, its narration, its duration, and small
-marks for the direction on it — camera, annotations, media. Drag to reorder,
-click to inspect.
+marks for the direction on it. Drag to reorder, click to inspect. Reordering
+writes the steps in the spec; the file is what changed.
 
-## 3.2 The script panel
+## 3.3 The script panel
 
-Narration as a document, read top to bottom — the thing you actually edit
-when a demo does not flow.
+Narration as a document, read top to bottom — the thing you actually edit when a
+demo does not flow.
 
 - Every `say:` line, in order, beside the beat it belongs to.
-- **Generate a draft**: an LLM reads the steps and beats and proposes a line per
-  beat. Reviewed in place, never auto-applied. This is `reel author`'s sibling —
-  it writes prose, not selectors, which is the safer half of the problem.
-- **Speak this line** — synthesize one line and play it, without a render. The
-  cache makes this nearly free and it is the fastest way to hear whether a
-  sentence lands.
-- Per-line duration once synthesized, so an over-long line is visible as a
-  number rather than discovered in the finished film.
-- A word-count and estimated-runtime header. Ten minutes of narration is about
-  1,400 words; knowing that while writing prevents the film the tour became.
+- **Draft** calls `reel narrate --draft`, which proposes a line per beat from
+  the steps and beats. Reviewed in place, never auto-applied. It writes prose,
+  not selectors, which is the safer half of what `reel author` does.
+- **Speak this line** calls `reel say`, synthesizing one line and playing it
+  without a render. The cache makes it nearly free.
+- Per-line duration once synthesized, so an over-long line is a number rather
+  than something discovered in the finished film.
+- Word count and estimated runtime. Ten minutes of narration is about 1,400
+  words; knowing that while writing prevents the film the tour became.
 
-## 3.3 The direction inspector
+## 3.4 The direction inspector
 
 Selected beat, right-hand panel: camera (auto / hold / drift / zoom to
-selector), annotations (add a highlight, pick shape and style, choose the
-element by clicking the preview), media (drop an image, choose full/inset),
-transition.
+selector), annotations (shape, style, target), media, transition. Every control
+writes the same YAML you would have typed.
 
-Picking an element by clicking a thumbnail — rather than typing a selector —
-is the single biggest usability win available, and Reel already records every
-element's box.
+Choosing the element by clicking the preview is the biggest usability win
+available, and Reel already records every element's box — but the same choice is
+available from `reel capture`, and both write the same selector.
 
-## 3.4 The media library
+## 3.5 The media library
 
-Drag a file in; it lands in the spec's directory and is referenced by path. Paste
-a URL and Studio downloads it *now*, into that same directory, so the render
-stays local. A mermaid editor for diagrams.
+Drag a file in; it lands in the spec's directory and is referenced by path.
+Paste a URL and Studio downloads it *now*, into that same directory, committed
+like any other input — so the render still only ever reads local files. A
+mermaid editor for diagrams, writing a fenced block into the spec.
 
-## 3.5 Preview that is fast enough to iterate
+## 3.6 Preview that is fast enough to iterate
 
-The blocker for all of the above. A ten-minute render is minutes; nobody edits
-against that.
+The blocker for the UI, and useful on its own at the command line. A ten-minute
+render is minutes; nobody edits against that.
 
-Three tiers, cheapest first:
+Three tiers, cheapest first — each a CLI flag before it is a button:
 
-1. **The interactive build.** Reel already produces a self-contained
-   click-through of scenes. It needs no video encode and is nearly instant — the
-   right live preview for structure, order and script.
-2. **Per-beat render.** Re-render one beat against cached frames. Seconds, and
-   the natural loop when tuning a single annotation.
-3. **Draft render.** `preset: draft` — small, low frame rate, video only, cached
-   audio only. For seeing the whole film before committing to a full one.
+1. **The interactive build** (`--html`, already exists). A self-contained
+   click-through of scenes, no video encode, nearly instant. The right preview
+   for structure, order and script.
+2. **Per-beat render** (`--only <beat>`). Seconds, against cached frames. The
+   natural loop when tuning one annotation.
+3. **Draft render** (`--draft`). Small, low frame rate, video only, cached audio
+   only. For seeing the whole film before committing to a full one.
 
-Without tier 1 and 2, the UI is a form over a batch job. With them, it is an
-editor.
+Tiers 2 and 3 are worth having even for someone who never opens Studio: they are
+the difference between iterating on a demo and batch-rendering one.
 
 ---
 
 # Part 4 — What must not change
 
-- **The spec is the source of truth.** Everything the UI does is a YAML edit.
+- **The spec is the source of truth.** Every action in either surface is a YAML
+  edit. A demo built entirely in the UI still diffs in a pull request.
+- **The CLI stays complete.** Nothing is reachable only by clicking. If a
+  feature cannot be expressed as a command, it is the wrong feature.
 - **Renders stay byte-identical.** Nothing added here may fetch at render time
   or introduce unseeded randomness. Idle motion, annotations and transitions are
-  all pure functions of the spec and the frames.
-- **Nothing is applied silently.** `direct` and generated narration propose; a
+  pure functions of the spec and the frames.
+- **Nothing is applied silently.** `direct` and drafted narration propose; a
   person accepts. The tool's whole claim is that a demo is reviewable.
 
 ---
@@ -253,11 +299,15 @@ editor.
    with no re-authoring.
 2. **`highlight`**, alongside `callout`.
 3. **`image`**, plus mermaid diagrams.
-4. **Studio: beat strip, script panel, direction inspector** — on the fast
-   preview tiers, which have to come first or the UI is unusable.
-5. **`reel direct`.** Wants the primitives to exist before it can place them.
-6. **Re-cut the tour** using all of it, and compare against the numbers at the
+4. **Preview tiers** — `--only` and `--draft`. Command-line flags first; they
+   pay for themselves at the terminal before any UI depends on them.
+5. **`reel narrate --draft` and `reel say`**, then **`reel capture` learning the
+   new step kinds** — so the CLI can author everything Part 1 added.
+6. **`reel direct`.** Wants the primitives to exist before it can place them.
+7. **Studio: beat strip, script panel, direction inspector** — views onto the
+   commands from 4-6, which is why they come after rather than before.
+8. **Re-cut the tour** using all of it, and compare against the numbers at the
    top of this document. One visual change every 6.2 seconds is the bar to beat.
 
-Step 6 is the honest test. The measurements are the acceptance criteria: if the
+Step 8 is the honest test. The measurements are the acceptance criteria: if the
 re-cut still has a fifty-second static frame, none of this worked.
