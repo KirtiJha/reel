@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=../schema/reel.schema.json
+#
+# Everything the direction work added, in about a minute.
+#
+# Deliberately small and local: it drives the bundled TaskFlow example rather
+# than Aangan, so it needs no session, no network and no export — open it in
+# Studio and press Record.
+#
+# What it exercises, and where to look for each:
+#
+#   fit: flow          the voice runs while the app keeps working, instead of
+#                      freezing the picture until the sentence ends
+#   idleMotion         the camera drifts through the stretch that is narrated
+#                      over a settled screen
+#   highlight          a box that marks the input, and one that stays up across
+#                      several steps via `until:`
+#   image              a picture composited over the app, in a corner
+#   diagram            mermaid source in the spec, rendered and cached
+#   transition         a dip to colour between two parts of the demo
+#   fadeIn / fadeOut   the film ramps up and down at its ends
+name: What's new — direction
+url: http://localhost:4321
+
+# The example app, booted for the recording and stopped afterwards.
+run:
+  cmd: node server.mjs
+  cwd: ../examples/taskflow
+  readyOn: http://localhost:4321
+
+viewport: { width: 1000, height: 720, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  zoom: auto
+  # `auto` follows the camera, and the camera is on — so idle stretches drift
+  # without anyone asking for it. The tour's terminal chapters have to opt in
+  # with `drift` because they set `zoom: false`.
+  idleMotion: auto
+  cursor: smooth
+  captions: true
+  frame: browser
+  background: "linear-gradient(135deg, #2b3a67, #1a1f36)"
+  # Each end of the film ramps, so this concatenates into a longer cut without
+  # a hard cut at either edge.
+  fadeIn: 700
+  fadeOut: 1200
+
+audio:
+  voice:
+    provider: openai
+    id: onyx
+    style: >-
+      Calm, confident technical explainer. Unhurried and warm, never salesy.
+  # The setting this whole exercise is about: a line plays over whatever
+  # happens next, and the timeline only stretches where two lines would
+  # collide.
+  fit: flow
+  breathMs: 320
+  sfx: subtle
+
+steps:
+  - card:
+      title: What's new
+      subtitle: Direction — the picture keeps moving
+      ms: 1800
+      say: >-
+        Here is everything the direction work added, on a demo small enough to
+        render while you watch.
+
+  - beat: hero
+
+  # A mark that does not interrupt: the app is untouched, the camera does not
+  # move, and the demo carries on underneath it.
+  - highlight:
+      selector: "#task-input"
+      shape: box
+      style: drawn
+      label: type here
+      ms: 2200
+  - say:
+      ms: 900
+      text: >-
+        A highlight marks an element without dimming the screen or stopping the
+        film, which is what a demo narrated over a working app needs.
+
+  - type: { selector: "#task-input", text: "Ship the direction work" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the direction work
+
+  # `until:` is what makes an annotation outlive the step that drew it — this
+  # one stays up while two more steps run.
+  - highlight:
+      selector: "text=Ship the direction work"
+      shape: underline
+      style: drawn
+      until: sorted
+  - type: { selector: "#task-input", text: "Then re-cut the tour" }
+  - click: role=button[name=Add]
+  - beat: sorted
+  - say:
+      ms: 900
+      text: >-
+        That underline stayed up across three steps, because a highlight is a
+        span rather than a hold.
+
+  # Narrated over a screen that has settled: with `flow` the voice runs on, and
+  # idle motion keeps the camera alive rather than holding a still.
+  - say:
+      ms: 2600
+      text: >-
+        Nothing is happening on screen right now, and the camera is drifting
+        anyway. Under the old fitting mode this sentence would have frozen the
+        picture until it finished.
+
+  - transition: { kind: fade, ms: 500 }
+
+  # A picture the app cannot show, composited in a corner with the app behind.
+  #
+  # `ms` covers the line spoken over it — 8.4s, per `reel narrate`. Under
+  # `stretch` this could not be got wrong, because the picture waited for the
+  # voice; under `flow` it does not, so a short `ms` leaves the narrator
+  # describing something that left the screen. The rule only bites on steps
+  # that carry both a duration and a `say:` — `image`, `diagram` and `card`.
+  - image:
+      file: assets/whats-new.png
+      as: inset
+      corner: br
+      alt: The three deliverables one recording produces
+      ms: 8600
+      say: >-
+        An image step brings in what the app cannot show, from a file beside
+        the spec — never fetched while rendering.
+
+  # The same step with the picture written as text: diffable, deterministic,
+  # and cached by content hash so it is drawn once.
+  - diagram:
+      mermaid: |
+        flowchart LR
+          S[spec.reel.yaml] --> R[reel record]
+          R --> V[mp4]
+          R --> G[gif]
+          R --> H[click-through]
+      as: full
+      # Same rule: the diagram's line runs 9.2s.
+      ms: 9400
+      alt: A spec feeding one record command, which produces three deliverables
+      say: >-
+        And a diagram is mermaid source in the spec itself, rendered at build
+        time and cached, so there is no binary to maintain.
+
+  - beat: outro
+
+output:
+  preset: share
+  mp4: out/whats-new.mp4
+  gif: out/whats-new.gif
+  html: out/whats-new.html
