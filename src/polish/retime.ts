@@ -179,6 +179,69 @@ export function buildAudioRetime(
 }
 
 /**
+ * Make room for narration without stopping the demo.
+ *
+ * The companion to `buildAudioRetime`, and the one a product tour wants.
+ * Stretching grows the hold a line sits on until the sentence finishes, which
+ * never cuts narration off and never lets the picture move either: a long line
+ * freezes the frame for as long as it takes to say. Measured on Reel's own
+ * ten-minute tour, that produced three separate stretches where a single still
+ * image held for the better part of a minute under a voiceover.
+ *
+ * Flow inverts the relationship. The demo runs at the pace it was authored, a
+ * line is placed at its cue and plays over whatever happens next, and time is
+ * inserted *only* where a line would collide with the one after it or run past
+ * the end. What was a fifty-second freeze becomes fifty seconds of a product
+ * doing things with someone talking over it, which is what a demo is.
+ *
+ * Frame times are not needed: the only positions that can move are the line
+ * boundaries, so this is a step function with at most one insertion per line.
+ */
+export function buildFlowRetime(
+  lines: SpokenSpan[],
+  endMs: number,
+  opts: { breathMs?: number } = {},
+): Retimed {
+  const identity: Retimed = { map: (t) => t, endMs, changed: false };
+  const spoken = lines
+    .filter((l) => Number.isFinite(l.t) && l.durationMs > 0)
+    .sort((a, b) => a.t - b.t);
+  if (spoken.length === 0) return identity;
+
+  const breath = Math.max(0, opts.breathMs ?? 0);
+
+  // Where time has to be inserted, and how much. Each deficit is measured
+  // against the *original* spacing, which is correct because a line and the one
+  // after it both shift by everything inserted before them — so the gap between
+  // them changes only by what is inserted between them.
+  const inserts: { at: number; add: number }[] = [];
+  for (const [i, line] of spoken.entries()) {
+    const start = Math.max(0, line.t);
+    const last = i === spoken.length - 1;
+    const nextAt = last ? endMs : Math.max(0, spoken[i + 1]!.t);
+    // No breath after the final line: what follows is the end of the demo, and
+    // the encoder already holds the last frame.
+    const needed = line.durationMs + (last ? 0 : breath);
+    const deficit = needed - (nextAt - start);
+    if (deficit > 0.5) inserts.push({ at: nextAt, add: deficit });
+  }
+  if (inserts.length === 0) return identity;
+
+  const total = inserts.reduce((n, i) => n + i.add, 0);
+  // `at <= t` rather than `<`: the insertion belongs to the silence *before*
+  // the next line, so the line itself starts after it and the frame that holds
+  // is the one already on screen.
+  const shift = (t: number): number =>
+    inserts.reduce((n, i) => (i.at <= t ? n + i.add : n), 0);
+
+  return {
+    endMs: Math.round(endMs + total),
+    changed: true,
+    map: (t) => Math.round(t + shift(t)),
+  };
+}
+
+/**
  * Parse an authored duration: a number of ms, or a string like "30s", "1500ms",
  * "1.5s". Returns undefined for anything unparseable.
  */

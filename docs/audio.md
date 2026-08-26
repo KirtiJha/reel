@@ -181,9 +181,9 @@ Modes:
 
 | `fit` | Behaviour | When |
 |---|---|---|
-| `stretch` | Extend holds so each line fits. Video gets longer. | Default. Preserves delivery. |
-| `speed` | Ask the provider for a faster read to fit the authored `ms`. | Fixed-length cuts (a 30s social spot). Rushed past ~1.15×. |
-| `none` | Leave the timeline alone; warn on any overrun. | Narration authored against known holds. |
+| `flow` | The demo keeps its own pace; a line plays over what happens next. Time is inserted only where a line would collide with the next or run past the end. | Default. What a product tour wants. |
+| `stretch` | Extend the hold until the line finishes. The picture waits. | A title card read aloud. Freezes the frame for the length of the sentence, so not for anything with something to show. |
+| `none` | Leave the timeline alone; warn on any overrun. | Narration written against known holds. |
 
 Only stretching is safe to do blind. `speed` should refuse to exceed a ceiling
 and warn rather than quietly produce something unlistenable.

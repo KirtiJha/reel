@@ -19,6 +19,7 @@ import {
   DEFAULT_ZOOM,
   type ZoomKey,
   type ZoomConfig,
+  withIdleMotion,
 } from "./zoom.js";
 import { computeFrameLayout, framingEnabled, type FrameLayout } from "./frame.js";
 import {
@@ -92,7 +93,18 @@ export async function renderWithZoom(
   const outH = even(Math.round((outW * fullH) / fullW));
 
   const cfg: ZoomConfig = { viewport: { w: zoom.viewport.width, h: zoom.viewport.height }, ...DEFAULT_ZOOM };
-  const resolved = resolveTimeline(zoom.timeline, cfg);
+  // Drift through stretches where nothing changes. Applied to the resolved
+  // rects rather than the keyframes, because what should drift is the shot the
+  // camera actually settled on, not the element box it was derived from.
+  const resolved =
+    zoom.polish.idleMotion === "drift"
+      ? withIdleMotion(
+          resolveTimeline(zoom.timeline, cfg),
+          frames.map((f) => f.t),
+          opts.endMs ?? frames[frames.length - 1]?.t ?? 0,
+          { afterMs: zoom.polish.idleMotionAfter, scale: zoom.polish.idleMotionScale },
+        )
+      : resolveTimeline(zoom.timeline, cfg);
 
   // Presentation layer (device frame / padding / background). Static per run, so
   // build the decoration and corner mask once and reuse them for every frame.

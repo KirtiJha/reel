@@ -99,7 +99,7 @@ export function fullRect(cfg: ZoomConfig): Rect {
   return { x: 0, y: 0, w: cfg.viewport.w, h: cfg.viewport.h };
 }
 
-interface Resolved {
+export interface Resolved {
   t: number;
   rect: Rect;
   /** Camera move duration into this keyframe (ms). */
@@ -154,4 +154,76 @@ function clamp(v: number, lo: number, hi: number): number {
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+/**
+ * Drift the camera where the picture would otherwise be frozen.
+ *
+ * A demo that narrates over a settled screen has nothing moving in it: the
+ * capture emits frames only on visual change, so a stretch with no change is a
+ * single still image held for however long the voice takes. On Reel's own tour
+ * that reached fifty-eight seconds.
+ *
+ * A slow push-in fixes it for almost nothing. Frames are already on disk and
+ * the camera is already interpolated per output frame, so this is one more
+ * keyframe rather than a new render path — and being a pure function of the
+ * frame times, it cannot make two renders of one spec differ.
+ *
+ * Only genuinely idle stretches qualify. A stretch containing a real keyframe
+ * is already moving, and drifting through it would fight the direction the
+ * author asked for.
+ */
+export function withIdleMotion(
+  resolved: Resolved[],
+  frameTimes: number[],
+  endMs: number,
+  opts: { afterMs: number; scale: number },
+): Resolved[] {
+  const afterMs = Math.max(0, opts.afterMs);
+  // Below 1 the crop shrinks, which reads as pushing in. At or above 1 there is
+  // nothing to do, and a negative would invert the frame.
+  if (!(opts.scale > 0 && opts.scale < 1)) return resolved;
+
+  const marks = [...new Set(frameTimes.filter((t) => Number.isFinite(t) && t >= 0))].sort(
+    (a, b) => a - b,
+  );
+  if (marks.length === 0) return resolved;
+  if (marks[marks.length - 1]! < endMs) marks.push(endMs);
+
+  const added: Resolved[] = [];
+  for (let i = 1; i < marks.length; i++) {
+    const from = marks[i - 1]!;
+    const to = marks[i]!;
+    const idle = to - from;
+    if (idle <= afterMs) continue;
+
+    const start = from + afterMs;
+    // A stretch the author already directed is not idle.
+    if (resolved.some((r) => r.t > from && r.t < to)) continue;
+
+    // Whatever the camera has settled on by then is what drifts.
+    let held: Resolved | undefined;
+    for (const r of resolved) {
+      if (r.t <= start) held = r;
+      else break;
+    }
+    if (!held) continue;
+
+    added.push({
+      t: Math.round(start),
+      rect: shrink(held.rect, opts.scale),
+      // Eased across the whole remaining silence, so it reads as a drift rather
+      // than a move that arrives and then sits still again.
+      ms: Math.round(to - start),
+    });
+  }
+  if (added.length === 0) return resolved;
+  return [...resolved, ...added].sort((a, b) => a.t - b.t);
+}
+
+/** Scale a crop about its centre — smaller rect, closer camera. */
+function shrink(r: Rect, scale: number): Rect {
+  const w = r.w * scale;
+  const h = r.h * scale;
+  return { x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h };
 }

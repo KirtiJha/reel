@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildAudioRetime } from "../src/polish/retime.js";
+import { buildAudioRetime, buildFlowRetime } from "../src/polish/retime.js";
 import {
   voiceKey,
   resolveVoice,
@@ -10,6 +10,7 @@ import {
 } from "../src/narrate/voice.js";
 import { audioEnabled, localizeCues } from "../src/narrate/audio.js";
 import { duckEnvelope } from "../src/encode/audio.js";
+import { withIdleMotion } from "../src/polish/zoom.js";
 import { placeHits, renderSfx, synthesize, toWav, SFX_SAMPLE_RATE } from "../src/encode/sfx.js";
 import { audioSchema, specSchema } from "../src/spec/schema.js";
 import { applyPatch } from "../src/ui/server.js";
@@ -242,9 +243,11 @@ describe("the audio grammar", () => {
     assert.throws(() => specSchema.parse({ ...minimal, steps: [{ caption: { text: "x", say: "" } }] }));
   });
 
-  test("defaults: stretch to fit, with a breath", () => {
+  test("defaults: flow, with a breath", () => {
     const a = audioSchema.parse({});
-    assert.equal(a.fit, "stretch");
+    // Flow rather than stretch: stretching freezes the picture for as long as
+    // a line takes to say, which is what made the tour unwatchable.
+    assert.equal(a.fit, "flow");
     assert.ok(a.breathMs > 0);
     assert.equal(a.voice.provider, "openai");
     assert.equal(a.voice.speed, 1);
@@ -626,4 +629,119 @@ describe("what the Studio is told about audio", () => {
     assert.equal(s.options.audio.sfx, "none");
     assert.equal(s.options.audio.fit, "stretch");
   });
+});
+
+/* --------------------------- Flow, and drifting -------------------------- */
+
+describe("buildFlowRetime", () => {
+  test("does nothing when every line fits the gap it was given", () => {
+    const r = buildFlowRetime([{ t: 0, durationMs: 800 }, { t: 2000, durationMs: 900 }], 4000, {
+      breathMs: 200,
+    });
+    assert.equal(r.changed, false);
+    assert.equal(r.endMs, 4000);
+  });
+
+  test("inserts only the overflow, not the whole line", () => {
+    // 3000ms of speech in a 2000ms gap needs 1000 more — and stretch would have
+    // held the frame for the full 3000. That difference is the whole point.
+    const r = buildFlowRetime([{ t: 0, durationMs: 3000 }, { t: 2000, durationMs: 500 }], 5000, {
+      breathMs: 0,
+    });
+    assert.equal(r.changed, true);
+    assert.equal(r.endMs, 6000);
+    assert.equal(r.map(2000), 3000, "the next line starts once the first has finished");
+  });
+
+  test("leaves everything before the overflow exactly where it was", () => {
+    const r = buildFlowRetime([{ t: 1000, durationMs: 3000 }], 5000, { breathMs: 0 });
+    // The picture up to the deficit is untouched: it keeps its own pace.
+    for (const t of [0, 250, 500, 999]) assert.equal(r.map(t), t);
+  });
+
+  test("counts the breath between lines but not after the last", () => {
+    const withNext = buildFlowRetime([{ t: 0, durationMs: 1000 }, { t: 1000, durationMs: 100 }], 5000, {
+      breathMs: 300,
+    });
+    assert.equal(withNext.map(1000), 1300, "300ms of silence before the next line");
+    const alone = buildFlowRetime([{ t: 0, durationMs: 1000 }], 1000, { breathMs: 300 });
+    assert.equal(alone.endMs, 1000, "no breath owed after the final line");
+  });
+
+  test("extends the end for a line that would run past it", () => {
+    const r = buildFlowRetime([{ t: 4000, durationMs: 2000 }], 5000, { breathMs: 0 });
+    assert.equal(r.endMs, 6000);
+  });
+
+  test("is monotonic", () => {
+    const r = buildFlowRetime(
+      [{ t: 0, durationMs: 2500 }, { t: 1000, durationMs: 2500 }, { t: 3000, durationMs: 900 }],
+      5000,
+      { breathMs: 200 },
+    );
+    let prev = -1;
+    for (let t = 0; t <= 5000; t += 25) {
+      const v = r.map(t);
+      assert.ok(v >= prev, `map(${t}) = ${v} went backwards from ${prev}`);
+      prev = v;
+    }
+  });
+
+  test("flow never stretches more than stretch would", () => {
+    const lines = [{ t: 0, durationMs: 4000 }, { t: 1000, durationMs: 4000 }];
+    const flow = buildFlowRetime(lines, 6000, { breathMs: 200 });
+    const stretch = buildAudioRetime([0, 1000, 2000, 3000, 6000], lines, 6000, { breathMs: 200 });
+    assert.ok(
+      flow.endMs <= stretch.endMs,
+      `flow ${flow.endMs} should not exceed stretch ${stretch.endMs}`,
+    );
+  });
+});
+
+describe("withIdleMotion", () => {
+  const cfg = { viewport: { w: 1000, h: 500 }, padding: 3.2, minCropFraction: 0.62, transitionMs: 480 };
+  const full = { t: 0, rect: { x: 0, y: 0, w: 1000, h: 500 } };
+
+  test("drifts through a long static stretch", () => {
+    const out = withIdleMotion([full], [0, 12000], 12000, { afterMs: 1800, scale: 0.94 });
+    assert.equal(out.length, 2);
+    const drift = out[1]!;
+    assert.equal(drift.t, 1800, "starts once the stretch has proved itself idle");
+    assert.ok(drift.rect.w < 1000, "the crop shrinks, which reads as pushing in");
+    assert.equal(drift.ms, 10200, "eased across the whole remaining silence");
+  });
+
+  test("leaves a stretch alone if it is shorter than the threshold", () => {
+    const out = withIdleMotion([full], [0, 1000, 2000], 2000, { afterMs: 1800, scale: 0.94 });
+    assert.deepEqual(out, [full]);
+  });
+
+  test("keeps the drift centred on what the camera was showing", () => {
+    const out = withIdleMotion([full], [0, 9000], 9000, { afterMs: 1000, scale: 0.9 });
+    const r = out[1]!.rect;
+    assert.equal(r.x + r.w / 2, 500);
+    assert.equal(r.y + r.h / 2, 250);
+  });
+
+  test("does not drift through a stretch the author already directed", () => {
+    // A keyframe inside the window means the camera is already moving; adding a
+    // drift would fight the direction that was asked for.
+    const directed = [full, { t: 4000, rect: { x: 100, y: 100, w: 400, h: 200 } }];
+    const out = withIdleMotion(directed, [0, 9000], 9000, { afterMs: 1000, scale: 0.9 });
+    assert.deepEqual(out, directed);
+  });
+
+  test("is off for a scale that would do nothing or invert the frame", () => {
+    for (const scale of [1, 1.2, 0, -0.5]) {
+      assert.deepEqual(withIdleMotion([full], [0, 9000], 9000, { afterMs: 1000, scale }), [full]);
+    }
+  });
+
+  test("stays sorted, so sampling still walks forward", () => {
+    const keys = [full, { t: 20000, rect: { x: 0, y: 0, w: 200, h: 100 } }];
+    const out = withIdleMotion(keys, [0, 9000, 20000, 34000], 34000, { afterMs: 1200, scale: 0.94 });
+    for (let i = 1; i < out.length; i++) assert.ok(out[i]!.t >= out[i - 1]!.t);
+  });
+
+  void cfg;
 });

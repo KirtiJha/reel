@@ -34,7 +34,7 @@ import { langName } from "../narrate/translate.js";
 import type { SpokenCue, SpokenLine } from "../narrate/voice.js";
 import { renderSfx, toWav, type SfxCue } from "../encode/sfx.js";
 import { mixNarration, muxAudio } from "../encode/audio.js";
-import { buildAudioRetime, buildRetime, parseDuration } from "../polish/retime.js";
+import { buildAudioRetime, buildFlowRetime, buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
@@ -347,7 +347,24 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       const plan = await planAudio(say, audio.voice, loaded.dir);
       spoken = plan.lines;
 
-      if (audio.fit === "stretch") {
+      if (audio.fit === "flow") {
+        // Flow inserts time only where a line would collide with the next or
+        // run past the end, so the picture keeps its own pace underneath.
+        const fit = buildFlowRetime(spoken, durationMs, { breathMs: audio.breathMs });
+        if (fit.changed) {
+          for (const f of frames) f.t = fit.map(f.t);
+          for (const c of captions) c.t = fit.map(c.t);
+          for (const z of zoom) z.t = fit.map(z.t);
+          for (const b of beats) b.t = fit.map(b.t);
+          for (const c of sfx) c.t = fit.map(c.t);
+          for (const s of scenes) s.t = fit.map(s.t);
+          for (const l of spoken) l.t = fit.map(l.t);
+          log.step(
+            `Flowing narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
+          );
+          durationMs = fit.endMs;
+        }
+      } else if (audio.fit === "stretch") {
         const fit = buildAudioRetime(frames.map((f) => f.t), spoken, durationMs, {
           breathMs: audio.breathMs,
         });
@@ -559,7 +576,18 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         const lx = preAudio.sfx.map((c) => ({ ...c }));
         let lineage = plan.lines;
         let total = preAudio.durationMs;
-        if (spec.audio!.fit === "stretch") {
+        if (spec.audio!.fit === "flow") {
+          const fit = buildFlowRetime(lineage, total, { breathMs: spec.audio!.breathMs });
+          if (fit.changed) {
+            for (const f of lf) f.t = fit.map(f.t);
+            for (const c of lc) c.t = fit.map(c.t);
+            for (const z of lz) z.t = fit.map(z.t);
+            for (const b of lb) b.t = fit.map(b.t);
+            for (const c of lx) c.t = fit.map(c.t);
+            lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
+            total = fit.endMs;
+          }
+        } else if (spec.audio!.fit === "stretch") {
           const fit = buildAudioRetime(lf.map((f) => f.t), lineage, total, {
             breathMs: spec.audio!.breathMs,
           });

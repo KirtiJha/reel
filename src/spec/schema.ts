@@ -141,6 +141,23 @@ export const polishSchema = z.object({
    * `speed` or `output.targetDuration`, which scale everything proportionally.
    */
   trimIdle: z.number().int().positive().optional(),
+  /**
+   * Drift the camera where nothing on screen is changing.
+   *
+   * The capture emits a frame only when something moves, so a stretch narrated
+   * over a settled screen is one still image held for however long the voice
+   * takes. A slow push-in costs nothing — the frames are already on disk and
+   * the camera is already interpolated — and it is the difference between a
+   * demo and a slideshow.
+   */
+  idleMotion: z.enum(["drift", "none"]).default("drift"),
+  /** How long nothing may change before the camera starts to drift. */
+  idleMotionAfter: z.number().int().positive().default(1800),
+  /**
+   * How far the drift pushes in, as a fraction of the shot. 0.94 is a 6% move
+   * across the whole silence — noticeable as life, not as a zoom.
+   */
+  idleMotionScale: z.number().min(0.8).max(1).default(0.94),
 });
 export type Polish = z.infer<typeof polishSchema>;
 
@@ -185,16 +202,23 @@ export const audioSchema = z.object({
    * What happens when a spoken line runs longer than the hold it was written
    * for — which it usually will, since `ms` was chosen for reading.
    *
-   * `stretch` extends the hold so the line fits, making the video longer and
-   * leaving delivery untouched. `none` leaves the timeline exactly as recorded
-   * and warns about every line that overruns, for demos whose narration was
-   * written against known holds.
+   * `flow` is the default and what a product tour wants: the demo runs at the
+   * pace it was authored, a line plays over whatever happens next, and time is
+   * inserted only where a line would collide with the next or run past the end.
    *
-   * (A third mode — keep the authored length and read faster to fit — is not
+   * `stretch` grows the hold a line sits on until the sentence finishes. It
+   * never cuts narration off and never lets the picture move either — a long
+   * line freezes the frame for as long as it takes to say. Right for a title
+   * card being read aloud; wrong for anything with something to show.
+   *
+   * `none` leaves the timeline exactly as recorded and warns about every line
+   * that overruns, for demos whose narration was written against known holds.
+   *
+   * (A fourth mode — keep the authored length and read faster to fit — is not
    * here yet. It needs re-synthesis at a computed rate, and a half-working
    * version that silently rushed the delivery would be worse than its absence.)
    */
-  fit: z.enum(["stretch", "none"]).default("stretch"),
+  fit: z.enum(["flow", "stretch", "none"]).default("flow"),
   /** Silence between consecutive spoken lines, so delivery has room to breathe. */
   breathMs: z.number().int().nonnegative().default(350),
   /**
