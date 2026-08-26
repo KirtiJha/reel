@@ -5,12 +5,14 @@ import { EmptyState, PageHead, Spinner, Toggle } from "@/components/bits";
 import { LogConsole } from "@/components/LogConsole";
 import { MediaPreview } from "@/components/MediaPreview";
 import { SpecChips, SpecOutline } from "@/components/SpecOutline";
+import { ScriptPanel } from "@/components/ScriptPanel";
 import {
   getJSON,
   postJSON,
   runJob,
   type LogLine,
   type OutlineStep,
+  type Script,
   type SpecSummary,
 } from "@/lib/api";
 
@@ -74,7 +76,8 @@ export default function StudioPage() {
   const editor = useRef<HTMLTextAreaElement>(null);
   /* Output settings live beside the spec rather than below it: stacked, they
      doubled the page height for controls you touch once per demo. */
-  const [tab, setTab] = useState<"yaml" | "steps" | "output">("yaml");
+  const [tab, setTab] = useState<"yaml" | "steps" | "script" | "output">("yaml");
+  const [script, setScript] = useState<Script | null>(null);
 
   /** Fill the form from what the spec says, so applying can't clobber it. */
   const hydrate = useCallback((s: SpecSummary | null) => {
@@ -118,6 +121,10 @@ export default function StudioPage() {
       ).catch(() => ({ raw: "", summary: undefined }));
       setRaw(r.raw ?? "");
       hydrate(r.summary ?? null);
+      // Read from the same spec, and cheap: no browser, no network, no render.
+      postJSON<Script>("/api/script", { path: p })
+        .then(setScript)
+        .catch(() => setScript(null));
       // Show whatever this spec last rendered, so opening a demo from the
       // gallery isn't a blank panel until you record it again.
       const prior = await getJSON<{ outputs: { path: string }[] }>(
@@ -252,9 +259,13 @@ export default function StudioPage() {
     }
   }
 
-  async function job(kind: "record" | "check" | "heal", extra: Record<string, unknown> = {}) {
+  async function job(
+    kind: "record" | "check" | "heal",
+    extra: Record<string, unknown> = {},
+    id: string = kind,
+  ) {
     if (!(await save())) return;
-    setRunning(kind);
+    setRunning(id);
     setLogs([]);
     // Only a record replaces the media, so only a record clears the preview.
     // Check and heal render nothing at all — blanking the panel for them threw
@@ -272,7 +283,9 @@ export default function StudioPage() {
     }
     if (kind === "record") {
       setOutputs(done.result?.outputs ?? []);
-      setStale(false);
+      // A preview does not replace the master and deliberately writes no
+      // fingerprint stamp, so it cannot make the real render current.
+      if (!extra.draft) setStale(false);
     }
     if (kind === "check") {
       setNoteTone("ok");
@@ -300,10 +313,13 @@ export default function StudioPage() {
   const busy = !!running;
   const invalid = Boolean(summary && !summary.valid && path);
 
-  /* The three jobs share a shape, so describe them once rather than repeating
-     the button markup three times with slightly different titles. */
+  /* The jobs share a shape, so describe them once rather than repeating the
+     button markup with slightly different titles. `id` rather than `kind` as
+     the key: a preview is a record too, and two buttons running the same verb
+     with different flags must still be told apart. */
   const ACTIONS = [
     {
+      id: "record",
       kind: "record" as const,
       label: "Record",
       title:
@@ -314,6 +330,16 @@ export default function StudioPage() {
       extra: {},
     },
     {
+      id: "preview",
+      kind: "record" as const,
+      label: "Preview",
+      title:
+        "Quick draft: small, low frame rate, video only, and only narration already in the cache",
+      primary: false,
+      extra: { draft: true },
+    },
+    {
+      id: "check",
       kind: "check" as const,
       label: "Check drift",
       title: "Re-run headlessly and fail if any step can't complete",
@@ -321,6 +347,7 @@ export default function StudioPage() {
       extra: {},
     },
     {
+      id: "heal",
       kind: "heal" as const,
       label: "Heal",
       title: "Repair broken selectors — works offline, no model required",
@@ -375,13 +402,13 @@ export default function StudioPage() {
           <div className="ml-auto flex flex-wrap gap-2 max-[720px]:ml-0 max-[720px]:w-full">
             {ACTIONS.map((a) => (
               <button
-                key={a.kind}
+                key={a.id}
                 className={`btn btn-sm ${a.primary ? "btn-brand" : ""}`}
-                onClick={() => job(a.kind, a.extra)}
+                onClick={() => job(a.kind, a.extra, a.id)}
                 disabled={!path || busy}
                 title={a.title}
               >
-                {running === a.kind && <Spinner />}
+                {running === a.id && <Spinner />}
                 {a.label}
               </button>
             ))}
@@ -418,7 +445,7 @@ export default function StudioPage() {
             <div className="card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="inline-flex rounded-xl border border-line bg-bg2 p-1">
-                  {(["yaml", "steps", "output"] as const).map((t) => (
+                  {(["yaml", "steps", "script", "output"] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => setTab(t)}
@@ -430,7 +457,9 @@ export default function StudioPage() {
                         ? "YAML"
                         : t === "steps"
                           ? `Steps${summary?.valid ? ` · ${summary.stepCount}` : ""}`
-                          : "Output & polish"}
+                          : t === "script"
+                            ? `Script${script ? ` · ${script.lines.length}` : ""}`
+                            : "Output & polish"}
                     </button>
                   ))}
                 </div>
@@ -453,7 +482,18 @@ export default function StudioPage() {
                 </button>
               )}
 
-              {tab === "steps" ? (
+              {tab === "script" ? (
+                <div className="max-h-[720px] overflow-y-auto rounded-xl border border-line bg-bg2 p-3 pr-2">
+                  <ScriptPanel
+                    path={path}
+                    script={script}
+                    busy={busy}
+                    onLog={(l) => setLogs((p) => [...p, l])}
+                    onBusy={setRunning}
+                    onReload={() => loadSpec(path)}
+                  />
+                </div>
+              ) : tab === "steps" ? (
                 <div className="rounded-xl border border-line bg-bg2 p-3">
                   <p className="mb-2 text-xs leading-relaxed text-faint">
                     The shape of the demo. A branch shows both paths — only the one marked

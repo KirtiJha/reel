@@ -96,6 +96,31 @@ export interface SpecSummary {
   };
 }
 
+/** One spoken line, as `reel narrate` reads it out of the spec. */
+export interface ScriptLine {
+  index: number;
+  /** Which step it hangs off — a card title, a beat, or the step kind. */
+  where: string;
+  text: string;
+  words: number;
+  estimatedMs: number;
+}
+
+export interface Script {
+  lines: ScriptLine[];
+  words: number;
+  estimatedMs: number;
+  /** Cards and beats with nothing to say — what a draft would fill. */
+  silent: string[];
+}
+
+/** A proposal from `reel direct`, with the reason it was made. */
+export interface Direction {
+  index: number;
+  step: unknown;
+  because: string;
+}
+
 export async function getJSON<T>(url: string): Promise<T> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url} → ${r.status}`);

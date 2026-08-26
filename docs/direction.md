@@ -361,8 +361,11 @@ the difference between iterating on a demo and batch-rendering one.
    element to mark, and the tenth already directs itself. That is the honest
    result, not a tuning failure — the rule fires on a confident match or stays
    quiet.
-7. **Studio: beat strip, script panel, direction inspector** — views onto the
-   commands from 4-6, which is why they come after rather than before.
+7. **Studio.** The script panel and the direction inspector are done, as views
+   onto `reel narrate`, `reel say` and `reel direct` — every button is a
+   command that works without opening Studio. The preview button is
+   `record --draft` with the same flags, rather than a second render path. The
+   beat strip and the media library are still proposed.
 8. **Re-cut the tour** using all of it, and compare against the numbers at the
    top of this document. One visual change every 6.2 seconds is the bar to beat.
 
