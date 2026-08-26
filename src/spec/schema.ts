@@ -163,6 +163,17 @@ export const polishSchema = z.object({
   /** How long nothing may change before the camera starts to drift. */
   idleMotionAfter: z.number().int().positive().default(1800),
   /**
+   * Ramp the film up from `background` at the start, and back down at the end.
+   *
+   * What makes several chapters read as one piece. Reel's own tour is ten
+   * separate renders joined with a stream copy — the copy is why the picture
+   * that shipped is the picture that was verified — so a cross-fade *between*
+   * the files would re-encode both sides of every join. A chapter that fades
+   * itself concatenates into a film that dissolves, at no cost.
+   */
+  fadeIn: z.number().int().nonnegative().default(0),
+  fadeOut: z.number().int().nonnegative().default(0),
+  /**
    * How far the drift pushes in, as a fraction of the shot. 0.94 is a 6% move
    * across the whole silence — noticeable as life, not as a zoom.
    */
@@ -716,6 +727,26 @@ const baseStepSchema = z.union([
         ms: durationMs.default(3000),
         say: sayText.optional(),
         sayIn: sayIn.optional(),
+      }),
+    ]),
+  }).strict(),
+  /**
+   * Dip the picture to a colour and back — a soft cut.
+   *
+   * `fade` is the one kind implemented, and the only one a single recording can
+   * express: a wipe or a push needs two shots to move between, and a demo is
+   * one continuous stream. Joining two *finished* films that way is a different
+   * job, and one that would re-encode both.
+   */
+  z.object({
+    transition: z.union([
+      /** Shorthand: how long the dip takes. */
+      durationMs,
+      z.object({
+        kind: z.literal("fade").default("fade"),
+        ms: durationMs.default(500),
+        /** What it dips to. Defaults to the spec's own background. */
+        color: cssColor.optional(),
       }),
     ]),
   }).strict(),

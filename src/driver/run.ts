@@ -41,6 +41,7 @@ import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
+import { dipColor, endFades, type FadeCue } from "../polish/fade.js";
 import { diagramSources, missingDiagrams } from "../media/diagram.js";
 import { beatLabels, draftProfile, driveThrough, previewRange, type Preview } from "../polish/preview.js";
 import { log, ReelError } from "../util/log.js";
@@ -173,6 +174,7 @@ export async function record(
     const zoom: ZoomKey[] = [];
     const captions: CaptionCue[] = [];
     const highlights: HighlightCue[] = [];
+    const fades: FadeCue[] = [];
     // Collected during the drive, spoken after it: synthesis is a post-process,
     // so a recording never waits on a TTS endpoint.
     const say: SpokenCue[] = [];
@@ -218,6 +220,7 @@ export async function record(
       zoom,
       captions,
       highlights,
+      fades,
       say,
       sfx,
       capture,
@@ -333,6 +336,7 @@ export async function record(
       for (const b of beats) b.t = retime.map(b.t);
       for (const s of scenes) s.t = retime.map(s.t);
       remapHighlights(highlights, retime.map);
+      remapFades(fades, retime.map);
       log.step(`Pacing ${(durationMs / 1000).toFixed(1)}s → ${(retime.endMs / 1000).toFixed(1)}s`);
       durationMs = retime.endMs;
     }
@@ -397,6 +401,7 @@ export async function record(
       beats: beats.map((b) => ({ ...b })),
       sfx: sfx.map((c) => ({ ...c })),
       highlights: highlights.map((h) => ({ ...h })),
+      fades: fades.map((f) => ({ ...f })),
       durationMs,
     };
     if (audioEnabled(spec.audio, spec.output.audio, say)) {
@@ -437,6 +442,7 @@ export async function record(
           for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
           remapHighlights(highlights, fit.map);
+          remapFades(fades, fit.map);
           log.step(
             `Flowing narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
           );
@@ -454,6 +460,7 @@ export async function record(
           for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
           remapHighlights(highlights, fit.map);
+          remapFades(fades, fit.map);
           log.step(
             `Fitting narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
           );
@@ -478,6 +485,19 @@ export async function record(
 
     // Encode deliverables.
     const outputs: string[] = [];
+    // Added after every retime, because a fade-out is anchored to the end of the
+    // film and the film's length is only final here.
+    fades.push(
+      ...endFades(
+        {
+          fadeIn: spec.polish.fadeIn,
+          fadeOut: spec.polish.fadeOut,
+          color: dipColor(spec.polish.background),
+        },
+        durationMs,
+      ),
+    );
+
     // A preview writes one video and nothing else. The other deliverables are
     // for publishing, and each is a full pass over the frames — a GIF palette
     // alone can cost more than the video. Written beside the real outputs
@@ -522,6 +542,7 @@ export async function record(
       zm: typeof zoom,
       bts: typeof beats,
       hls: typeof highlights,
+      fds: typeof fades,
     ): Promise<void> => {
       if (compositesCaptions(spec)) {
         await renderWithZoom(
@@ -534,6 +555,7 @@ export async function record(
             viewport: spec.viewport,
             captions: spec.polish.captions ? caps : [],
             highlights: hls,
+            fades: fds,
             polish: spec.polish,
             // Cosmetic only — what the URL pill reads. The recording still ran
             // against spec.url; this just keeps a dev server's port out of a
@@ -573,9 +595,10 @@ export async function record(
           sliceTimeline(zoom, range),
           sliceTimeline(beats, range, { carryIn: false }),
           sliceSpans(highlights, range),
+          sliceSpans(fades, range),
         );
       } else {
-        await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights);
+        await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights, fades);
       }
       for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
     }
@@ -704,6 +727,7 @@ export async function record(
         const lb = preAudio.beats.map((b) => ({ ...b }));
         const lx = preAudio.sfx.map((c) => ({ ...c }));
         const lh = preAudio.highlights.map((h) => ({ ...h }));
+        const lfd = preAudio.fades.map((f) => ({ ...f }));
         let lineage = plan.lines;
         let total = preAudio.durationMs;
         if (spec.audio!.fit === "flow") {
@@ -716,6 +740,7 @@ export async function record(
             for (const c of lx) c.t = fit.map(c.t);
             lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
             remapHighlights(lh, fit.map);
+            remapFades(lfd, fit.map);
             total = fit.endMs;
           }
         } else if (spec.audio!.fit === "stretch") {
@@ -730,6 +755,7 @@ export async function record(
             for (const c of lx) c.t = fit.map(c.t);
             lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
             remapHighlights(lh, fit.map);
+            remapFades(lfd, fit.map);
             total = fit.endMs;
           }
         }
@@ -747,6 +773,7 @@ export async function record(
           lz,
           lb,
           lh,
+          lfd,
         );
         await soundtrack(
           lineage,
@@ -803,6 +830,7 @@ export async function record(
           // A span, not a point: an annotation straddling the in point is on
           // screen when the cut opens even though no `t` of its own is inside.
           sliceSpans(highlights, range),
+          sliceSpans(fades, range),
         );
         // The cut's own soundtrack, from the same lines and the same bed.
         //
@@ -943,6 +971,14 @@ function remapHighlights(highlights: HighlightCue[], map: (t: number) => number)
   for (const h of highlights) {
     h.from = map(h.from);
     h.to = map(h.to);
+  }
+}
+
+/** A fade is a span too, and both ends move with the clock. */
+function remapFades(fades: FadeCue[], map: (t: number) => number): void {
+  for (const f of fades) {
+    f.from = map(f.from);
+    f.to = map(f.to);
   }
 }
 

@@ -5,9 +5,11 @@ attention, and the interface that lets someone build one without hand-writing
 YAML.
 
 Status: implemented — `fit: flow`, idle motion, `highlight`, `image`,
-`diagram`, the preview tiers, `reel narrate`, `reel say`, `reel capture`
-writing `highlight` and `say`, and `reel direct` (Part 1.1–1.4, 2, 3.6 and
-order steps 4–6). Still proposed: transitions (1.5) and the Studio views (3.2–3.5).
+`diagram`, transitions, the preview tiers, `reel narrate`, `reel say`,
+`reel capture` writing `highlight` and `say`, `reel direct`, and Studio's
+script panel and direction inspector (Part 1, 2, 3.3, 3.4, 3.6 and order
+steps 1–7). Still proposed: Studio's beat strip and media library (3.2, 3.5),
+and the re-cut of the tour (step 8).
 
 One correction the measurement forced: `--only` cannot run "against cached
 frames", because frames live in a temp directory that is removed when a run
@@ -171,10 +173,22 @@ Diagrams are worth a special case: a fenced `mermaid` block rendered to PNG at
 build time and cached by content hash. Text in the spec, diffable, deterministic,
 and no binary to maintain.
 
-## 1.5 Transitions
+## 1.5 Transitions — done
 
-Chapters currently hard-cut. `transition: { kind: fade | wipe | push, ms }` on a
-card or between cuts, so a ten-part film reads as one piece.
+`transition: { kind: fade, ms }` dips the picture to a colour and back, and
+`polish.fadeIn` / `fadeOut` ramp the film up and down at its ends.
+
+A correction the implementation forced. The chapters are joined with a stream
+copy — that copy is why the picture that ships is bit-for-bit the picture that
+was verified — so an `xfade` *between* the files would re-encode both sides of
+every join and throw that away. The fade therefore lives inside each chapter:
+one that ramps up from its background and back down concatenates, at no cost,
+into a film that dissolves between its parts. The join is free because it was
+never a join.
+
+`wipe` and `push` are not implemented and the schema refuses them. Both have to
+move between two pictures, and a recording is one continuous stream; doing it
+between two *finished* films is the re-encode above.
 
 ---
 

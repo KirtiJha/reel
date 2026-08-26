@@ -282,6 +282,7 @@ steps:
 | `card` | Full-screen title card — opens, closes, or separates chapters. Also lands in the storyboard. |
 | `callout` | Spotlights an element: everything else dims, an accent ring draws around it, an optional label explains it. The film holds while it is up. |
 | `highlight` | Marks an element and keeps going — nothing dims, the camera does not move, the demo runs on underneath. `shape` is `box`, `circle` or `underline`; `style` is `drawn` or `clean`. Several can be up at once, and `until: <beat>` keeps one up across as many steps as you like. |
+| `transition` | Dips the picture to a colour and back — a soft cut. `fade` is the one kind a single recording can express. |
 | `image` | Brings in what the app can't show — a logo, a chart, a screenshot. `as` is `full`, `inset` (a corner, app still visible) or `split`. Always a local file: a render never fetches. |
 | `diagram` | A Mermaid diagram written as text, so it diffs in review. Rendered once into `.reel-cache/diagram` and committed, so later renders need neither mermaid nor a browser. |
 | `scroll` | Eased travel down a long page. Also asserts nothing — pair with `expect`. |
@@ -558,6 +559,11 @@ mock:
 - **Captions** — composited onto the output (so a zoomed crop never clips them),
   wrapped at real word boundaries using advances measured by the browser's own
   text engine, and faded in and out rather than hard-cut.
+- **Fades** — `polish.fadeIn` / `fadeOut` ramp the film up from its own
+  background and back down. That is what makes several chapters read as one
+  piece: they are joined with a stream copy, so the picture that shipped is the
+  picture that was verified, and a cross-fade *between* the files would
+  re-encode both sides of every join.
 - **A script you can read** — `reel narrate` gathers every spoken line into one
   document with a length beside it, because how long a demo talks for is the one
   thing you cannot tell by reading the spec. Reel's own tour is 1,229 words,

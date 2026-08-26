@@ -16,6 +16,7 @@ import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js";
+import { dipColor, type FadeCue } from "../polish/fade.js";
 import { loadImage } from "../media/image.js";
 import { loadDiagram } from "../media/diagram.js";
 import type { SpokenCue } from "../narrate/voice.js";
@@ -50,6 +51,8 @@ export interface StepContext {
    * they stay attached to the picture rather than floating over it.
    */
   highlights: HighlightCue[];
+  /** Dips to a colour — composited over the finished canvas, frame and all. */
+  fades: FadeCue[];
   /**
    * Narration cues, in demo time.
    *
@@ -512,6 +515,26 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       await ctx.rec.hold(Math.max(0, media.ms - 500));
       await hideImage(page);
       await ctx.rec.hold(HOLD.afterCard);
+    }
+    return;
+  }
+
+  if ("transition" in step) {
+    const t = typeof step.transition === "number"
+      ? { kind: "fade" as const, ms: step.transition, color: undefined }
+      : step.transition;
+    if (cinematic && t.ms > 0) {
+      const at = ctx.now();
+      ctx.fades.push({
+        from: at,
+        to: at + t.ms,
+        color: t.color ?? dipColor(ctx.spec.polish.background),
+        kind: "dip",
+      });
+      // The dip has to have something to darken, so it costs its own duration.
+      // Unlike a highlight this *is* a moment in the film rather than an
+      // annotation over one.
+      await ctx.rec.hold(t.ms);
     }
     return;
   }

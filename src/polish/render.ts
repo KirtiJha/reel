@@ -23,6 +23,7 @@ import {
 } from "./zoom.js";
 import { computeFrameLayout, framingEnabled, type FrameLayout } from "./frame.js";
 import { highlightsAt, highlightSvg, type HighlightCue } from "./highlight.js";
+import { fadeAt, fadeSvg, type FadeCue } from "./fade.js";
 import {
   captionAt,
   captionFontSize,
@@ -41,6 +42,8 @@ export interface ZoomRenderInput {
   captions: CaptionCue[];
   /** Annotation spans, drawn in content space so the camera carries them. */
   highlights?: HighlightCue[];
+  /** Dips to a colour, over the whole canvas rather than the app view. */
+  fades?: FadeCue[];
   /** Presentation layer: device frame, padding, background, radius. */
   polish: Polish;
   /** URL shown in the browser-frame address pill. */
@@ -140,6 +143,7 @@ export async function renderWithZoom(
   log.step(`Rendering ${cfrFiles.length} frames — ${label} (${seqW}×${seqH})`);
   const captions = zoom.captions ?? [];
   const marks = zoom.highlights ?? [];
+  const fades = zoom.fades ?? [];
   const captionEnd = opts.endMs ?? (cfrFiles.length / opts.fps) * 1000;
   const captionWidth = captionMaxTextWidth(outW);
   const captionSize = captionFontSize(outW);
@@ -168,6 +172,17 @@ export async function renderWithZoom(
     // Round content corners to match the frame/radius (dest-in keeps opaque area).
     if (maskPng) contentComposites.push({ input: maskPng, blend: "dest-in" });
 
+    // A fade is the film going dark, so it goes over the finished canvas —
+    // device frame, padding and background included. Washing only the content
+    // would read as the app dimming inside a window that stayed lit. With no
+    // frame there is no canvas but the content, so it joins that list instead:
+    // sharp's `composite` replaces rather than appends, and a second call here
+    // would silently drop the captions and annotations already queued.
+    const fade = fades.length ? fadeAt(fades, t) : null;
+    if (fade && !layout) {
+      contentComposites.push({ input: Buffer.from(fadeSvg(fade, outW, outH)), top: 0, left: 0 });
+    }
+
     const content = sharp(join(cfrDir, file))
       .extract({ left, top, width: w, height: h })
       .resize(outW, outH, { kernel: "lanczos3" });
@@ -176,10 +191,13 @@ export async function renderWithZoom(
     if (layout && decorPng) {
       // Composite the content onto the prebuilt decoration (background + chrome).
       const contentBuf = await content.png().toBuffer();
-      await sharp(decorPng)
-        .composite([{ input: contentBuf, top: layout.contentY, left: layout.contentX }])
-        .png({ compressionLevel: 3 })
-        .toFile(join(procDir, file));
+      const canvas = sharp(decorPng).composite([
+        { input: contentBuf, top: layout.contentY, left: layout.contentX },
+        ...(fade
+          ? [{ input: Buffer.from(fadeSvg(fade, layout.canvasW, layout.canvasH)), top: 0, left: 0 }]
+          : []),
+      ]);
+      await canvas.png({ compressionLevel: 3 }).toFile(join(procDir, file));
     } else {
       await content.png({ compressionLevel: 3 }).toFile(join(procDir, file));
     }

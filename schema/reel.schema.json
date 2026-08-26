@@ -238,6 +238,17 @@
           "default": 1800,
           "description": "How long nothing may change before the camera starts to drift."
         },
+        "fadeIn": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Ramp the film up from `background` at the start, and back down at the end.\n\nWhat makes several chapters read as one piece. Reel's own tour is ten\nseparate renders joined with a stream copy — the copy is why the picture\nthat shipped is the picture that was verified — so a cross-fade *between*\nthe files would re-encode both sides of every join. A chapter that fades\nitself concatenates into a film that dissolves, at no cost."
+        },
+        "fadeOut": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
         "idleMotionScale": {
           "type": "number",
           "minimum": 0.8,
@@ -1286,6 +1297,46 @@
               {
                 "type": "object",
                 "properties": {
+                  "transition": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Shorthand: how long the dip takes."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "fade",
+                            "default": "fade"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 500
+                          },
+                          "color": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "What it dips to. Defaults to the spec's own background."
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "transition"
+                ],
+                "additionalProperties": false,
+                "description": "Dip the picture to a colour and back — a soft cut.\n\n`fade` is the one kind implemented, and the only one a single recording can\nexpress: a wipe or a push needs two shots to move between, and a demo is\none continuous stream. Joining two *finished* films that way is a different\njob, and one that would re-encode both."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "highlight": {
                     "type": "object",
                     "properties": {
@@ -2285,6 +2336,46 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "transition": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "description": "Shorthand: how long the dip takes."
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "const": "fade",
+                                            "default": "fade"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "default": 500
+                                          },
+                                          "color": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "What it dips to. Defaults to the spec's own background."
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "transition"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Dip the picture to a colour and back — a soft cut.\n\n`fade` is the one kind implemented, and the only one a single recording can\nexpress: a wipe or a push needs two shots to move between, and a demo is\none continuous stream. Joining two *finished* films that way is a different\njob, and one that would re-encode both."
                               },
                               {
                                 "type": "object",
