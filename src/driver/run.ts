@@ -42,6 +42,7 @@ import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
 import { diagramSources, missingDiagrams } from "../media/diagram.js";
+import { beatLabels, draftProfile, driveThrough, previewRange, type Preview } from "../polish/preview.js";
 import { log, ReelError } from "../util/log.js";
 
 export interface RunResult {
@@ -92,14 +93,40 @@ export class StepFailure extends ReelError {
  * install overlay → screencast → run steps → encode. `mode: "check"` runs the
  * same steps headlessly and skips capture/encode — that's the CI drift test.
  */
-export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise<RunResult> {
+export async function record(
+  loaded: LoadedSpec,
+  mode: Mode = "record",
+  preview: Preview = {},
+): Promise<RunResult> {
   const { spec } = loaded;
   let app: RunningApp | null = null;
   let browser: Browser | null = null;
   const workDir = await mkdtemp(join(tmpdir(), "reel-"));
   const framesDir = join(workDir, "frames");
 
-  const profile = resolveOutputProfile(spec.output);
+  if (preview.only) {
+    const known = beatLabels(spec.steps);
+    if (!known.some((b) => b.toLowerCase() === preview.only!.toLowerCase())) {
+      // Before the app is booted and the browser launched: naming a beat that
+      // does not exist is a typo, and a typo should cost nothing.
+      throw new ReelError(
+        `This spec has no beat called “${preview.only}”.`,
+        known.length
+          ? `It has: ${known.map((b) => `“${b}”`).join(", ")}.`
+          : "It has no beats or cards to preview — add a `beat:` to name a moment.",
+      );
+    }
+  }
+  const draft = Boolean(preview.draft);
+  // A draft is the same demo rendered cheaply, not a different one: same steps,
+  // same app, same timings. Only the resolution, the frame rate and how many
+  // deliverables come out of it change.
+  const profile = draft
+    ? draftProfile(resolveOutputProfile(spec.output))
+    : resolveOutputProfile(spec.output);
+  if (draft) {
+    log.info(`Draft render — ${profile.maxWidth}px at ${profile.fps}fps, video only.`);
+  }
 
   try {
     if (spec.run) {
@@ -229,9 +256,22 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       });
     }
 
-    log.phase(`Recording “${spec.name}” (${spec.steps.length} steps)`);
+    // `--only` stops the drive once the requested section has been filmed. The
+    // steps after it cannot change what is inside it, and the steps before it
+    // still run — the app has state, and there is no fast-forwarding an app
+    // Reel knows nothing about.
+    const stopAfter = mode === "record" && preview.only
+      ? driveThrough(spec.steps, preview.only)
+      : null;
+    const total = stopAfter ?? spec.steps.length;
+    log.phase(
+      `Recording “${spec.name}” (${total} of ${spec.steps.length} steps)`.replace(
+        `${spec.steps.length} of ${spec.steps.length} steps`,
+        `${spec.steps.length} steps`,
+      ),
+    );
     const branchPoints: BranchPoint[] = [];
-    for (let i = 0; i < spec.steps.length; i++) {
+    for (let i = 0; i < total; i++) {
       const step = spec.steps[i]!;
 
       if (isBranch(step)) {
@@ -369,7 +409,19 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             "Set `audio.fit: none` to keep the target length, or drop `targetDuration` to let the voice decide.",
         );
       }
-      const plan = await planAudio(say, audio.voice, loaded.dir);
+      // A draft speaks only what the cache already holds. Synthesis is the one
+      // part of a render that costs money and needs the network, and paying it
+      // to hear a line you are about to reword is the wrong trade — so a draft
+      // renders the lines you have and says how many it skipped.
+      let cues = say;
+      if (draft) {
+        const missing = new Set(await missingVoiceLines(say, audio.voice, loaded.dir));
+        if (missing.size) {
+          cues = say.filter((c) => !missing.has(c.text));
+          log.info(`Draft: ${missing.size} line(s) not yet synthesized — rendering them silent.`);
+        }
+      }
+      const plan = await planAudio(cues, audio.voice, loaded.dir);
       spoken = plan.lines;
 
       if (audio.fit === "flow") {
@@ -426,14 +478,27 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     // Encode deliverables.
     const outputs: string[] = [];
-    const storyboardDir = spec.output.storyboard
+    // A preview writes one video and nothing else. The other deliverables are
+    // for publishing, and each is a full pass over the frames — a GIF palette
+    // alone can cost more than the video. Written beside the real outputs
+    // rather than over them, so a draft never overwrites a master you have
+    // already published.
+    const previewing = draft || Boolean(preview.only);
+    const storyboardDir = spec.output.storyboard && !previewing
       ? resolveOutput(loaded, spec.output.storyboard)
       : undefined;
-    const targets = {
-      gif: spec.output.gif ? resolveOutput(loaded, spec.output.gif) : undefined,
-      mp4: spec.output.mp4 ? resolveOutput(loaded, spec.output.mp4) : undefined,
-      webm: spec.output.webm ? resolveOutput(loaded, spec.output.webm) : undefined,
-    };
+    const video = spec.output.mp4 ?? spec.output.webm ?? spec.output.gif;
+    const targets = previewing
+      ? {
+          gif: undefined,
+          mp4: video ? previewPath(resolveOutput(loaded, video)) : undefined,
+          webm: undefined,
+        }
+      : {
+          gif: spec.output.gif ? resolveOutput(loaded, spec.output.gif) : undefined,
+          mp4: spec.output.mp4 ? resolveOutput(loaded, spec.output.mp4) : undefined,
+          webm: spec.output.webm ? resolveOutput(loaded, spec.output.webm) : undefined,
+        };
     const encodeOpts = {
       fps: profile.fps,
       maxWidth: profile.maxWidth,
@@ -489,7 +554,29 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     if (needsEncode) log.phase("Encoding");
 
     if (needsEncode) {
-      await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights);
+      // `--only` renders one section of the film at full quality, which is the
+      // same operation a `cut` already is: slice everything to a time range and
+      // rebase it. Reusing that path rather than adding a second one means a
+      // preview is composited by exactly the code that composites the master.
+      const range = preview.only ? previewRange(beats, preview.only, durationMs) : null;
+      if (range) {
+        log.info(
+          `Only “${preview.only}” — ${(range.startMs / 1000).toFixed(1)}s to ` +
+            `${(range.endMs / 1000).toFixed(1)}s of ${(durationMs / 1000).toFixed(1)}s.`,
+        );
+        await renderTo(
+          sliceFrames(frames, range),
+          targets,
+          undefined,
+          { ...encodeOpts, endMs: cutDuration(range) },
+          sliceTimeline(captions, range),
+          sliceTimeline(zoom, range),
+          sliceTimeline(beats, range, { carryIn: false }),
+          sliceSpans(highlights, range),
+        );
+      } else {
+        await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights);
+      }
       for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
     }
 
@@ -565,7 +652,20 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       if (sfxProfile !== "none" && sfx.length) {
         log.step(`${sfx.length} sound cues (${sfxProfile})`);
       }
-      const wrote = await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track, sfx);
+      // A sliced preview needs a sliced soundtrack, or the voice plays over the
+      // wrong shot — the cuts path already does exactly this for the same
+      // reason, so `--only` borrows it rather than muxing full-length audio
+      // onto a video that is a tenth as long.
+      const range = preview.only ? previewRange(beats, preview.only, durationMs) : null;
+      const wrote = range
+        ? await soundtrack(
+            sliceTimeline(spoken, range, { carryIn: false }),
+            cutDuration(range),
+            [targets.mp4, targets.webm],
+            track,
+            sliceTimeline(sfx, range, { carryIn: false }),
+          )
+        : await soundtrack(spoken, durationMs, [targets.mp4, targets.webm], track, sfx);
       if (wrote && spec.output.audioTrack) outputs.push(track);
     }
 
@@ -577,7 +677,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // language re-fits the pre-narration snapshot to its own speech and encodes
     // from there. Captions are composited in post, which is what makes this a
     // re-encode rather than a re-record.
-    const languages = spec.output.languages ?? [];
+    const languages = previewing ? [] : spec.output.languages ?? [];
     if (languages.length && audioEnabled(spec.audio, spec.output.audio, say) && targets.mp4) {
       log.phase("Languages");
       for (const lang of languages) {
@@ -664,7 +764,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     // Cuts: shorter deliverables out of the recording that just happened. No
     // browser, no second pass over the app — the frames are already on disk,
     // which is what makes a cut incapable of disagreeing with the master.
-    if (spec.cuts?.length) {
+    if (spec.cuts?.length && !previewing) {
       log.phase("Cuts");
       for (const cut of spec.cuts) {
         const range = resolveCutRange(cut, beats, durationMs);
@@ -736,7 +836,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     // Interactive build: the same demo as a self-contained click-through, and
     // the only output that can carry more than one path.
-    if (spec.output.html) {
+    if (spec.output.html && !previewing) {
       const htmlPath = resolveOutput(loaded, spec.output.html);
       log.phase("Interactive");
       let allScenes = scenes;
@@ -844,6 +944,17 @@ function remapHighlights(highlights: HighlightCue[], map: (t: number) => number)
     h.from = map(h.from);
     h.to = map(h.to);
   }
+}
+
+/**
+ * Where a preview is written: `demo.mp4` becomes `demo.preview.mp4`.
+ *
+ * Never over the master. A draft is a small, low-fps, partly-silent render, and
+ * overwriting a published file with one — then having the next `--if-changed`
+ * decide everything is up to date — is a footgun with a very quiet trigger.
+ */
+function previewPath(output: string): string {
+  return output.replace(/(\.[^.]+)$/, ".preview$1");
 }
 
 function pathSlug(v: string): string {

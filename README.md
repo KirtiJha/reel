@@ -697,6 +697,8 @@ Useful flags:
 |---|---|
 | `--json` | Print one machine-readable result object on **stdout**; logs stay on stderr. |
 | `record --if-changed` | Skip the render when the spec, its inputs and its outputs are all unchanged. |
+| `record --draft` | Quick preview: small, low frame rate, video only, and only narration already in the voice cache. |
+| `record --only <beat>` | Render just the section a named beat labels, at full quality. |
 | `record --app-revision <sha>` | Identify the app being demoed, so a changed app forces a re-render. |
 | `diff --exit-code` | Exit 1 when the two renders differ, like `git diff --exit-code`. |
 | `review --fail-on <verdict>` | Exit 1 at `stale-caption` (default), `content`, `cosmetic`, or never. |
@@ -791,6 +793,8 @@ two, and a `actions/checkout` before it.
 | `review` | `false` | Compare each re-render against what it replaced. |
 | `fail-on` | `stale-caption` | Verdict that fails the build: `cosmetic`, `content`, `stale-caption`, `never`. |
 | `if-changed` | `false` | Skip a render whose spec, inputs and outputs are unchanged. |
+| `draft` | `false` | Render a quick preview instead of the deliverables. |
+| `only` | — | Render only the section a named beat labels. |
 | `app-revision` | — | A commit SHA, so a changed app forces a re-render. |
 | `comment` / `commit` | `false` | Post one comment; push the media back. |
 | `version` | this tag's | Which `@kirti_jha/reel` to install, or `local` to build from the checkout. |

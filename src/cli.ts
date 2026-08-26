@@ -70,8 +70,20 @@ program
     "--app-revision <id>",
     "identifier for the app being demoed (a commit SHA), so a changed app forces a re-render",
   )
+  .option(
+    "--draft",
+    "quick preview: small, low frame rate, video only, and only narration already in the cache",
+    false,
+  )
+  .option(
+    "--only <beat>",
+    "render just the section a named beat labels, at full quality",
+  )
   .description("Drive your app from a spec and render the demo (GIF/MP4/WebM).")
-  .action(async (specPath: string, opts: { ifChanged: boolean; appRevision?: string }) => {
+  .action(async (
+    specPath: string,
+    opts: { ifChanged: boolean; appRevision?: string; draft: boolean; only?: string },
+  ) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
       const res = await recordOne(loaded, { ...opts, version: VERSION });

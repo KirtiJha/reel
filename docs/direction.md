@@ -4,8 +4,15 @@ A plan for the second half of Reel — the part that decides whether a demo hold
 attention, and the interface that lets someone build one without hand-writing
 YAML.
 
-Status: `fit: flow`, idle motion, `highlight`, `image` and `diagram` are
-implemented (Part 1.1 to 1.4). The rest is proposed.
+Status: `fit: flow`, idle motion, `highlight`, `image`, `diagram` and the
+preview tiers are implemented (Part 1.1 to 1.4, and 3.6's `--draft` and
+`--only`). The rest is proposed.
+
+One correction the measurement forced: `--only` cannot run "against cached
+frames", because frames live in a temp directory that is removed when a run
+ends. It stops the drive once the requested section is filmed and renders only
+that range — real savings, but bounded by how far into the demo the section
+sits, and only as fine-grained as the beats a spec actually names.
 
 `highlight` shipped with `box`, `circle` and `underline`; `arrow` and
 `pointer` are not implemented and the schema refuses them rather than
@@ -337,8 +344,9 @@ the difference between iterating on a demo and batch-rendering one.
 3. ~~**`image`**, plus mermaid diagrams.~~ Done — drawn into the page rather
    than composited, so the picture reaches the storyboard and the
    click-through, which read frames rather than the finished video.
-4. **Preview tiers** — `--only` and `--draft`. Command-line flags first; they
-   pay for themselves at the terminal before any UI depends on them.
+4. ~~**Preview tiers** — `--only` and `--draft`.~~ Done. Measured on the
+   taskflow example: a full render is 150s, `--draft` 41s, `--draft --only`
+   37s. Neither writes the master or its fingerprint stamp.
 5. **`reel narrate --draft` and `reel say`**, then **`reel capture` learning the
    new step kinds** — so the CLI can author everything Part 1 added.
 6. **`reel direct`.** Wants the primitives to exist before it can place them.

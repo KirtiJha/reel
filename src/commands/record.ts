@@ -28,6 +28,10 @@ export interface RecordOptions {
   appRevision?: string;
   /** Reel's own version, which is part of the fingerprint. */
   version: string;
+  /** Quick, cheap render for iterating — not a deliverable. */
+  draft?: boolean;
+  /** Render only the section a named beat labels. */
+  only?: string;
 }
 
 export interface RecordOutcome {
@@ -69,7 +73,7 @@ export async function recordOne(loaded: LoadedSpec, opts: RecordOptions): Promis
 
   for (const v of variants) {
     if (variants.length > 1) log.phase(`Variant: ${v.label}`);
-    const res = await record(v.loaded, "record");
+    const res = await record(v.loaded, "record", { draft: opts.draft, only: opts.only });
     log.ok(`${res.frames} frames · ${res.beats} beats · ${(res.durationMs / 1000).toFixed(1)}s`);
     outputs.push(...res.outputs);
     // The first variant's beats stand for the demo: a matrix renders the same
@@ -90,6 +94,13 @@ export async function recordOne(loaded: LoadedSpec, opts: RecordOptions): Promis
 
   // Written after a successful render only: a stamp for media that failed to
   // encode would skip the retry that fixes it.
-  await writeStamp(stamp, fp, outputs, { beats: timeline, captions, durationMs });
+  //
+  // And never for a preview. A draft is small, low-fps and partly silent, and a
+  // section render is not the film at all — stamping either would tell the next
+  // `--if-changed` that the master is current, and the real render would be
+  // skipped in favour of media nobody meant to publish.
+  const preview = Boolean(opts.draft || opts.only);
+  if (preview) log.info("Preview render — the master and its stamp are untouched.");
+  else await writeStamp(stamp, fp, outputs, { beats: timeline, captions, durationMs });
   return { outputs, fingerprint: fp.hash, variants: rendered };
 }
