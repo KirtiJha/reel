@@ -19,6 +19,7 @@ export function stepSelector(step: Step): string | null {
   if ("fill" in step) return step.fill.selector;
   if ("press" in step) return step.press.selector ?? null;
   if ("callout" in step) return step.callout.selector;
+  if ("highlight" in step) return step.highlight.selector;
   if ("expect" in step) return step.expect.selector;
   if ("scroll" in step) return typeof step.scroll.to === "string" ? step.scroll.to : null;
   if ("zoom" in step) return typeof step.zoom === "object" ? step.zoom.to ?? null : null;
@@ -42,6 +43,7 @@ export function withStepSelector(step: Step, selector: string): Step {
   if ("fill" in step) return { fill: { ...step.fill, selector } };
   if ("press" in step) return { press: { ...step.press, selector } };
   if ("callout" in step) return { callout: { ...step.callout, selector } };
+  if ("highlight" in step) return { highlight: { ...step.highlight, selector } };
   if ("expect" in step) return { expect: { ...step.expect, selector } };
   if ("scroll" in step) return { scroll: { ...step.scroll, to: selector } };
   if ("zoom" in step && typeof step.zoom === "object") return { zoom: { ...step.zoom, to: selector } };
@@ -71,6 +73,10 @@ export function describeStep(step: Step): string {
   if ("press" in step) return `press ${step.press.key} on "${step.press.selector ?? "(page)"}"`;
   if ("callout" in step) {
     return `spotlight the element "${step.callout.selector}"${step.callout.text ? ` labelled "${step.callout.text}"` : ""}`;
+  }
+  if ("highlight" in step) {
+    const h = step.highlight;
+    return `mark the element "${h.selector}" with a ${h.shape}${h.label ? ` labelled "${h.label}"` : ""}`;
   }
   if ("expect" in step) {
     return `assert the element "${step.expect.selector}"${step.expect.text ? ` contains "${step.expect.text}"` : ""}`;

@@ -139,6 +139,27 @@ export function sliceTimeline<T extends Timed>(
   return kept.map((i, idx) => ({ ...i, t: idx === 0 && i.t <= startMs ? 0 : i.t - startMs }));
 }
 
+/**
+ * Annotation spans that overlap a cut, clipped to it and rebased.
+ *
+ * `sliceTimeline` keys off a single `t`, which is the wrong question for a
+ * span: a highlight that goes up before the in point and comes down after it is
+ * on screen for the whole cut, yet has no `t` inside the range at all. Asking
+ * whether the two intervals overlap is what keeps it.
+ */
+export function sliceSpans<T extends { from: number; to: number }>(
+  spans: T[],
+  { startMs, endMs }: CutRange,
+): T[] {
+  return spans
+    .filter((s) => s.to > startMs && s.from < endMs)
+    .map((s) => ({
+      ...s,
+      from: Math.max(0, s.from - startMs),
+      to: Math.min(endMs, s.to) - startMs,
+    }));
+}
+
 /** How long a cut runs, which is what the encoder needs to hold the last frame. */
 export function cutDuration({ startMs, endMs }: CutRange): number {
   return endMs - startMs;

@@ -654,6 +654,37 @@ const baseStepSchema = z.union([
       ms: durationMs.default(1500),
     }),
   }).strict(),
+  /**
+   * Mark an element without interrupting: the rest of the screen is untouched,
+   * the camera does not move, and the demo keeps running underneath.
+   *
+   * The counterpart to `callout`, not a replacement for it. A callout says
+   * *stop and look at this* — it dims the page and holds the film. A highlight
+   * says *and notice this, as we go*, which is what a demo narrated over a
+   * working app needs. Use both; they are different sentences.
+   *
+   * Several may be on screen at once, and one can outlive the step that drew it
+   * — see `until`.
+   */
+  z.object({
+    highlight: z.object({
+      selector,
+      /** `box` frames it, `circle` rings it, `underline` sits beneath it. */
+      shape: z.enum(["box", "circle", "underline"]).default("box"),
+      /** `drawn` looks sketched by hand; `clean` is a precise stroke. */
+      style: z.enum(["drawn", "clean"]).default("drawn"),
+      /** A few words beside the mark. Long text wants a `callout` instead. */
+      label: z.string().optional(),
+      /** How long it stays up. Ignored when `until` names a beat. */
+      ms: durationMs.default(2600),
+      /**
+       * Keep it up until this beat, however many steps away that is — the
+       * reason a highlight is a span and not a hold. A beat that never happens
+       * leaves the mark up until the demo ends.
+       */
+      until: z.string().min(1).optional(),
+    }),
+  }).strict(),
   /** Cinematic eased scroll — to an element, or to an absolute Y offset. */
   z.object({
     scroll: z.object({

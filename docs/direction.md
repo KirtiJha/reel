@@ -4,8 +4,14 @@ A plan for the second half of Reel — the part that decides whether a demo hold
 attention, and the interface that lets someone build one without hand-writing
 YAML.
 
-Status: `fit: flow` and idle motion are implemented (Part 1.1 and 1.2). The
-rest is proposed.
+Status: `fit: flow`, idle motion and `highlight` are implemented (Part 1.1,
+1.2 and 1.3). The rest is proposed.
+
+`highlight` shipped with `box`, `circle` and `underline`; `arrow` and
+`pointer` are not implemented and the schema refuses them rather than
+accepting a value the renderer cannot draw. `reel capture` does not write
+`highlight` steps yet — that is step 5 of the order below, along with the
+other step kinds it cannot yet author.
 
 Measured on a fixture built to the exact shape of the tour's chapter 3 — a
 terminal session, `zoom: false`, five narration lines including three
@@ -325,7 +331,9 @@ the difference between iterating on a demo and batch-rendering one.
 
 1. **`fit: flow` and idle motion.** The root cause. Improves every existing demo
    with no re-authoring.
-2. **`highlight`**, alongside `callout`.
+2. ~~**`highlight`**, alongside `callout`.~~ Done — composited in post like
+   captions, so it is a pure function of the cue list and cannot make two
+   renders differ.
 3. **`image`**, plus mermaid diagrams.
 4. **Preview tiers** — `--only` and `--draft`. Command-line flags first; they
    pay for themselves at the terminal before any UI depends on them.

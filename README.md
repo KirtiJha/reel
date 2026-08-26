@@ -266,6 +266,7 @@ steps:
   - click: role=button[name=Add]
   - expect: { selector: "#list li", count: 1 }                        # assert, don't assume
   - callout: { selector: "#count", text: "The counter tracks what's open" }
+  - highlight: { selector: "#count", shape: circle, until: pricing }  # mark it, keep going
   - scroll: { to: "#pricing", ms: 1100 }                              # cinematic pan
   - zoom: { to: "#pricing h2", level: 1.7 }                           # explicit camera
   - zoom: out
@@ -275,7 +276,8 @@ steps:
 | step | what it does |
 |---|---|
 | `card` | Full-screen title card — opens, closes, or separates chapters. Also lands in the storyboard. |
-| `callout` | Spotlights an element: everything else dims, an accent ring draws around it, an optional label explains it. |
+| `callout` | Spotlights an element: everything else dims, an accent ring draws around it, an optional label explains it. The film holds while it is up. |
+| `highlight` | Marks an element and keeps going — nothing dims, the camera does not move, the demo runs on underneath. `shape` is `box`, `circle` or `underline`; `style` is `drawn` or `clean`. Several can be up at once, and `until: <beat>` keeps one up across as many steps as you like. |
 | `scroll` | Eased travel down a long page. Also asserts nothing — pair with `expect`. |
 | `zoom` | Explicit camera control (`to`, `level`, `ms`), or `out` for a wide shot, when auto-zoom's guess isn't your story. |
 | `expect` | An assertion on `text`, `count`, or visibility — what makes `reel check` a real smoke test. |
@@ -550,6 +552,10 @@ mock:
 - **Captions** — composited onto the output (so a zoomed crop never clips them),
   wrapped at real word boundaries using advances measured by the browser's own
   text engine, and faded in and out rather than hard-cut.
+- **Highlights** — box, circle or underline an element in a hand-drawn or clean
+  stroke, without dimming the page or stopping the demo. The counterpart to a
+  callout: use a callout when the beat exists for that one element, a highlight
+  when things keep happening around it.
 - **Spotlight callouts** — dim everything but one element, ring it in your accent
   colour, and label it.
 - **Title cards** — open and close on a card, or use one to separate chapters.

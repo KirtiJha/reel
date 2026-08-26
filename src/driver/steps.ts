@@ -13,6 +13,7 @@ import {
 import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
+import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js";
 import type { SpokenCue } from "../narrate/voice.js";
 import type { SfxCue } from "../encode/sfx.js";
 import { compositesCaptions } from "../polish/frame.js";
@@ -40,6 +41,11 @@ export interface StepContext {
   zoom: ZoomKey[];
   /** Caption timeline — composited in post so zoom never clips it. */
   captions: CaptionCue[];
+  /**
+   * Annotation spans — composited in post, and mapped through the camera so
+   * they stay attached to the picture rather than floating over it.
+   */
+  highlights: HighlightCue[];
   /**
    * Narration cues, in demo time.
    *
@@ -372,7 +378,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       // device frame, padding or a background — so `zoom: false` with a frame
       // drew the caption in the page and composited it again on top, at a
       // different size. Two captions, in every frame, in the shipped encoder.
-      const inPage = !compositesCaptions(ctx.spec.polish);
+      const inPage = !compositesCaptions(ctx.spec);
       if (inPage) await setCaption(page, cue.text);
       await ctx.rec.hold(cue.ms ?? HOLD.caption);
       if (inPage && cue.ms) await setCaption(page, "");
@@ -465,6 +471,35 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
         await ctx.rec.hold(300); // let the dim fade out before moving on
       }
     }
+    return;
+  }
+
+  if ("highlight" in step) {
+    const { selector, shape, style, label, ms, until } = step.highlight;
+    // Waiting for visibility makes a highlight an assertion as well as a mark,
+    // exactly as `callout` is — so it still does useful work in `check` mode,
+    // where nothing is drawn.
+    const loc = locate(page, selector);
+    await loc.waitFor({ state: "visible" });
+    if (cinematic) {
+      const box = await loc.boundingBox();
+      if (box) {
+        const from = ctx.now();
+        ctx.highlights.push({
+          from,
+          // Provisional when `until:` names a beat that has not happened yet;
+          // `resolveHighlights` settles it once every beat has a time.
+          to: from + (ms || DEFAULT_HIGHLIGHT_MS),
+          rect: { x: box.x, y: box.y, w: box.width, h: box.height },
+          shape,
+          style,
+          ...(label === undefined ? {} : { label }),
+          ...(until === undefined ? {} : { untilBeat: until }),
+        });
+      }
+    }
+    // No hold, and no camera move. The demo carries on underneath — which is
+    // the entire difference between this and a callout.
     return;
   }
 

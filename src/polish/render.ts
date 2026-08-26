@@ -22,6 +22,7 @@ import {
   withIdleMotion,
 } from "./zoom.js";
 import { computeFrameLayout, framingEnabled, type FrameLayout } from "./frame.js";
+import { highlightsAt, highlightSvg, type HighlightCue } from "./highlight.js";
 import {
   captionAt,
   captionFontSize,
@@ -38,6 +39,8 @@ export interface ZoomRenderInput {
   viewport: { width: number; height: number; scale: number };
   /** Caption timeline, composited onto the output so zoom can't clip it. */
   captions: CaptionCue[];
+  /** Annotation spans, drawn in content space so the camera carries them. */
+  highlights?: HighlightCue[];
   /** Presentation layer: device frame, padding, background, radius. */
   polish: Polish;
   /** URL shown in the browser-frame address pill. */
@@ -136,6 +139,7 @@ export async function renderWithZoom(
   const label = framed ? `polish (${zoom.polish.frame} frame)` : "auto-zoom";
   log.step(`Rendering ${cfrFiles.length} frames — ${label} (${seqW}×${seqH})`);
   const captions = zoom.captions ?? [];
+  const marks = zoom.highlights ?? [];
   const captionEnd = opts.endMs ?? (cfrFiles.length / opts.fps) * 1000;
   const captionWidth = captionMaxTextWidth(outW);
   const captionSize = captionFontSize(outW);
@@ -152,6 +156,14 @@ export async function renderWithZoom(
     const caption = captionAt(captions, t, captionEnd, captionWidth, captionSize);
     if (caption) {
       contentComposites.push({ input: Buffer.from(captionSvg(caption, outW, outH)), top: 0, left: 0 });
+    }
+    // Annotations are mapped through `r`, the crop being shown at this instant,
+    // so they sit *in* the picture: they track the zoom, drift with idle motion
+    // and leave frame when the camera moves off them. A caption deliberately
+    // does none of that, which is why the two are laid out separately.
+    if (marks.length) {
+      const svg = highlightSvg(highlightsAt(marks, t), r, outW, outH, zoom.polish.accent);
+      if (svg) contentComposites.push({ input: Buffer.from(svg), top: 0, left: 0 });
     }
     // Round content corners to match the frame/radius (dest-in keeps opaque area).
     if (maskPng) contentComposites.push({ input: maskPng, blend: "dest-in" });

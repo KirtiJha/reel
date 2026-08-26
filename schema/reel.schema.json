@@ -1113,6 +1113,63 @@
               {
                 "type": "object",
                 "properties": {
+                  "highlight": {
+                    "type": "object",
+                    "properties": {
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "circle",
+                          "underline"
+                        ],
+                        "default": "box",
+                        "description": "`box` frames it, `circle` rings it, `underline` sits beneath it."
+                      },
+                      "style": {
+                        "type": "string",
+                        "enum": [
+                          "drawn",
+                          "clean"
+                        ],
+                        "default": "drawn",
+                        "description": "`drawn` looks sketched by hand; `clean` is a precise stroke."
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "A few words beside the mark. Long text wants a `callout` instead."
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 2600,
+                        "description": "How long it stays up. Ignored when `until` names a beat."
+                      },
+                      "until": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Keep it up until this beat, however many steps away that is — the\nreason a highlight is a span and not a hold. A beat that never happens\nleaves the mark up until the demo ends."
+                      }
+                    },
+                    "required": [
+                      "selector"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "highlight"
+                ],
+                "additionalProperties": false,
+                "description": "Mark an element without interrupting: the rest of the screen is untouched,\nthe camera does not move, and the demo keeps running underneath.\n\nThe counterpart to `callout`, not a replacement for it. A callout says\n*stop and look at this* — it dims the page and holds the film. A highlight\nsays *and notice this, as we go*, which is what a demo narrated over a\nworking app needs. Use both; they are different sentences.\n\nSeveral may be on screen at once, and one can outlive the step that drew it\n— see `until`."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "scroll": {
                     "type": "object",
                     "properties": {
@@ -1882,6 +1939,63 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "highlight": {
+                                    "type": "object",
+                                    "properties": {
+                                      "selector": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "shape": {
+                                        "type": "string",
+                                        "enum": [
+                                          "box",
+                                          "circle",
+                                          "underline"
+                                        ],
+                                        "default": "box",
+                                        "description": "`box` frames it, `circle` rings it, `underline` sits beneath it."
+                                      },
+                                      "style": {
+                                        "type": "string",
+                                        "enum": [
+                                          "drawn",
+                                          "clean"
+                                        ],
+                                        "default": "drawn",
+                                        "description": "`drawn` looks sketched by hand; `clean` is a precise stroke."
+                                      },
+                                      "label": {
+                                        "type": "string",
+                                        "description": "A few words beside the mark. Long text wants a `callout` instead."
+                                      },
+                                      "ms": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 2600,
+                                        "description": "How long it stays up. Ignored when `until` names a beat."
+                                      },
+                                      "until": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Keep it up until this beat, however many steps away that is — the\nreason a highlight is a span and not a hold. A beat that never happens\nleaves the mark up until the demo ends."
+                                      }
+                                    },
+                                    "required": [
+                                      "selector"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "highlight"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Mark an element without interrupting: the rest of the screen is untouched,\nthe camera does not move, and the demo keeps running underneath.\n\nThe counterpart to `callout`, not a replacement for it. A callout says\n*stop and look at this* — it dims the page and holds the film. A highlight\nsays *and notice this, as we go*, which is what a demo narrated over a\nworking app needs. Use both; they are different sentences.\n\nSeveral may be on screen at once, and one can outlive the step that drew it\n— see `until`."
                               },
                               {
                                 "type": "object",

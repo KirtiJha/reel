@@ -85,6 +85,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
       beats: [],
       zoom: [],
       captions: [],
+      highlights: [],
       say: [],
       sfx: [],
       scenes: [],

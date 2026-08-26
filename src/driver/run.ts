@@ -24,10 +24,11 @@ import { isRetryable, retryDelayMs } from "./retry.js";
 import { captureFailure, reportFailure, type FailureArtifacts } from "./failure.js";
 import { describeStep } from "../heal/selectors.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
-import { resolveCutRange, sliceFrames, sliceTimeline, cutDuration } from "../encode/cut.js";
+import { resolveCutRange, sliceFrames, sliceTimeline, sliceSpans, cutDuration } from "../encode/cut.js";
 import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
+
 import { narrate } from "../narrate/index.js";
 import { audioEnabled, localizeCues, missingVoiceLines, planAudio } from "../narrate/audio.js";
 import { langName } from "../narrate/translate.js";
@@ -39,6 +40,7 @@ import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
+import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
 import { log, ReelError } from "../util/log.js";
 
 export interface RunResult {
@@ -142,6 +144,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     const beats: { label: string; t: number }[] = [];
     const zoom: ZoomKey[] = [];
     const captions: CaptionCue[] = [];
+    const highlights: HighlightCue[] = [];
     // Collected during the drive, spoken after it: synthesis is a post-process,
     // so a recording never waits on a TTS endpoint.
     const say: SpokenCue[] = [];
@@ -186,6 +189,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       beats,
       zoom,
       captions,
+      highlights,
       say,
       sfx,
       capture,
@@ -269,6 +273,11 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
 
     let durationMs = timeline.now();
     const frames = (await capture?.stop(deterministic ? durationMs : undefined)) ?? [];
+    // A highlight's `until:` usually names a beat that had not happened yet when
+    // the step ran, so its end is only knowable now. Settled before the retimes
+    // below, so the span is remapped alongside everything else.
+    const resolved = resolveHighlights(highlights, beats, durationMs);
+    highlights.splice(0, highlights.length, ...resolved);
 
     // Pacing: cap dead air and/or fit a target length. Everything downstream is
     // timestamped in demo time, so this is a remap — no re-recording.
@@ -282,6 +291,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       for (const z of zoom) z.t = retime.map(z.t);
       for (const b of beats) b.t = retime.map(b.t);
       for (const s of scenes) s.t = retime.map(s.t);
+      remapHighlights(highlights, retime.map);
       log.step(`Pacing ${(durationMs / 1000).toFixed(1)}s → ${(retime.endMs / 1000).toFixed(1)}s`);
       durationMs = retime.endMs;
     }
@@ -332,6 +342,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       zoom: zoom.map((z) => ({ ...z })),
       beats: beats.map((b) => ({ ...b })),
       sfx: sfx.map((c) => ({ ...c })),
+      highlights: highlights.map((h) => ({ ...h })),
       durationMs,
     };
     if (audioEnabled(spec.audio, spec.output.audio, say)) {
@@ -359,6 +370,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           for (const c of sfx) c.t = fit.map(c.t);
           for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
+          remapHighlights(highlights, fit.map);
           log.step(
             `Flowing narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
           );
@@ -375,6 +387,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           for (const b of beats) b.t = fit.map(b.t);
           for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
+          remapHighlights(highlights, fit.map);
           log.step(
             `Fitting narration ${(durationMs / 1000).toFixed(1)}s → ${(fit.endMs / 1000).toFixed(1)}s`,
           );
@@ -429,8 +442,9 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
       caps: typeof captions,
       zm: typeof zoom,
       bts: typeof beats,
+      hls: typeof highlights,
     ): Promise<void> => {
-      if (compositesCaptions(spec.polish)) {
+      if (compositesCaptions(spec)) {
         await renderWithZoom(
           fr,
           framesDir,
@@ -440,6 +454,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             timeline: zm,
             viewport: spec.viewport,
             captions: spec.polish.captions ? caps : [],
+            highlights: hls,
             polish: spec.polish,
             // Cosmetic only — what the URL pill reads. The recording still ran
             // against spec.url; this just keeps a dev server's port out of a
@@ -460,7 +475,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
     if (needsEncode) log.phase("Encoding");
 
     if (needsEncode) {
-      await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats);
+      await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights);
       for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
     }
 
@@ -574,6 +589,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         const lz = preAudio.zoom.map((z) => ({ ...z }));
         const lb = preAudio.beats.map((b) => ({ ...b }));
         const lx = preAudio.sfx.map((c) => ({ ...c }));
+        const lh = preAudio.highlights.map((h) => ({ ...h }));
         let lineage = plan.lines;
         let total = preAudio.durationMs;
         if (spec.audio!.fit === "flow") {
@@ -585,6 +601,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             for (const b of lb) b.t = fit.map(b.t);
             for (const c of lx) c.t = fit.map(c.t);
             lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
+            remapHighlights(lh, fit.map);
             total = fit.endMs;
           }
         } else if (spec.audio!.fit === "stretch") {
@@ -598,6 +615,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
             for (const b of lb) b.t = fit.map(b.t);
             for (const c of lx) c.t = fit.map(c.t);
             lineage = lineage.map((l) => ({ ...l, t: fit.map(l.t) }));
+            remapHighlights(lh, fit.map);
             total = fit.endMs;
           }
         }
@@ -614,6 +632,7 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           lc,
           lz,
           lb,
+          lh,
         );
         await soundtrack(
           lineage,
@@ -667,6 +686,9 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
           sliceTimeline(captions, range),
           sliceTimeline(zoom, range),
           sliceTimeline(beats, range, { carryIn: false }),
+          // A span, not a point: an annotation straddling the in point is on
+          // screen when the cut opens even though no `t` of its own is inside.
+          sliceSpans(highlights, range),
         );
         // The cut's own soundtrack, from the same lines and the same bed.
         //
@@ -796,6 +818,20 @@ async function guarded(
 }
 
 /** Stable id fragment for a branch path label. */
+/**
+ * Move an annotation span onto a retimed clock.
+ *
+ * Both ends, because a span that only moved its start would grow or shrink
+ * every time the timeline was remapped — and a demo can be remapped three times
+ * over (idle trim, then narration fitting, then again per language).
+ */
+function remapHighlights(highlights: HighlightCue[], map: (t: number) => number): void {
+  for (const h of highlights) {
+    h.from = map(h.from);
+    h.to = map(h.to);
+  }
+}
+
 function pathSlug(v: string): string {
   return v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "path";
 }

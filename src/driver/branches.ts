@@ -134,6 +134,7 @@ export async function recordAlternatePaths(opts: AlternateOptions): Promise<Alte
           beats: [],
           zoom: [],
           captions: [],
+      highlights: [],
           // Discarded with the rest: this replays the trunk to get the app into
           // position, and narration for steps the viewer already heard would be
           // spoken a second time.

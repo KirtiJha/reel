@@ -1,4 +1,4 @@
-import type { Polish } from "../spec/schema.js";
+import { isBranch, type Polish, type Step } from "../spec/schema.js";
 
 /**
  * Device frames, padding, and backgrounds (product plan §8 v0.2).
@@ -39,8 +39,32 @@ export function framingEnabled(p: Polish): boolean {
  * if it thinks otherwise it draws one. Getting that backwards yields either no
  * caption or two, so the question is asked in exactly one place.
  */
-export function compositesCaptions(p: Polish): boolean {
-  return p.zoom === "auto" || framingEnabled(p);
+export function compositesCaptions(spec: { polish: Polish; steps: Step[] }): boolean {
+  return (
+    spec.polish.zoom === "auto" ||
+    framingEnabled(spec.polish) ||
+    // Highlights are composited onto finished frames, so a spec that has one
+    // needs this path even with no zoom, no frame and no padding. Without it
+    // the fast concat encoder runs and every annotation is silently dropped.
+    hasHighlight(spec.steps)
+  );
+}
+
+/**
+ * Does this spec annotate anything?
+ *
+ * Asked of the steps rather than of the cues collected during the drive,
+ * because the driver has to know the answer *before* the first caption is
+ * drawn. A runtime count would still be zero for a caption that precedes the
+ * first highlight, and the two call sites would disagree — which draws the
+ * caption into the page and then composites it again in post.
+ */
+function hasHighlight(steps: Step[]): boolean {
+  return steps.some(
+    (s) =>
+      "highlight" in s ||
+      (isBranch(s) && s.branch.paths.some((p) => hasHighlight(p.steps))),
+  );
 }
 
 export function computeFrameLayout(
