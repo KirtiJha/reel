@@ -41,6 +41,7 @@ import { applyMocks } from "../mock/mock.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
+import { diagramSources, missingDiagrams } from "../media/diagram.js";
 import { log, ReelError } from "../util/log.js";
 
 export interface RunResult {
@@ -319,6 +320,19 @@ export async function record(loaded: LoadedSpec, mode: Mode = "record"): Promise
         if (missing.length) {
           log.warn(`${missing.length} spoken lines have no audio yet — \`reel record\` will synthesize them.`);
           for (const m of missing.slice(0, 5)) log.warn(`  “${m.slice(0, 60)}”`);
+        }
+      }
+      // Same reasoning for diagrams: a spec whose flowchart has never been
+      // drawn renders fine for its author and fails for everyone else, and the
+      // cache is what makes that difference invisible until it bites.
+      const diagrams = diagramSources(spec.steps, spec.theme);
+      if (diagrams.length) {
+        const missing = await missingDiagrams(diagrams, loaded.dir);
+        if (missing.length) {
+          log.warn(
+            `${missing.length} diagram(s) have no rendered copy — \`reel record\` will draw them, which needs mermaid installed.`,
+          );
+          for (const m of missing.slice(0, 5)) log.warn(`  ${m}`);
         }
       }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);

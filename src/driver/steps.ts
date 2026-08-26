@@ -6,6 +6,8 @@ import {
   measureText,
   setCaption,
   showCard,
+  showImage,
+  hideImage,
   smoothScroll,
   spotlight,
   toPlaywrightSelector,
@@ -14,6 +16,8 @@ import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js";
+import { loadImage } from "../media/image.js";
+import { loadDiagram } from "../media/diagram.js";
 import type { SpokenCue } from "../narrate/voice.js";
 import type { SfxCue } from "../encode/sfx.js";
 import { compositesCaptions } from "../polish/frame.js";
@@ -470,6 +474,44 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
         await clearSpotlight(page);
         await ctx.rec.hold(300); // let the dim fade out before moving on
       }
+    }
+    return;
+  }
+
+  if ("image" in step || "diagram" in step) {
+    const media = "image" in step
+      ? typeof step.image === "string"
+        ? { file: step.image, as: "full" as const, corner: "br" as const, alt: undefined, ms: 2600, say: undefined, sayIn: undefined }
+        : step.image
+      : typeof step.diagram === "string"
+        ? { mermaid: step.diagram, as: "full" as const, corner: "br" as const, theme: undefined, alt: undefined, ms: 3000, say: undefined, sayIn: undefined }
+        : step.diagram;
+
+    // A picture is a scene, so it narrates like a card: recorded in every mode
+    // so `reel check` can audit the line and the voice cache alongside it.
+    if (media.say) ctx.say.push({ t: ctx.now(), text: media.say, alt: media.sayIn });
+
+    // An image is resolved in `check` too: reading a file is free, and a missing
+    // one is exactly the breakage `check` exists to find before the expensive
+    // part. A diagram is not — drawing one launches a browser, and a checkout
+    // without mermaid would *fail* a check rather than report on it. `check`
+    // audits the diagram cache instead, the same way it audits the voice cache.
+    const loaded = "mermaid" in media
+      ? cinematic
+        ? await loadDiagram(ctx.specDir, media.mermaid, media.theme ?? ctx.spec.theme)
+        : null
+      : await loadImage(ctx.specDir, media.file);
+
+    if (cinematic && loaded) {
+      // Never crop into a picture that already fills the frame.
+      if (media.as !== "inset") zoomOut(ctx);
+      await showImage(page, loaded.dataUri, media.as, media.corner);
+      await ctx.rec.hold(Math.min(500, media.ms));
+      const label = media.alt ?? ("mermaid" in media ? "Diagram" : media.file);
+      snap(ctx, label, { caption: media.alt });
+      await ctx.rec.hold(Math.max(0, media.ms - 500));
+      await hideImage(page);
+      await ctx.rec.hold(HOLD.afterCard);
     }
     return;
   }

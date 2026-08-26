@@ -2,23 +2,26 @@ node_modules/
 dist/
 *.log
 .DS_Store
-# The voice cache is committed; the rest of `.reel-cache/` is not.
+# Rendered media is committed; the rest of `.reel-cache/` is not.
 #
-# `voiceCacheDir()` calls it "committed, so renders reproduce", and `reel
-# doctor` tells you a render needs no key because "narration renders from the
-# committed voice cache". Neither was true: this file ignored the whole
+# `voiceCacheDir()` calls the voice cache "committed, so renders reproduce", and
+# `reel doctor` tells you a render needs no key because "narration renders from
+# the committed voice cache". Neither was true: this file ignored the whole
 # directory, so the mp3s never left the machine that synthesized them and a
 # narrated spec was reproducible only for its author.
 #
-# Committing them is what makes narration deterministic. The audio is a pure
-# function of the cache key — provider, model, voice, style, speed and the text
-# — so a checkout renders the same words in the same voice with no API key, no
-# spend, and no drift when a provider retunes a model under a fixed name.
+# Committing them is what makes narration and diagrams deterministic. Each is a
+# pure function of its cache key — voice, model, style and text for a spoken
+# line; source and theme for a diagram — so a checkout renders the same words in
+# the same voice and the same flowchart with no API key, no mermaid install, no
+# browser, no spend, and no drift when a provider or a library changes what it
+# produces for unchanged input.
 #
 # A negation cannot re-include anything under an excluded directory, hence
 # `/*` on the parent rather than the bare directory.
 **/.reel-cache/*
 !**/.reel-cache/voice/
+!**/.reel-cache/diagram/
 .reel-out/
 coverage/
 *.tsbuildinfo

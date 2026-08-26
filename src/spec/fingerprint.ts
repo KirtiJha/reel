@@ -40,6 +40,22 @@ function referencedFiles(spec: Spec, loaded: LoadedSpec): string[] {
   if (spec.storageState) out.push(resolveOutput(loaded, spec.storageState));
   if (spec.mock?.har) out.push(resolveOutput(loaded, spec.mock.har));
   for (const p of signInStates(spec.steps)) out.push(resolveOutput(loaded, p));
+  // A picture a step shows is as much an input as the app is: re-export the
+  // diagram and the video must change, or `--if-changed` skips past it.
+  for (const p of imageFiles(spec.steps)) out.push(resolveOutput(loaded, p));
+  return out;
+}
+
+/** Every image file a step brings in, branches included. */
+export function imageFiles(steps: Step[]): string[] {
+  const out: string[] = [];
+  for (const step of steps) {
+    if (isBranch(step)) {
+      for (const path of step.branch.paths) out.push(...imageFiles(path.steps as Step[]));
+      continue;
+    }
+    if ("image" in step) out.push(typeof step.image === "string" ? step.image : step.image.file);
+  }
   return out;
 }
 

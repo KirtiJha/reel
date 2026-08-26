@@ -655,6 +655,71 @@ const baseStepSchema = z.union([
     }),
   }).strict(),
   /**
+   * Bring in something the app cannot show: a logo, an architecture diagram, a
+   * chart, a before-and-after.
+   *
+   * The file is always local and always read from disk — a render never
+   * fetches. A network request would make the output depend on a server being
+   * up and on what it served that day, which breaks the byte-identical promise,
+   * and it would quietly pull someone else's artwork into a video you publish.
+   * Studio may download an asset while you are *editing*, into the spec's own
+   * directory, committed like any other input.
+   *
+   * `diagram:` is the same step with the picture written as text instead.
+   */
+  z.object({
+    image: z.union([
+      /** Shorthand: just the path. */
+      z.string().min(1),
+      z.object({
+        /** Path to the image, relative to the spec. */
+        file: z.string().min(1),
+        /**
+         * `full` fills the frame, `inset` sits in a corner with the app still
+         * visible behind it, `split` takes one half of the screen.
+         */
+        as: z.enum(["full", "inset", "split"]).default("full"),
+        /** Which corner an `inset` sits in. */
+        corner: z.enum(["tl", "tr", "bl", "br"]).default("br"),
+        /** Alt text, for the interactive build. Describe what it shows. */
+        alt: z.string().optional(),
+        ms: durationMs.default(2600),
+        /** What the narrator says over it. */
+        say: sayText.optional(),
+        /** The same line in other languages, for `output.languages`. */
+        sayIn: sayIn.optional(),
+      }),
+    ]),
+  }).strict(),
+  /**
+   * A diagram written as text: a Mermaid definition, rendered to an image and
+   * cached by content hash.
+   *
+   * The point of writing it here rather than committing a PNG is that it diffs.
+   * A flowchart that changes in a pull request shows up as changed *words*, and
+   * the picture is a build product like any other. The render is cached in
+   * `.reel-cache/diagram` and committed, so a checkout — or CI — draws the
+   * diagram without a browser or a network.
+   */
+  z.object({
+    diagram: z.union([
+      /** Shorthand: just the Mermaid source. */
+      z.string().min(1),
+      z.object({
+        /** The Mermaid source. */
+        mermaid: z.string().min(1),
+        as: z.enum(["full", "inset", "split"]).default("full"),
+        corner: z.enum(["tl", "tr", "bl", "br"]).default("br"),
+        /** Light or dark styling. Defaults to the spec's own theme. */
+        theme: z.enum(["dark", "light"]).optional(),
+        alt: z.string().optional(),
+        ms: durationMs.default(3000),
+        say: sayText.optional(),
+        sayIn: sayIn.optional(),
+      }),
+    ]),
+  }).strict(),
+  /**
    * Mark an element without interrupting: the rest of the screen is untouched,
    * the camera does not move, and the demo keeps running underneath.
    *

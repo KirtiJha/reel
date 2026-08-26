@@ -190,6 +190,36 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
       card.append(cardTitle, cardRule, cardSub);
       root.appendChild(card);
 
+      // --- Image / diagram layer ---
+      //
+      // Drawn into the page rather than composited in post, unlike a caption or
+      // a highlight. An image is *content*: it wants the browser's own layout
+      // and object-fit to size it, it belongs in the storyboard and in the
+      // interactive build, and both of those read captured frames rather than
+      // the finished video. Compositing it later would mean re-implementing
+      // layout in sharp and then special-casing every consumer of frames.
+      const shot = document.createElement("div");
+      Object.assign(shot.style, {
+        position: "fixed",
+        inset: "0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: "0",
+        pointerEvents: "none",
+        transition: "opacity .34s ease",
+        zIndex: "4", // under a title card, over the app
+      } as CSSStyleDeclaration);
+      const shotImg = document.createElement("img");
+      Object.assign(shotImg.style, {
+        display: "block",
+        maxWidth: "100%",
+        maxHeight: "100%",
+        objectFit: "contain",
+      } as CSSStyleDeclaration);
+      shot.appendChild(shotImg);
+      root.appendChild(shot);
+
       // --- Caption bar (used when captions aren't composited in post) ---
       const caption = document.createElement("div");
       Object.assign(caption.style, {
@@ -329,6 +359,66 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
           cardTitle.style.transform = "translateY(10px)";
           cardSub.style.transform = "translateY(10px)";
           cardRule.style.width = "0px";
+        },
+        /**
+         * Show an image. `full` fills the frame over a backdrop, `inset` sits in
+         * a corner while the app stays visible, `split` takes one half.
+         *
+         * Resolves when the image has actually decoded. A frame sampled against
+         * a half-decoded image is a different frame, and whether that happened
+         * would depend on how fast the machine is — which is exactly the class
+         * of nondeterminism this codebase exists to avoid.
+         */
+        async image(src: string, mode: string, corner: string) {
+          shotImg.src = src;
+          const fit = { position: "fixed", inset: "auto", transform: "none" };
+          if (mode === "inset") {
+            const vertical = corner[0] === "t" ? { top: "4%" } : { bottom: "4%" };
+            const horizontal = corner[1] === "l" ? { left: "4%" } : { right: "4%" };
+            Object.assign(shot.style, fit, vertical, horizontal, {
+              width: "34%",
+              height: "34%",
+              background: "transparent",
+              padding: "0",
+            });
+            Object.assign(shotImg.style, {
+              borderRadius: "12px",
+              boxShadow: "0 18px 50px rgba(0,0,0,.55)",
+              background: "rgba(12,14,22,.92)",
+            });
+          } else if (mode === "split") {
+            Object.assign(shot.style, fit, {
+              top: "0",
+              right: "0",
+              bottom: "0",
+              width: "50%",
+              background: "linear-gradient(160deg, rgba(9,11,18,.97), rgba(17,21,36,.99))",
+              padding: "4%",
+            });
+            Object.assign(shotImg.style, { borderRadius: "10px", boxShadow: "none" });
+          } else {
+            Object.assign(shot.style, fit, {
+              inset: "0",
+              width: "auto",
+              height: "auto",
+              background: "linear-gradient(160deg, rgba(9,11,18,.97), rgba(17,21,36,.99))",
+              padding: "6%",
+            });
+            Object.assign(shotImg.style, { borderRadius: "10px", boxShadow: "none" });
+          }
+          if (!shotImg.complete) {
+            await new Promise<void>((resolve) => {
+              shotImg.onload = () => resolve();
+              // A broken file should not hang the recording; the driver has
+              // already checked the path exists, so this is the decode failing.
+              shotImg.onerror = () => resolve();
+            });
+          }
+          await (shotImg.decode?.() ?? Promise.resolve()).catch(() => {});
+          shot.style.opacity = "1";
+        },
+        imageOut() {
+          shot.style.opacity = "0";
         },
         spot(r: { x: number; y: number; w: number; h: number }, text: string, dim: number) {
           const pad = 6;
@@ -496,6 +586,30 @@ export async function showCard(page: Page, title: string, subtitle?: string): Pr
 
 export async function hideCard(page: Page): Promise<void> {
   await page.evaluate(() => (window as any).__reel__?.cardOut());
+}
+
+/**
+ * Put an image on screen, as a data URI.
+ *
+ * A data URI rather than a URL on purpose: the renderer must never fetch during
+ * a render. A network request would make the output depend on a server being up
+ * and on what it served today, and it would quietly pull someone else's artwork
+ * into a video you publish.
+ */
+export async function showImage(
+  page: Page,
+  dataUri: string,
+  mode: string,
+  corner: string,
+): Promise<void> {
+  await page.evaluate(
+    ([src, m, c]) => (window as any).__reel__?.image(src, m, c),
+    [dataUri, mode, corner] as [string, string, string],
+  );
+}
+
+export async function hideImage(page: Page): Promise<void> {
+  await page.evaluate(() => (window as any).__reel__?.imageOut());
 }
 
 /** Dim the page except for `rect`, with an optional explanatory label. */

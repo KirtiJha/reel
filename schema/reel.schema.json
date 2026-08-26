@@ -1113,6 +1113,179 @@
               {
                 "type": "object",
                 "properties": {
+                  "image": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Shorthand: just the path."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Path to the image, relative to the spec."
+                          },
+                          "as": {
+                            "type": "string",
+                            "enum": [
+                              "full",
+                              "inset",
+                              "split"
+                            ],
+                            "default": "full",
+                            "description": "`full` fills the frame, `inset` sits in a corner with the app still\nvisible behind it, `split` takes one half of the screen."
+                          },
+                          "corner": {
+                            "type": "string",
+                            "enum": [
+                              "tl",
+                              "tr",
+                              "bl",
+                              "br"
+                            ],
+                            "default": "br",
+                            "description": "Which corner an `inset` sits in."
+                          },
+                          "alt": {
+                            "type": "string",
+                            "description": "Alt text, for the interactive build. Describe what it shows."
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 2600
+                          },
+                          "say": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              }
+                            ],
+                            "description": "What the narrator says over it."
+                          },
+                          "sayIn": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "The same line in other languages, for `output.languages`."
+                          }
+                        },
+                        "required": [
+                          "file"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "additionalProperties": false,
+                "description": "Bring in something the app cannot show: a logo, an architecture diagram, a\nchart, a before-and-after.\n\nThe file is always local and always read from disk — a render never\nfetches. A network request would make the output depend on a server being\nup and on what it served that day, which breaks the byte-identical promise,\nand it would quietly pull someone else's artwork into a video you publish.\nStudio may download an asset while you are *editing*, into the spec's own\ndirectory, committed like any other input.\n\n`diagram:` is the same step with the picture written as text instead."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "diagram": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Shorthand: just the Mermaid source."
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mermaid": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The Mermaid source."
+                          },
+                          "as": {
+                            "type": "string",
+                            "enum": [
+                              "full",
+                              "inset",
+                              "split"
+                            ],
+                            "default": "full"
+                          },
+                          "corner": {
+                            "type": "string",
+                            "enum": [
+                              "tl",
+                              "tr",
+                              "bl",
+                              "br"
+                            ],
+                            "default": "br"
+                          },
+                          "theme": {
+                            "type": "string",
+                            "enum": [
+                              "dark",
+                              "light"
+                            ],
+                            "description": "Light or dark styling. Defaults to the spec's own theme."
+                          },
+                          "alt": {
+                            "type": "string"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 3000
+                          },
+                          "say": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "boolean",
+                                "const": false
+                              }
+                            ],
+                            "description": "Narration for one step: what to say, or `false` to keep it silent."
+                          },
+                          "sayIn": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "description": "The same line in other languages, keyed by code — `{ es: \"…\", ja: \"…\" }`.\n\nWritten by a person, because this is the copy a customer hears. Machine\ntranslation fills the gaps when a model is configured, but a demo is\nmarketing, and marketing copy nobody has read is not something to ship by\ndefault."
+                          }
+                        },
+                        "required": [
+                          "mermaid"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "diagram"
+                ],
+                "additionalProperties": false,
+                "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "highlight": {
                     "type": "object",
                     "properties": {
@@ -1939,6 +2112,179 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "image": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Shorthand: just the path."
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "file": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "Path to the image, relative to the spec."
+                                          },
+                                          "as": {
+                                            "type": "string",
+                                            "enum": [
+                                              "full",
+                                              "inset",
+                                              "split"
+                                            ],
+                                            "default": "full",
+                                            "description": "`full` fills the frame, `inset` sits in a corner with the app still\nvisible behind it, `split` takes one half of the screen."
+                                          },
+                                          "corner": {
+                                            "type": "string",
+                                            "enum": [
+                                              "tl",
+                                              "tr",
+                                              "bl",
+                                              "br"
+                                            ],
+                                            "default": "br",
+                                            "description": "Which corner an `inset` sits in."
+                                          },
+                                          "alt": {
+                                            "type": "string",
+                                            "description": "Alt text, for the interactive build. Describe what it shows."
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "default": 2600
+                                          },
+                                          "say": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "boolean",
+                                                "const": false
+                                              }
+                                            ],
+                                            "description": "What the narrator says over it."
+                                          },
+                                          "sayIn": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": "The same line in other languages, for `output.languages`."
+                                          }
+                                        },
+                                        "required": [
+                                          "file"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "image"
+                                ],
+                                "additionalProperties": false,
+                                "description": "Bring in something the app cannot show: a logo, an architecture diagram, a\nchart, a before-and-after.\n\nThe file is always local and always read from disk — a render never\nfetches. A network request would make the output depend on a server being\nup and on what it served that day, which breaks the byte-identical promise,\nand it would quietly pull someone else's artwork into a video you publish.\nStudio may download an asset while you are *editing*, into the spec's own\ndirectory, committed like any other input.\n\n`diagram:` is the same step with the picture written as text instead."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "diagram": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Shorthand: just the Mermaid source."
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "mermaid": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "description": "The Mermaid source."
+                                          },
+                                          "as": {
+                                            "type": "string",
+                                            "enum": [
+                                              "full",
+                                              "inset",
+                                              "split"
+                                            ],
+                                            "default": "full"
+                                          },
+                                          "corner": {
+                                            "type": "string",
+                                            "enum": [
+                                              "tl",
+                                              "tr",
+                                              "bl",
+                                              "br"
+                                            ],
+                                            "default": "br"
+                                          },
+                                          "theme": {
+                                            "type": "string",
+                                            "enum": [
+                                              "dark",
+                                              "light"
+                                            ],
+                                            "description": "Light or dark styling. Defaults to the spec's own theme."
+                                          },
+                                          "alt": {
+                                            "type": "string"
+                                          },
+                                          "ms": {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "default": 3000
+                                          },
+                                          "say": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              {
+                                                "type": "boolean",
+                                                "const": false
+                                              }
+                                            ],
+                                            "description": "Narration for one step: what to say, or `false` to keep it silent."
+                                          },
+                                          "sayIn": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "description": "The same line in other languages, keyed by code — `{ es: \"…\", ja: \"…\" }`.\n\nWritten by a person, because this is the copy a customer hears. Machine\ntranslation fills the gaps when a model is configured, but a demo is\nmarketing, and marketing copy nobody has read is not something to ship by\ndefault."
+                                          }
+                                        },
+                                        "required": [
+                                          "mermaid"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "diagram"
+                                ],
+                                "additionalProperties": false,
+                                "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
                               },
                               {
                                 "type": "object",

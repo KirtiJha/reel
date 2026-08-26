@@ -267,6 +267,10 @@ steps:
   - expect: { selector: "#list li", count: 1 }                        # assert, don't assume
   - callout: { selector: "#count", text: "The counter tracks what's open" }
   - highlight: { selector: "#count", shape: circle, until: pricing }  # mark it, keep going
+  - image: { file: assets/architecture.png, as: inset, corner: tr }   # a local file, never fetched
+  - diagram: |                                                        # drawn by mermaid, cached
+      flowchart LR
+        spec --> reel --> mp4
   - scroll: { to: "#pricing", ms: 1100 }                              # cinematic pan
   - zoom: { to: "#pricing h2", level: 1.7 }                           # explicit camera
   - zoom: out
@@ -278,6 +282,8 @@ steps:
 | `card` | Full-screen title card — opens, closes, or separates chapters. Also lands in the storyboard. |
 | `callout` | Spotlights an element: everything else dims, an accent ring draws around it, an optional label explains it. The film holds while it is up. |
 | `highlight` | Marks an element and keeps going — nothing dims, the camera does not move, the demo runs on underneath. `shape` is `box`, `circle` or `underline`; `style` is `drawn` or `clean`. Several can be up at once, and `until: <beat>` keeps one up across as many steps as you like. |
+| `image` | Brings in what the app can't show — a logo, a chart, a screenshot. `as` is `full`, `inset` (a corner, app still visible) or `split`. Always a local file: a render never fetches. |
+| `diagram` | A Mermaid diagram written as text, so it diffs in review. Rendered once into `.reel-cache/diagram` and committed, so later renders need neither mermaid nor a browser. |
 | `scroll` | Eased travel down a long page. Also asserts nothing — pair with `expect`. |
 | `zoom` | Explicit camera control (`to`, `level`, `ms`), or `out` for a wide shot, when auto-zoom's guess isn't your story. |
 | `expect` | An assertion on `text`, `count`, or visibility — what makes `reel check` a real smoke test. |
@@ -552,6 +558,11 @@ mock:
 - **Captions** — composited onto the output (so a zoomed crop never clips them),
   wrapped at real word boundaries using advances measured by the browser's own
   text engine, and faded in and out rather than hard-cut.
+- **Images and diagrams** — bring in a logo, an architecture picture or a chart
+  the app itself cannot show. Diagrams are written as Mermaid text in the spec,
+  so a flowchart changes in a pull request as changed *words*; the rendered PNG
+  is cached by content hash and committed, so nobody else needs mermaid
+  installed to render the demo.
 - **Highlights** — box, circle or underline an element in a hand-drawn or clean
   stroke, without dimming the page or stopping the demo. The counterpart to a
   callout: use a callout when the beat exists for that one element, a highlight
