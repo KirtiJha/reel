@@ -703,6 +703,7 @@ Useful flags:
 | `record --if-changed` | Skip the render when the spec, its inputs and its outputs are all unchanged. |
 | `record --draft` | Quick preview: small, low frame rate, video only, and only narration already in the voice cache. |
 | `record --only <beat>` | Render just the section a named beat labels, at full quality. |
+| `direct <spec>` | Propose camera and annotation direction from what the spec already says. `--write` inserts it; without it, nothing is written. |
 | `narrate <spec>` | Read the demo's narration as one document: every line, its estimated length, and the total. Needs nothing installed. |
 | `narrate --draft` | Propose a line for every card and beat that says nothing. Prints YAML to paste — it never writes to your spec. |
 | `say "<line>"` | Speak one line and report how long it runs, without rendering. `--dry-run` estimates from the word count, with no key and no network. |

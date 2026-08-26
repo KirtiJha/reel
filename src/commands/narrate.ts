@@ -1,6 +1,7 @@
 import type { LoadedSpec } from "../spec/load.js";
 import { isBranch, type BaseStep, type Step } from "../spec/schema.js";
 import { chat, loadLlmConfig, messageText } from "../ai/llm.js";
+import { spokenTextOf } from "../narrate/spoken.js";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -55,7 +56,7 @@ export function readScript(steps: Step[]): Script {
         }
         continue;
       }
-      const said = spokenText(step);
+      const said = spokenTextOf(step);
       const label = whereOf(step);
       if (said) {
         const words = said.split(/\s+/).filter(Boolean).length;
@@ -79,20 +80,6 @@ export function readScript(steps: Step[]): Script {
     estimatedMs: lines.reduce((n, l) => n + l.estimatedMs, 0),
     silent,
   };
-}
-
-/** The line a step says, if any. */
-function spokenText(step: Step | BaseStep): string | undefined {
-  const v = step as Record<string, unknown>;
-  if ("say" in v) return typeof v.say === "string" ? v.say : (v.say as { text?: string })?.text;
-  for (const kind of ["card", "caption", "image", "diagram"]) {
-    if (!(kind in v)) continue;
-    const value = v[kind];
-    if (value && typeof value === "object" && "say" in value) {
-      return (value as { say?: string }).say;
-    }
-  }
-  return undefined;
 }
 
 /**

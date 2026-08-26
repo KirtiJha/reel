@@ -5,9 +5,9 @@ attention, and the interface that lets someone build one without hand-writing
 YAML.
 
 Status: implemented — `fit: flow`, idle motion, `highlight`, `image`,
-`diagram`, the preview tiers, `reel narrate`, `reel say`, and `reel capture`
-writing `highlight` and `say` (Part 1.1–1.4, 3.6 and order step 5). Still
-proposed: `reel direct`, transitions, and the Studio views.
+`diagram`, the preview tiers, `reel narrate`, `reel say`, `reel capture`
+writing `highlight` and `say`, and `reel direct` (Part 1.1–1.4, 2, 3.6 and
+order steps 4–6). Still proposed: transitions (1.5) and the Studio views (3.2–3.5).
 
 One correction the measurement forced: `--only` cannot run "against cached
 frames", because frames live in a temp directory that is removed when a run
@@ -353,7 +353,14 @@ the difference between iterating on a demo and batch-rendering one.
    button — marking swallows the click, because pointing at an element is not
    pressing it. `narrate` without a model reads the script and needs nothing
    installed, which turned out to be the more useful half.
-6. **`reel direct`.** Wants the primitives to exist before it can place them.
+6. ~~**`reel direct`.**~~ Done, and deterministic: the match that matters —
+   "this line talks about the thing that step points at" — is a comparison
+   between a narration line and the *name inside a selector*, so it needs no
+   key, no network and no browser. Conservative by design: on Reel's own tour
+   it proposes once, because nine chapters are terminal demos where there is no
+   element to mark, and the tenth already directs itself. That is the honest
+   result, not a tuning failure — the rule fires on a confident match or stays
+   quiet.
 7. **Studio: beat strip, script panel, direction inspector** — views onto the
    commands from 4-6, which is why they come after rather than before.
 8. **Re-cut the tour** using all of it, and compare against the numbers at the

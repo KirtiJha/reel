@@ -24,6 +24,7 @@ import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
 import { say } from "./commands/say.js";
 import { draftNarration, printScript, readScript } from "./commands/narrate.js";
+import { runDirect } from "./commands/direct.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -402,6 +403,29 @@ program
     await withErrors(() =>
       launchStudio({ uiPort: Number(opts.port), apiPort: Number(opts.apiPort), open: opts.open }),
     );
+  });
+
+program
+  .command("direct")
+  .argument("<spec>", "path to a .reel.yaml spec")
+  .option("--write", "insert the proposed direction into the spec", false)
+  .description("Propose camera and annotation direction for a spec, from what it already says.")
+  .action(async (specPath: string, opts: { write: boolean }) => {
+    await withErrors(async () => {
+      const loaded = await loadSpec(specPath);
+      const res = await runDirect(loaded, opts);
+      emit("direct", true, {
+        result: {
+          spec: loaded.path,
+          written: res.written,
+          directions: res.directions.map((d) => ({
+            index: d.index,
+            because: d.because,
+            step: d.step,
+          })),
+        },
+      });
+    }, "direct");
   });
 
 program
