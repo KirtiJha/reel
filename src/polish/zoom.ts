@@ -201,17 +201,31 @@ export function withIdleMotion(
     // A stretch the author already directed is not idle.
     if (resolved.some((r) => r.t > from && r.t < to)) continue;
 
-    // Whatever the camera has settled on by then is what drifts.
-    let held: Resolved | undefined;
+    // The authored shot governing this stretch is what we drift around.
+    let base: Resolved | undefined;
     for (const r of resolved) {
-      if (r.t <= start) held = r;
+      if (r.t <= start) base = r;
       else break;
     }
-    if (!held) continue;
+    if (!base) continue;
+
+    // Where the camera actually is by now, which includes a drift added for an
+    // earlier stretch. Reading only `resolved` here meant every stretch aimed
+    // at the same shrunk rect, so a spec with no keyframes of its own — any
+    // `zoom: false` chapter — pushed in once and then held a still for the rest
+    // of the run, which is the exact thing this function exists to prevent.
+    let held: Resolved = base;
+    for (const r of added) if (r.t <= start) held = r;
+
+    // Alternate in and out rather than always pushing in. Compounding the
+    // shrink across a dozen silences would crop away most of the frame and
+    // upscale what was left; easing back to the authored shot keeps the camera
+    // moving through every one of them and never past a single step of zoom.
+    const rect = sameRect(held.rect, base.rect) ? shrink(base.rect, opts.scale) : base.rect;
 
     added.push({
       t: Math.round(start),
-      rect: shrink(held.rect, opts.scale),
+      rect,
       // Eased across the whole remaining silence, so it reads as a drift rather
       // than a move that arrives and then sits still again.
       ms: Math.round(to - start),
@@ -219,6 +233,16 @@ export function withIdleMotion(
   }
   if (added.length === 0) return resolved;
   return [...resolved, ...added].sort((a, b) => a.t - b.t);
+}
+
+/** Same shot, to within rounding — sub-pixel differences are not a move. */
+function sameRect(a: Rect, b: Rect): boolean {
+  return (
+    Math.abs(a.x - b.x) < 0.5 &&
+    Math.abs(a.y - b.y) < 0.5 &&
+    Math.abs(a.w - b.w) < 0.5 &&
+    Math.abs(a.h - b.h) < 0.5
+  );
 }
 
 /** Scale a crop about its centre — smaller rect, closer camera. */

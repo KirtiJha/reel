@@ -30,6 +30,9 @@ deterministic:
 
 polish:
   zoom: false
+  # The camera is parked, so a settled screen under thirty seconds of
+  # narration would otherwise be a still. Drift keeps the shot alive.
+  idleMotion: drift
   cursor: smooth
   captions: false
   frame: window

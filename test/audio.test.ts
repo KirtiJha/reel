@@ -737,6 +737,33 @@ describe("withIdleMotion", () => {
     }
   });
 
+  test("alternates in and out across consecutive idle stretches", () => {
+    // A `zoom: false` spec contributes no keyframes of its own, so every idle
+    // stretch drifts around the same full-frame shot. Aiming each one at the
+    // same shrunk rect left the camera pushed in and motionless from the first
+    // silence onward — a still, which is what this exists to prevent.
+    const out = withIdleMotion([full], [0, 10000, 10200, 22000], 22000, {
+      afterMs: 1200,
+      scale: 0.94,
+    });
+    assert.equal(out.length, 3);
+    assert.equal(out[1]!.rect.w, 940, "the first silence pushes in");
+    assert.equal(out[2]!.rect.w, 1000, "the second eases back to the full frame");
+    assert.deepEqual(out[2]!.rect, full.rect);
+  });
+
+  test("never compounds past a single step of zoom", () => {
+    // Ten silences in a row. Shrinking from the previous drift each time would
+    // reach 0.94^10 — a third of the frame, upscaled into mush.
+    const marks = Array.from({ length: 11 }, (_, i) => i * 10_000);
+    const out = withIdleMotion([full], marks, 100_000, { afterMs: 1200, scale: 0.94 });
+    assert.ok(out.length > 2, "every stretch drifts");
+    for (const k of out) {
+      assert.ok(k.rect.w >= 940, `crop ${k.rect.w} never shrinks past one step`);
+      assert.ok(k.rect.w <= 1000, "and never grows past the full frame");
+    }
+  });
+
   test("stays sorted, so sampling still walks forward", () => {
     const keys = [full, { t: 20000, rect: { x: 0, y: 0, w: 200, h: 100 } }];
     const out = withIdleMotion(keys, [0, 9000, 20000, 34000], 34000, { afterMs: 1200, scale: 0.94 });
