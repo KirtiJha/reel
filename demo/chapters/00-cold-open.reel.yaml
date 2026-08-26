@@ -26,6 +26,11 @@ deterministic:
 polish:
   zoom: auto
   cursor: smooth
+  # The chapters are joined with a stream copy, so a cross-fade between the
+  # files would re-encode both sides of every join. A chapter that fades itself
+  # concatenates into a film that dissolves, at no cost.
+  fadeIn: 700
+  fadeOut: 400
   # No captions anywhere in this tour: the narration carries it, and burned-in
   # text competing with a voice reads as a subtitle for someone who cannot hear
   # the voice — which is what the .vtt sidecar is for.
@@ -41,7 +46,11 @@ audio:
     style: >-
       Calm, confident technical explainer. Unhurried and warm, never salesy.
       Short pauses at full stops. This is a product tour for engineers.
-  fit: stretch
+  # `flow` places each line at its cue and lets the demo run underneath, and
+  # stretches the timeline only where a line would collide with the next. The
+  # tour shipped on `stretch`, which grows the hold a line sits on — that is
+  # what produced the fifty-second stills this document opens with.
+  fit: flow
   breathMs: 380
   sfx: subtle
   music:

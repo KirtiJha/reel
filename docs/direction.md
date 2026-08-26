@@ -4,24 +4,33 @@ A plan for the second half of Reel — the part that decides whether a demo hold
 attention, and the interface that lets someone build one without hand-writing
 YAML.
 
-Status: implemented — `fit: flow`, idle motion, `highlight`, `image`,
-`diagram`, transitions, the preview tiers, `reel narrate`, `reel say`,
-`reel capture` writing `highlight` and `say`, `reel direct`, and Studio's
-script panel and direction inspector (Part 1, 2, 3.3, 3.4, 3.6 and order
-steps 1–7). Still proposed: Studio's beat strip and media library (3.2, 3.5),
-and the re-cut of the tour (step 8).
+**Status: everything in this plan is built except the last step — re-cutting
+the tour — which needs a machine that can reach a text-to-speech endpoint.
+See "Part 6 — Finishing this on your own machine" at the end.**
 
-One correction the measurement forced: `--only` cannot run "against cached
-frames", because frames live in a temp directory that is removed when a run
-ends. It stops the drive once the requested section is filmed and renders only
-that range — real savings, but bounded by how far into the demo the section
-sits, and only as fine-grained as the beats a spec actually names.
+Built: `fit: flow`, idle motion, `highlight`, `image`, `diagram`, transitions
+and fades, the preview tiers (`--draft`, `--only`), `reel narrate`, `reel say`,
+`reel direct`, `reel capture` writing `highlight` and `say`, and all four
+Studio views — script panel, direction inspector, beat strip and media library.
+That is Parts 1, 2 and 3, and order steps 1 through 7.
 
-`highlight` shipped with `box`, `circle` and `underline`; `arrow` and
-`pointer` are not implemented and the schema refuses them rather than
-accepting a value the renderer cannot draw. `reel capture` does not write
-`highlight` steps yet — that is step 5 of the order below, along with the
-other step kinds it cannot yet author.
+Not built, deliberately, with the reason recorded where each is described:
+`highlight`'s `arrow` and `pointer`, and `transition`'s `wipe` and `push`. In
+both cases the schema *refuses* the value rather than accepting it and
+rendering something else.
+
+Two corrections the work forced, kept here because they contradict what this
+document originally said:
+
+- `--only` cannot run "against cached frames" as §3.6 proposed. Frames live in
+  a temp directory removed when a run ends. It stops the drive once the
+  requested section is filmed and renders only that range — real savings, but
+  bounded by how far into the demo the section sits, and only as fine-grained
+  as the beats a spec actually names.
+- Transitions cannot be a cross-fade *between* chapters. They are joined with a
+  stream copy, which is why the picture that ships is bit-for-bit the picture
+  that was verified; an `xfade` would re-encode both sides of every join. The
+  fade lives inside each chapter instead, and the joins dissolve for free.
 
 Measured on a fixture built to the exact shape of the tour's chapter 3 — a
 terminal session, `zoom: false`, five narration lines including three
@@ -382,6 +391,253 @@ the difference between iterating on a demo and batch-rendering one.
    beat strip and the media library are still proposed.
 8. **Re-cut the tour** using all of it, and compare against the numbers at the
    top of this document. One visual change every 6.2 seconds is the bar to beat.
+   **This is the only step left. See Part 6.**
 
 Step 8 is the honest test. The measurements are the acceptance criteria: if the
 re-cut still has a fifty-second static frame, none of this worked.
+
+---
+
+# Part 6 — Finishing this on your own machine
+
+Everything above is built and pushed. What remains is step 8: re-render the
+tour with the new direction and check the result against the numbers this
+document opens with.
+
+## Why it could not be finished where the rest was built
+
+The work was done in a sandboxed container with no route to a speech endpoint.
+Three facts follow from that, and they are the whole reason this section exists:
+
+- **`api.openai.com` and `api.elevenlabs.io` are unreachable there** — the
+  egress proxy answers `CONNECT tunnel failed, response 403`. Narration cannot
+  be synthesized, so the tour cannot be rendered with audio.
+- **`demo/.reel-cache/voice/` is not committed.** It never was: `.gitignore`
+  ignored the whole of `.reel-cache/`, which contradicted the code — the
+  renderer calls that cache "committed, so renders reproduce" and `reel doctor`
+  tells you a render needs no key because narration comes from it. The ignore
+  rule is fixed now (`voice/` and `diagram/` are re-included), but the audio
+  itself only exists on whichever machine last rendered the tour with a key.
+  **That is your machine.**
+- **`mermaid` is a dev dependency**, needed only to *draw* a diagram the first
+  time. Rendered diagrams are cached in `.reel-cache/diagram/` and committed,
+  so this only matters if you add a new `diagram:` step.
+
+## What is already done, so you do not redo it
+
+All ten chapters in `demo/chapters/` have been edited and pushed:
+
+| Setting | Value | Why |
+|---|---|---|
+| `audio.fit` | `flow` (was `stretch`) | The root cause. `stretch` grows the hold a line sits on, which is what produced the fifty-second stills. |
+| `polish.idleMotion` | `drift` on chapters 01–09 | They are terminal demos with `zoom: false`, so nothing moved the camera. Chapter 00 already drifts via `auto`. |
+| `polish.fadeIn` / `fadeOut` | 400ms, except 700 in / 1200 out at the ends | Each chapter fades itself, so the stream-copy concat dissolves at every join. |
+
+You should not need to touch a chapter to get the re-cut. Everything below is
+running commands and reading numbers.
+
+## Setup
+
+```bash
+git clone https://github.com/KirtiJha/reel   # or: git pull
+cd reel
+npm install
+git config core.hooksPath .githooks          # once per clone; strips AI trailers
+npx playwright install chromium              # if you have not already
+```
+
+Set a voice key **only if the cache turns out to be incomplete** (see step 2):
+
+```bash
+export OPENAI_API_KEY=sk-...     # the chapters specify provider: openai, id: onyx
+# or: export REEL_VOICE_API_KEY=...
+```
+
+> The ElevenLabs key pasted into the chat during this work is in that
+> transcript and should be **rotated**. It was used inline for single commands
+> and never written to disk, and the tour does not use ElevenLabs anyway — the
+> chapters all specify `provider: openai`.
+
+**Windows:** everything works, with two differences. Use PowerShell's
+`$env:OPENAI_API_KEY = "sk-..."` instead of `export`. And `demo/build.mjs`
+shells out to `ffmpeg` — it uses `ffmpeg-static`, so no separate install is
+needed, but run it from a shell where `npm` scripts work (PowerShell or Git
+Bash, not `cmd` with a stale PATH).
+
+## Step 1 — confirm the build is sound
+
+```bash
+npm run typecheck
+npm test              # expect 877 passing
+npm run schema        # must produce no diff; a diff means the schema drifted
+```
+
+## Step 2 — commit the voice cache
+
+This is the one thing only you can do, and it is what makes the tour
+reproducible for everyone else.
+
+```bash
+# What the specs intend to say, and what is missing from the cache:
+npm run dev -- check demo/chapters/03-byte-identical.reel.yaml
+```
+
+`check` audits the voice cache and names any line that has no audio yet. If it
+reports nothing missing across the chapters, the cache is complete and no key
+is needed. Then:
+
+```bash
+git add demo/chapters/.reel-cache/voice demo/.reel-cache/voice
+git commit -m "chore(demo): commit the tour's voice cache"
+```
+
+The cache is content-hashed over provider, model, voice, style, speed and the
+text, so a reworded line leaves its old mp3 behind. There is no prune command
+yet; at ten minutes of narration it does not matter.
+
+## Step 3 — hear the script before you render it
+
+```bash
+npm run dev -- narrate demo/chapters/03-byte-identical.reel.yaml
+```
+
+It prints every line with its length and flags any that run long enough for the
+picture to wait. Across all ten chapters the tour is **55 lines, 1,229 words,
+about 8.2 minutes of talking** — against a 10:18 film.
+
+Two lines in chapter 3 are marked at ~10s each. With `fit: flow` they no longer
+freeze the picture, but they are still long sentences; splitting them is a
+judgement call and yours to make. `reel say "<the rewritten line>"` speaks one
+line and reports its real duration, using and filling the same cache.
+
+## Step 4 — let `direct` propose what it can
+
+```bash
+for f in demo/chapters/*.reel.yaml; do npm run dev -- direct "$f"; done
+```
+
+Expect **very little** — one proposal, on chapter 8. That is the honest result,
+not a bug: nine chapters are terminal demos where there is no element to mark,
+and `direct` fires on a confident match or stays quiet. Add `--write` to any
+chapter whose proposal you like; it inserts one line and leaves your comments
+and formatting alone.
+
+## Step 5 — render one chapter and look at it
+
+Do not start with the whole tour.
+
+```bash
+npm run dev -- record demo/chapters/03-byte-identical.reel.yaml --draft
+```
+
+A draft is small, low frame rate, video only, and speaks only what the cache
+already holds — about 3–4× faster than a full render. It writes
+`demo/out/03-byte-identical.preview.mp4` and **never touches the master or its
+fingerprint stamp.**
+
+Watch it. You are looking for: the camera drifting during narration instead of
+sitting still, the film fading up at the start and down at the end, and the
+voice running over a moving picture rather than the picture waiting.
+
+If it looks right, render it properly and measure:
+
+```bash
+npm run dev -- record demo/chapters/03-byte-identical.reel.yaml
+```
+
+## Step 6 — measure, before rendering all ten
+
+The acceptance criteria are the numbers at the top of this document. Reproduce
+them with the same tools they were produced with:
+
+```bash
+# Frozen picture, and the longest single still:
+./node_modules/ffmpeg-static/ffmpeg -hide_banner -i demo/out/03-byte-identical.mp4 \
+  -vf "freezedetect=n=-60dB:d=0.5" -map 0:v -f null - 2>&1 \
+  | grep -oE "freeze_duration: [0-9.]+" | awk '{n++; s+=$2; if($2>m) m=$2}
+      END {printf "%d freezes, %.1fs frozen, longest %.1fs\n", n, s, m}'
+```
+
+On a fixture of chapter 3's exact shape, the three configurations measured:
+
+| | Duration | Frozen | Longest freeze |
+|---|---|---|---|
+| `stretch` (as the tour shipped) | 51.4s | 19.2s (37%) | 14.5s |
+| `flow` | 42.5s | 10.3s (24%) | 8.4s |
+| `flow` + `idleMotion: drift` | 42.5s | **0.0s** | **0.0s** |
+
+**The bar, and a caution about which number you are looking at.** Run that same
+command against the tour as it shipped and it reports:
+
+```
+77 freezes, 589.3s frozen, longest 38.4s
+```
+
+That is the apples-to-apples baseline — use it, not the 57.9s in the table at
+the top of this document. The two disagree because they measure different
+things: 57.9s is the longest stretch with no *visual change at all*, found by
+frame comparison, while `freezedetect` at `-60dB:d=0.5` merges and splits runs
+by its own threshold. Both are true; only one is comparable to what you are
+about to run.
+
+So: **589.3s frozen out of 618s (95%), longest freeze 38.4s** is what to beat.
+A re-cut that still contains a thirty-second still means none of this worked.
+
+## Step 7 — render the whole tour
+
+```bash
+node demo/build.mjs        # renders every chapter and concatenates them
+```
+
+Then measure the master the same way:
+
+```bash
+./node_modules/ffmpeg-static/ffmpeg -hide_banner -i demo/out/reel-tour.mp4 \
+  -vf "freezedetect=n=-60dB:d=0.5" -map 0:v -f null - 2>&1 \
+  | grep -oE "freeze_duration: [0-9.]+" | awk '{n++; s+=$2; if($2>m) m=$2}
+      END {printf "%d freezes, %.1fs frozen, longest %.1fs\n", n, s, m}'
+```
+
+Projected from the shipped tour's own freeze intervals plus the 1.8s drift
+threshold: **109s frozen instead of 589s, and no single still longer than
+1.8s.** That projection predates `fit: flow`, which shortens the film as well,
+so treat it as a floor rather than a forecast.
+
+## Step 8 — verify determinism before you publish
+
+The central promise. Render twice and compare:
+
+```bash
+npm run dev -- record demo/chapters/03-byte-identical.reel.yaml && md5 demo/out/03-byte-identical.mp4
+npm run dev -- record demo/chapters/03-byte-identical.reel.yaml && md5 demo/out/03-byte-identical.mp4
+```
+
+(`md5sum` on Linux, `md5` on macOS, `Get-FileHash` on Windows.) The two must
+match. Every feature added here was checked this way — highlights, images,
+diagrams and fades each produced identical bytes across two runs — but the
+combination of all of them on the real tour has not been, and that is exactly
+the kind of thing worth confirming once.
+
+## If something goes wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No API key for OpenAI` | A line is not in the voice cache | Set `OPENAI_API_KEY`, render once, then commit the cache |
+| `This spec draws a Mermaid diagram, and there is no rendered copy` | A new `diagram:` step, and mermaid is not installed | `npm install --save-dev mermaid`, render once, commit `.reel-cache/diagram` |
+| The two md5s differ | A determinism regression | Render with `REEL_KEEP_FRAMES=1` and diff the frame directories to find the first frame that differs |
+| `reel direct --write` refuses | The edit would have changed a step, not just added one | Nothing was written. Run without `--write` and paste the proposal by hand |
+| A chapter is suddenly much longer | `fit: flow` still had to insert time for colliding lines | `reel narrate <spec>` shows which lines are long enough to collide |
+
+## What is still proposed, if you want to keep going
+
+- **`highlight` shapes `arrow` and `pointer`**, and **`transition` kinds `wipe`
+  and `push`**. The schema refuses all four today. Arrow and pointer need an
+  anchor and a direction; wipe and push need two shots to move between, which a
+  single continuous recording does not have.
+- **A highlight that follows a scroll.** The element's box is measured once,
+  when the step runs, so an annotation spanning a `scroll:` will not travel with
+  it. Recording a track of boxes would fix it.
+- **A voice-cache prune.** Reworded lines leave their old mp3 behind.
+- **`reel capture` writing `image:` and `diagram:` steps.** It writes `click`,
+  `type`, `waitFor`, `caption`, `say` and `highlight` today. The rest are
+  directorial, and a picture is not something you perform in a browser.

@@ -27,6 +27,11 @@ polish:
   # narration would otherwise be a still. Drift keeps the shot alive.
   idleMotion: drift
   cursor: smooth
+  # The chapters are joined with a stream copy, so a cross-fade between the
+  # files would re-encode both sides of every join. A chapter that fades itself
+  # concatenates into a film that dissolves, at no cost.
+  fadeIn: 400
+  fadeOut: 400
   captions: false
   frame: window
   background: "linear-gradient(135deg, #10251d, #070c0a)"
@@ -38,7 +43,11 @@ audio:
     style: >-
       Calm, confident technical explainer. Unhurried and warm, never salesy.
       Short pauses at full stops. This is a product tour for engineers.
-  fit: stretch
+  # `flow` places each line at its cue and lets the demo run underneath, and
+  # stretches the timeline only where a line would collide with the next. The
+  # tour shipped on `stretch`, which grows the hold a line sits on — that is
+  # what produced the fifty-second stills this document opens with.
+  fit: flow
   breathMs: 380
   sfx: subtle
   music: { file: ../bed.mp3, gain: -21, duck: -13, fadeIn: 900, fadeOut: 900 }
