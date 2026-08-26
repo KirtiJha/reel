@@ -19,7 +19,7 @@ export const BINDING = "__reelCaptureEvent";
 export const UI_ID = "__reel_capture_ui__";
 
 export interface ObservedEvent {
-  type: "click" | "dblclick" | "drag" | "input" | "key" | "caption" | "beat" | "finish";
+  type: "click" | "dblclick" | "drag" | "input" | "key" | "caption" | "say" | "mark" | "beat" | "finish";
   candidates?: { kind: string; selector: string; matches: number }[];
   /** Where a drag was released, when something nameable was under it. */
   toCandidates?: { kind: string; selector: string; matches: number }[];
@@ -29,7 +29,7 @@ export interface ObservedEvent {
   value?: string;
   /** The key pressed, for key events. */
   key?: string;
-  /** Caption text, when the user annotates from the toolbar. */
+  /** Caption or narration text, when the user annotates from the toolbar. */
   text?: string;
   /** Element tag, used to decide between `type` and `fill`. */
   tag?: string;
@@ -47,6 +47,8 @@ export const OBSERVER_SCRIPT = `
   const BINDING = ${JSON.stringify(BINDING)};
   const pending = [];
   let steps = 0;
+  // Armed by the toolbar's Mark button; consumed by the next click on the page.
+  let marking = false;
 
   const send = (event) => {
     const fn = window[BINDING];
@@ -365,6 +367,19 @@ export const OBSERVER_SCRIPT = `
   document.addEventListener("click", (e) => {
     const el = actionable(e.target);
     if (!el || ours(el)) return;
+    // Marking is pointing, not pressing. The click is swallowed so the app does
+    // not act on it: the user is naming an element for a highlight, and a demo
+    // that submitted the form while you annotated it would be recording
+    // something you did not do.
+    if (marking) {
+      e.preventDefault();
+      e.stopPropagation();
+      marking = false;
+      steps++;
+      render();
+      send({ type: "mark", candidates: candidatesFor(el), url: location.href });
+      return;
+    }
     lastTyped = null;
     steps++;
     render();
@@ -457,6 +472,19 @@ export const OBSERVER_SCRIPT = `
     });
     ui.appendChild(field);
 
+    const line = document.createElement("input");
+    line.placeholder = "Narrate…";
+    line.style.cssText = "background:rgba(255,255,255,.1);border:0;border-radius:999px;color:#fff;padding:6px 12px;width:180px;outline:none;font:inherit";
+    line.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key !== "Enter" || !line.value.trim()) return;
+      steps++;
+      send({ type: "say", text: line.value.trim() });
+      line.value = "";
+      render();
+    });
+    ui.appendChild(line);
+
     const button = (label, background) => {
       const b = document.createElement("button");
       b.textContent = label;
@@ -470,6 +498,16 @@ export const OBSERVER_SCRIPT = `
       steps++;
       send({ type: "beat" });
       render();
+    });
+
+    // Pointing at an element is not a UI-only idea — this is the same gesture
+    // Studio would offer, reachable from the command line, writing the same
+    // selector into the same spec.
+    const mark = button("Mark", "rgba(255,255,255,.14)");
+    mark.addEventListener("click", () => {
+      marking = !marking;
+      mark.style.background = marking ? "#6d8bff" : "rgba(255,255,255,.14)";
+      mark.textContent = marking ? "Click an element…" : "Mark";
     });
 
     button("Finish", "#6d8bff").addEventListener("click", () => send({ type: "finish" }));

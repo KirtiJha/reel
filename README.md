@@ -558,6 +558,10 @@ mock:
 - **Captions** — composited onto the output (so a zoomed crop never clips them),
   wrapped at real word boundaries using advances measured by the browser's own
   text engine, and faded in and out rather than hard-cut.
+- **A script you can read** — `reel narrate` gathers every spoken line into one
+  document with a length beside it, because how long a demo talks for is the one
+  thing you cannot tell by reading the spec. Reel's own tour is 1,229 words,
+  which is about eight minutes of talking.
 - **Images and diagrams** — bring in a logo, an architecture picture or a chart
   the app itself cannot show. Diagrams are written as Mermaid text in the spec,
   so a flowchart changes in a pull request as changed *words*; the rendered PNG
@@ -699,6 +703,9 @@ Useful flags:
 | `record --if-changed` | Skip the render when the spec, its inputs and its outputs are all unchanged. |
 | `record --draft` | Quick preview: small, low frame rate, video only, and only narration already in the voice cache. |
 | `record --only <beat>` | Render just the section a named beat labels, at full quality. |
+| `narrate <spec>` | Read the demo's narration as one document: every line, its estimated length, and the total. Needs nothing installed. |
+| `narrate --draft` | Propose a line for every card and beat that says nothing. Prints YAML to paste — it never writes to your spec. |
+| `say "<line>"` | Speak one line and report how long it runs, without rendering. `--dry-run` estimates from the word count, with no key and no network. |
 | `record --app-revision <sha>` | Identify the app being demoed, so a changed app forces a re-render. |
 | `diff --exit-code` | Exit 1 when the two renders differ, like `git diff --exit-code`. |
 | `review --fail-on <verdict>` | Exit 1 at `stale-caption` (default), `content`, `cosmetic`, or never. |

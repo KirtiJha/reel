@@ -4,9 +4,10 @@ A plan for the second half of Reel — the part that decides whether a demo hold
 attention, and the interface that lets someone build one without hand-writing
 YAML.
 
-Status: `fit: flow`, idle motion, `highlight`, `image`, `diagram` and the
-preview tiers are implemented (Part 1.1 to 1.4, and 3.6's `--draft` and
-`--only`). The rest is proposed.
+Status: implemented — `fit: flow`, idle motion, `highlight`, `image`,
+`diagram`, the preview tiers, `reel narrate`, `reel say`, and `reel capture`
+writing `highlight` and `say` (Part 1.1–1.4, 3.6 and order step 5). Still
+proposed: `reel direct`, transitions, and the Studio views.
 
 One correction the measurement forced: `--only` cannot run "against cached
 frames", because frames live in a temp directory that is removed when a run
@@ -347,8 +348,11 @@ the difference between iterating on a demo and batch-rendering one.
 4. ~~**Preview tiers** — `--only` and `--draft`.~~ Done. Measured on the
    taskflow example: a full render is 150s, `--draft` 41s, `--draft --only`
    37s. Neither writes the master or its fingerprint stamp.
-5. **`reel narrate --draft` and `reel say`**, then **`reel capture` learning the
-   new step kinds** — so the CLI can author everything Part 1 added.
+5. ~~**`reel narrate --draft` and `reel say`**, then **`reel capture` learning
+   the new step kinds**.~~ Done. `capture` grew a Narrate field and a Mark
+   button — marking swallows the click, because pointing at an element is not
+   pressing it. `narrate` without a model reads the script and needs nothing
+   installed, which turned out to be the more useful half.
 6. **`reel direct`.** Wants the primitives to exist before it can place them.
 7. **Studio: beat strip, script panel, direction inspector** — views onto the
    commands from 4-6, which is why they come after rather than before.

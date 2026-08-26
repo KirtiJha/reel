@@ -76,14 +76,32 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
       continue;
     }
 
+    if (event.type === "say") {
+      flush();
+      if (event.text) steps.push({ say: event.text });
+      continue;
+    }
+
     if (event.type === "beat") {
       flush();
       steps.push({ beat: true });
       continue;
     }
 
-    // Captions and beats are annotations, not actions: they neither cause a
-    // navigation nor prove the user has started.
+    // Marking an element is pointing at it, not acting on it: the click was
+    // swallowed in the page, so nothing happened that a later step depends on.
+    // That is why it does not set `acted` — a mark is not the user starting the
+    // demo, and treating it as one would record the app's own boot redirects.
+    if (event.type === "mark") {
+      flush();
+      const marked = event.candidates ? chooseSelector(event.candidates as Candidate[]) : null;
+      if (marked) steps.push({ highlight: { selector: marked } });
+      else skipped.push(describeUnnamed("highlight", event));
+      continue;
+    }
+
+    // Captions, narration, marks and beats are annotations, not actions: they
+    // neither cause a navigation nor prove the user has started.
     acted = true;
 
     const selector = event.candidates ? chooseSelector(event.candidates as Candidate[]) : null;

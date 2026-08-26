@@ -22,6 +22,8 @@ import { recordOne } from "./commands/record.js";
 import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
+import { say } from "./commands/say.js";
+import { draftNarration, printScript, readScript } from "./commands/narrate.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -400,6 +402,52 @@ program
     await withErrors(() =>
       launchStudio({ uiPort: Number(opts.port), apiPort: Number(opts.apiPort), open: opts.open }),
     );
+  });
+
+program
+  .command("narrate")
+  .argument("<spec>", "path to a .reel.yaml spec")
+  .option("--draft", "propose a line for every card and beat that says nothing", false)
+  .description("Read the demo's narration as a script — every line, its length, and the total.")
+  .action(async (specPath: string, opts: { draft: boolean }) => {
+    await withErrors(async () => {
+      const loaded = await loadSpec(specPath);
+      const script = readScript(loaded.spec.steps);
+      printScript(script, loaded.spec.name);
+      const proposed = opts.draft ? await draftNarration(loaded) : [];
+      emit("narrate", true, {
+        result: {
+          spec: loaded.path,
+          lines: script.lines.length,
+          words: script.words,
+          estimatedMs: script.estimatedMs,
+          silent: script.silent,
+          proposed,
+        },
+      });
+    }, "narrate");
+  });
+
+program
+  .command("say")
+  .argument("<text>", "the line to hear")
+  .option("--spec <file>", "borrow the voice (and the cache) from this spec")
+  .option("-o, --out <file>", "copy the audio here instead of leaving it in the cache")
+  .option("--dry-run", "estimate the length from the word count — no key, no network", false)
+  .description("Speak one line and say how long it runs, without rendering anything.")
+  .action(async (text: string, opts: { spec?: string; out?: string; dryRun: boolean }) => {
+    await withErrors(async () => {
+      const res = await say(text, opts);
+      emit("say", true, {
+        result: {
+          text: res.text,
+          durationMs: res.durationMs,
+          cached: res.cached,
+          estimated: Boolean(res.estimated),
+          file: res.file,
+        },
+      });
+    }, "say");
   });
 
 program
