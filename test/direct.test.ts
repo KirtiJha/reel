@@ -2,7 +2,15 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import YAML from "yaml";
 import { direct, nameIn } from "../src/direct/direct.js";
-import { findSteps, insertSteps, stepLine, verifyInsertion } from "../src/direct/apply.js";
+import {
+  findSteps,
+  insertSteps,
+  moveStep,
+  stepLine,
+  verifyInsertion,
+  verifyReorder,
+} from "../src/direct/apply.js";
+import { safeName } from "../src/media/assets.js";
 import { spokenTextOf } from "../src/narrate/spoken.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
 
@@ -258,5 +266,115 @@ describe("spokenTextOf", () => {
     // A title read aloud sounds like a title.
     assert.equal(spokenTextOf({ card: { title: "Chapter" } } as never), undefined);
     assert.equal(spokenTextOf({ card: { title: "Chapter", say: "Here we go." } } as never), "Here we go.");
+  });
+});
+
+describe("moveStep", () => {
+  const spec = [
+    "name: Demo",
+    "steps:",
+    "  - click: '#one'",
+    "  - say: |",
+    "      a multi-line",
+    "      spoken block",
+    "  - click: '#three'",
+    "",
+    "output:",
+    "  mp4: out/d.mp4",
+    "",
+  ].join("\n");
+
+  const stepsOf = (raw: string) =>
+    (YAML.parse(raw) as { steps: Record<string, unknown>[] }).steps;
+
+  test("moves a step down", () => {
+    const out = stepsOf(moveStep(spec, 0, 2));
+    assert.deepEqual(Object.keys(out[2]!), ["click"]);
+    assert.equal(out[2]!.click, "#one");
+  });
+
+  test("moves a step up", () => {
+    const out = stepsOf(moveStep(spec, 2, 0));
+    assert.equal(out[0]!.click, "#three");
+  });
+
+  test("carries a multi-line step whole", () => {
+    // A step is a *range* of lines, not one line. Moving only the `- ` marker
+    // would leave the block behind and produce a spec that means something else.
+    const out = stepsOf(moveStep(spec, 1, 0));
+    assert.match(String(out[0]!.say), /multi-line/);
+    assert.match(String(out[0]!.say), /spoken block/);
+    assert.equal(out.length, 3);
+  });
+
+  test("a downward move lands where the drag let go", () => {
+    // Recomputed against the list with the step already removed. Adjusting the
+    // old index by hand lands one place short on every downward move.
+    const out = stepsOf(moveStep(spec, 0, 1));
+    assert.equal(out[0]!.say !== undefined, true);
+    assert.equal(out[1]!.click, "#one");
+  });
+
+  test("moving a step to its own place changes nothing", () => {
+    assert.equal(moveStep(spec, 1, 1), spec);
+  });
+
+  test("keeps the rest of the file intact", () => {
+    const out = moveStep(spec, 0, 2);
+    assert.ok(out.includes("name: Demo"));
+    assert.ok(out.includes("output:\n  mp4: out/d.mp4"));
+  });
+
+  test("refuses an index that does not exist", () => {
+    assert.throws(() => moveStep(spec, 0, 9), /there are 3/);
+    assert.throws(() => moveStep(spec, -1, 0), /there are 3/);
+  });
+});
+
+describe("verifyReorder", () => {
+  const a = { click: "#a" };
+  const b = { click: "#b" };
+
+  test("accepts a pure reorder", () => {
+    assert.doesNotThrow(() => verifyReorder([a, b], [b, a]));
+  });
+
+  test("refuses a step that changed", () => {
+    assert.throws(() => verifyReorder([a, b], [b, { click: "#c" }]), /more than the order/);
+  });
+
+  test("refuses a step that vanished or doubled", () => {
+    assert.throws(() => verifyReorder([a, b], [a]), /more than the order/);
+    assert.throws(() => verifyReorder([a, b], [a, b, b]), /more than the order/);
+  });
+});
+
+describe("safeName", () => {
+  test("keeps a sensible name", () => {
+    assert.equal(safeName("architecture.png"), "architecture.png");
+  });
+
+  test("a dropped name cannot escape the directory", () => {
+    // A browser upload carries whatever the file was called, and
+    // `../../.ssh/id_rsa` is a file name too.
+    assert.equal(safeName("../../etc/passwd.png"), "passwd.png");
+    assert.equal(safeName("/abs/path/logo.svg"), "logo.svg");
+    assert.equal(safeName("..\\..\\win.png"), "win.png");
+  });
+
+  test("refuses what a render could not show anyway", () => {
+    assert.throws(() => safeName("payload.exe"), /not an image/);
+    assert.throws(() => safeName("script.svg.sh"), /not an image/);
+  });
+
+  test("never produces an empty stem", () => {
+    // The punctuation strip can eat a whole name; the file still needs one.
+    assert.equal(safeName("---.png"), "asset.png");
+    assert.equal(safeName("!!!.png"), "asset.png");
+  });
+
+  test("a bare dotfile is not an image name", () => {
+    // `extname(".png")` is "" — a leading dot makes it a dotfile, not a PNG.
+    assert.throws(() => safeName(".png"), /not an image/);
   });
 });

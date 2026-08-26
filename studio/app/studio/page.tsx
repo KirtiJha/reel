@@ -6,6 +6,8 @@ import { LogConsole } from "@/components/LogConsole";
 import { MediaPreview } from "@/components/MediaPreview";
 import { SpecChips, SpecOutline } from "@/components/SpecOutline";
 import { ScriptPanel } from "@/components/ScriptPanel";
+import { BeatStrip, type Beat } from "@/components/BeatStrip";
+import { MediaLibrary } from "@/components/MediaLibrary";
 import {
   getJSON,
   postJSON,
@@ -76,8 +78,13 @@ export default function StudioPage() {
   const editor = useRef<HTMLTextAreaElement>(null);
   /* Output settings live beside the spec rather than below it: stacked, they
      doubled the page height for controls you touch once per demo. */
-  const [tab, setTab] = useState<"yaml" | "steps" | "script" | "output">("yaml");
+  const [tab, setTab] = useState<"yaml" | "steps" | "beats" | "script" | "output">("yaml");
   const [script, setScript] = useState<Script | null>(null);
+  const [beats, setBeats] = useState<{ beats: Beat[]; durationMs: number; rendered: boolean }>({
+    beats: [],
+    durationMs: 0,
+    rendered: false,
+  });
 
   /** Fill the form from what the spec says, so applying can't clobber it. */
   const hydrate = useCallback((s: SpecSummary | null) => {
@@ -125,6 +132,11 @@ export default function StudioPage() {
       postJSON<Script>("/api/script", { path: p })
         .then(setScript)
         .catch(() => setScript(null));
+      // Beat times come from the last render's stamp, so this costs a file read
+      // rather than a recording.
+      postJSON<{ beats: Beat[]; durationMs: number; rendered: boolean }>("/api/beats", { path: p })
+        .then(setBeats)
+        .catch(() => setBeats({ beats: [], durationMs: 0, rendered: false }));
       // Show whatever this spec last rendered, so opening a demo from the
       // gallery isn't a blank panel until you record it again.
       const prior = await getJSON<{ outputs: { path: string }[] }>(
@@ -445,7 +457,7 @@ export default function StudioPage() {
             <div className="card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div className="inline-flex rounded-xl border border-line bg-bg2 p-1">
-                  {(["yaml", "steps", "script", "output"] as const).map((t) => (
+                  {(["yaml", "steps", "beats", "script", "output"] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => setTab(t)}
@@ -457,9 +469,11 @@ export default function StudioPage() {
                         ? "YAML"
                         : t === "steps"
                           ? `Steps${summary?.valid ? ` · ${summary.stepCount}` : ""}`
-                          : t === "script"
-                            ? `Script${script ? ` · ${script.lines.length}` : ""}`
-                            : "Output & polish"}
+                          : t === "beats"
+                            ? "Beats & media"
+                            : t === "script"
+                              ? `Script${script ? ` · ${script.lines.length}` : ""}`
+                              : "Output & polish"}
                     </button>
                   ))}
                 </div>
@@ -482,7 +496,34 @@ export default function StudioPage() {
                 </button>
               )}
 
-              {tab === "script" ? (
+              {tab === "beats" ? (
+                <div className="max-h-[720px] space-y-4 overflow-y-auto rounded-xl border border-line bg-bg2 p-3 pr-2">
+                  <BeatStrip
+                    path={path}
+                    steps={summary?.outline ?? []}
+                    beats={beats.beats}
+                    durationMs={beats.durationMs}
+                    rendered={beats.rendered}
+                    busy={busy}
+                    onChanged={() => loadSpec(path)}
+                    onError={(m) => {
+                      setNoteTone("err");
+                      setNote(m);
+                    }}
+                  />
+                  <div className="border-t border-line pt-4">
+                    <p className="mb-2 text-[13px] font-medium text-ink">Media</p>
+                    <MediaLibrary
+                      path={path}
+                      busy={busy}
+                      onAdded={(rel) => {
+                        setNoteTone("ok");
+                        setNote(`Added ${rel} — reference it with \`image: { file: ${rel} }\``);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : tab === "script" ? (
                 <div className="max-h-[720px] overflow-y-auto rounded-xl border border-line bg-bg2 p-3 pr-2">
                   <ScriptPanel
                     path={path}

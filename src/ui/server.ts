@@ -16,6 +16,9 @@ import { summarize } from "./summary.js";
 import { readScript, draftNarration } from "../commands/narrate.js";
 import { say } from "../commands/say.js";
 import { runDirect } from "../commands/direct.js";
+import { moveStep, verifyReorder } from "../direct/apply.js";
+import { addAsset, addAssetFromUrl } from "../media/assets.js";
+import { readStamp, stampPath } from "../spec/fingerprint.js";
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -141,6 +144,47 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
     const body = await readBody(req);
     const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
     return sendJson(res, 200, readScript(loaded.spec.steps));
+  }
+
+  // The beat strip. Read from the last render's stamp rather than by rendering
+  // again: the stamp already records what the beats were and when, so the strip
+  // costs a file read. A spec never rendered has no beats yet, and says so.
+  if (path === "/api/beats" && req.method === "POST") {
+    const body = await readBody(req);
+    const file = safePathOrThrow(cwd, body.path);
+    const loaded = await loadSpec(file);
+    const stamp = await readStamp(stampPath(loaded)).catch(() => null);
+    return sendJson(res, 200, {
+      beats: stamp?.beats ?? [],
+      durationMs: stamp?.durationMs ?? 0,
+      rendered: Boolean(stamp?.beats?.length),
+    });
+  }
+
+  // Reordering writes the steps in the spec; the file is what changed.
+  if (path === "/api/move-step" && req.method === "POST") {
+    const body = await readBody(req);
+    const file = safePathOrThrow(cwd, body.path);
+    const before = (await loadSpec(file)).spec.steps;
+    const next = moveStep(await readFile(file, "utf8"), Number(body.from), Number(body.to));
+    // Parsed and compared before it goes near disk, exactly as `direct --write`
+    // is. A reorder may change the order and nothing else.
+    const after = specSchema.parse(parseYaml(next));
+    verifyReorder(before, after.steps);
+    await writeFile(file, next, "utf8");
+    return sendJson(res, 200, { ok: true, raw: next, summary: await summarize(file) });
+  }
+
+  // The media library. Downloading happens while you edit, never while you
+  // render — the file lands in the spec's directory and is committed like any
+  // other input.
+  if (path === "/api/asset" && req.method === "POST") {
+    const body = await readBody(req);
+    const file = safePathOrThrow(cwd, body.path);
+    const added = body.url
+      ? await addAssetFromUrl(file, String(body.url))
+      : await addAsset(file, String(body.name ?? "asset.png"), Buffer.from(String(body.data ?? ""), "base64"));
+    return sendJson(res, 200, added);
   }
 
   if (path === "/api/direct" && req.method === "POST") {

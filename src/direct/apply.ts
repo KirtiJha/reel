@@ -99,6 +99,48 @@ export function insertSteps(raw: string, directions: Direction[]): string {
 }
 
 /**
+ * Move one top-level step to another position, as text.
+ *
+ * A step is a *range* of lines, not one line: an object step spans as many as
+ * it needs, and a multi-line `say:` block is normal. The range runs from its
+ * `- ` marker to the marker of the step after it, which is what `findSteps`
+ * already knows.
+ *
+ * `to` is the index the step should end up at in the finished list, the way a
+ * drag reads: dragging step 1 to position 3 means "third from the top when I
+ * let go", not "after whatever is currently third".
+ */
+export function moveStep(raw: string, from: number, to: number): string {
+  const lines = raw.split("\n");
+  const block = findSteps(lines);
+  if (!block) {
+    throw new ReelError(
+      "Could not find the `steps:` list in this spec.",
+      "Reordering edits the file as text to keep your comments and formatting.",
+    );
+  }
+  const n = block.starts.length;
+  if (from < 0 || from >= n || to < 0 || to >= n) {
+    throw new ReelError(`Cannot move step ${from + 1} to position ${to + 1}: there are ${n}.`);
+  }
+  if (from === to) return raw;
+
+  const start = block.starts[from]!;
+  const stop = from + 1 < n ? block.starts[from + 1]! : block.end;
+  const chunk = lines.slice(start, stop);
+  const rest = [...lines.slice(0, start), ...lines.slice(stop)];
+
+  // Where the target lands once the moved step is out of the way. Recomputing
+  // against `rest` rather than adjusting the old index by hand is what keeps a
+  // downward move from landing one place short.
+  const after = findSteps(rest);
+  if (!after) throw new ReelError("Reordering lost the `steps:` list.");
+  const at = to < after.starts.length ? after.starts[to]! : after.end;
+  rest.splice(at, 0, ...chunk);
+  return rest.join("\n");
+}
+
+/**
  * Refuse to write anything that is not what was meant.
  *
  * Cheap, and the only thing standing between a proposal engine and a corrupted
@@ -132,5 +174,26 @@ export function verifyInsertion(
       );
     }
     j++;
+  }
+}
+
+
+/**
+ * Refuse a reorder that changed anything but the order.
+ *
+ * The same guard as `verifyInsertion`, asking the question a move needs: the
+ * multiset of steps must be identical, or text surgery has eaten or duplicated
+ * one. Order is exactly what is allowed to differ, so it is compared as a
+ * sorted bag rather than a sequence.
+ */
+export function verifyReorder(before: unknown[], after: unknown[]): void {
+  const bag = (xs: unknown[]) => xs.map((x) => JSON.stringify(x)).sort();
+  const a = bag(before);
+  const b = bag(after);
+  if (a.length !== b.length || a.some((x, i) => x !== b[i])) {
+    throw new ReelError(
+      "Reordering would have changed more than the order.",
+      "Nothing was written. Please report this with the spec.",
+    );
   }
 }
