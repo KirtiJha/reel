@@ -13,6 +13,9 @@ import { chat, loadLlmConfig } from "../ai/llm.js";
 import { PROVIDERS, findProvider } from "../ai/providers.js";
 import { writeEnvFile } from "./env-file.js";
 import { summarize } from "./summary.js";
+import { readScript, draftNarration } from "../commands/narrate.js";
+import { say } from "../commands/say.js";
+import { runDirect } from "../commands/direct.js";
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -121,8 +124,57 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
     const body = await readBody(req);
     return streamJob(res, async () => {
       const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
-      const r = await record(loaded, "record");
+      // The preview button is `record --draft`, not a second render path. A
+      // Studio that previewed differently from the command line would be a
+      // second implementation to keep honest.
+      const r = await record(loaded, "record", {
+        draft: Boolean(body.draft),
+        only: body.only ? String(body.only) : undefined,
+      });
       return { outputs: r.outputs.map((o) => rel(cwd, o)), frames: r.frames, durationMs: r.durationMs };
+    });
+  }
+
+  // Reading the script is fast and offline, so it answers directly rather than
+  // as a streamed job — the panel wants the numbers, not a log.
+  if (path === "/api/script" && req.method === "POST") {
+    const body = await readBody(req);
+    const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
+    return sendJson(res, 200, readScript(loaded.spec.steps));
+  }
+
+  if (path === "/api/direct" && req.method === "POST") {
+    const body = await readBody(req);
+    return streamJob(res, async () => {
+      const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
+      const r = await runDirect(loaded, { write: Boolean(body.write) });
+      return { written: r.written, directions: r.directions };
+    });
+  }
+
+  if (path === "/api/narrate" && req.method === "POST") {
+    const body = await readBody(req);
+    return streamJob(res, async () => {
+      const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
+      return { proposed: await draftNarration(loaded) };
+    });
+  }
+
+  // Hearing one line. Streamed like a job because a cold cache means a network
+  // call, and the panel should show that it is waiting rather than hang.
+  if (path === "/api/say" && req.method === "POST") {
+    const body = await readBody(req);
+    return streamJob(res, async () => {
+      const spec = body.path ? safePathOrThrow(cwd, body.path) : undefined;
+      const r = await say(String(body.text ?? ""), { spec, dryRun: Boolean(body.dryRun) });
+      return {
+        durationMs: r.durationMs,
+        cached: r.cached,
+        estimated: Boolean(r.estimated),
+        // Relative, so the browser fetches it back through /media like every
+        // other artifact rather than being handed a filesystem path.
+        file: r.file ? rel(cwd, r.file) : undefined,
+      };
     });
   }
   if (path === "/api/check" && req.method === "POST") {
