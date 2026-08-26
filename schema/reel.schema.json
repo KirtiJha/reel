@@ -225,11 +225,12 @@
         "idleMotion": {
           "type": "string",
           "enum": [
+            "auto",
             "drift",
             "none"
           ],
-          "default": "drift",
-          "description": "Drift the camera where nothing on screen is changing.\n\nThe capture emits a frame only when something moves, so a stretch narrated\nover a settled screen is one still image held for however long the voice\ntakes. A slow push-in costs nothing — the frames are already on disk and\nthe camera is already interpolated — and it is the difference between a\ndemo and a slideshow."
+          "default": "auto",
+          "description": "Drift the camera where nothing on screen is changing.\n\nThe capture emits a frame only when something moves, so a stretch narrated\nover a settled screen is one still image held for however long the voice\ntakes. A slow push-in costs nothing — the frames are already on disk and\nthe camera is already interpolated — and it is the difference between a\ndemo and a slideshow.\n\n`auto` follows the camera: drift where `zoom: auto`, hold still where\n`zoom: false`. That default matters because `zoom: false` is usually a\nterminal demo, where pushing in would blur the text the demo exists to\nshow — and overriding that would be answering a question the author\nalready answered.\n\n`drift` asks for it regardless, which is the way to add life to a terminal\nchapter that would otherwise sit still under a long line of narration."
         },
         "idleMotionAfter": {
           "type": "integer",

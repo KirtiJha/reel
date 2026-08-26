@@ -96,8 +96,15 @@ export async function renderWithZoom(
   // Drift through stretches where nothing changes. Applied to the resolved
   // rects rather than the keyframes, because what should drift is the shot the
   // camera actually settled on, not the element box it was derived from.
+  // `auto` follows the camera, so `zoom: false` — usually a terminal demo,
+  // where pushing in would blur the text — stays still. An explicit `drift`
+  // overrides that, which is how a terminal chapter narrated over a settled
+  // screen gets some life without turning auto-zoom back on.
+  const drifting =
+    zoom.polish.idleMotion === "drift" ||
+    (zoom.polish.idleMotion === "auto" && zoom.polish.zoom === "auto");
   const resolved =
-    zoom.polish.idleMotion === "drift"
+    drifting
       ? withIdleMotion(
           resolveTimeline(zoom.timeline, cfg),
           frames.map((f) => f.t),

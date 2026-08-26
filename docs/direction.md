@@ -7,10 +7,26 @@ YAML.
 Status: `fit: flow` and idle motion are implemented (Part 1.1 and 1.2). The
 rest is proposed.
 
-Measured on a demo built to reproduce the tour's shape — long lines against
-short holds — the three renders of one spec: `stretch` gave 1 visual change in
-17.9s, `flow` gave 2 in 16.4s, and `flow` with drift gave **65**. Output stays
-byte-identical across runs.
+Measured on a fixture built to the exact shape of the tour's chapter 3 — a
+terminal session, `zoom: false`, five narration lines including three
+consecutive ones at the end — with identical speech durations across all three
+renders:
+
+| | Duration | Frozen | Longest freeze |
+|---|---|---|---|
+| `stretch` (the tour as shipped) | 51.4s | 19.2s (37%) | 14.5s |
+| `flow` | 42.5s | 10.3s (24%) | 8.4s |
+| `flow` + `idleMotion: drift` | 42.5s | **0.0s** | **0.0s** |
+
+Flow alone cuts frozen time by 46% and the chapter by 17%, but cannot fix the
+residue: three `say` steps in a row have nothing to play the voice over, and no
+retiming invents something to show. Drift closes it.
+
+One correction the measurement forced. Nine of the tour's ten chapters set
+`zoom: false`, which is a deliberate choice — they are terminal sessions where
+pushing in would blur the text. Idle motion defaulting to on would have
+overridden that in nine places, so `idleMotion: auto` now follows the camera and
+an explicit `drift` is what opts a terminal chapter in.
 
 ## What is wrong today, measured
 

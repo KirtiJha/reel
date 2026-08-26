@@ -149,8 +149,17 @@ export const polishSchema = z.object({
    * takes. A slow push-in costs nothing — the frames are already on disk and
    * the camera is already interpolated — and it is the difference between a
    * demo and a slideshow.
+   *
+   * `auto` follows the camera: drift where `zoom: auto`, hold still where
+   * `zoom: false`. That default matters because `zoom: false` is usually a
+   * terminal demo, where pushing in would blur the text the demo exists to
+   * show — and overriding that would be answering a question the author
+   * already answered.
+   *
+   * `drift` asks for it regardless, which is the way to add life to a terminal
+   * chapter that would otherwise sit still under a long line of narration.
    */
-  idleMotion: z.enum(["drift", "none"]).default("drift"),
+  idleMotion: z.enum(["auto", "drift", "none"]).default("auto"),
   /** How long nothing may change before the camera starts to drift. */
   idleMotionAfter: z.number().int().positive().default(1800),
   /**
