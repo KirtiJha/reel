@@ -91,9 +91,15 @@ being discussed.
 
 ```yaml
 polish:
-  idleMotion: drift        # drift | none
-  idleMotionAfter: 1200    # only kick in once nothing has changed this long
+  idleMotion: drift        # auto | drift | none  (auto follows the camera)
+  idleMotionAfter: 1800    # only kick in once nothing has changed this long
+  idleMotionScale: 0.94    # how far in one push goes
 ```
+
+Consecutive idle stretches alternate in and out around the shot the author
+directed, rather than each pushing further in — otherwise a dozen silences
+compound into a heavily cropped, upscaled frame, and a spec with no keyframes
+of its own drifts once and then holds a still for the rest of the run.
 
 It is a render-time transform over frames already on disk: no re-capture, no
 extra drive, and it cannot change what the demo did. Cheap, and it removes dead
