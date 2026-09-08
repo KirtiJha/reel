@@ -25,6 +25,8 @@ Reel does not draw pictures of products, and HyperFrames does not drive apps.
 npm run dev -- check   demo.reel.yaml            # does every step still work?
 npm run dev -- shoot   demo.reel.yaml --out shot # footage.mp4 + shots.json
 npm run dev -- compose shot/shots.json --out film --look aurora --accent "#22d3ee"
+# several shoots become several chapters, in the order given:
+npm run dev -- compose app/shots.json cli/shots.json --out film
 cd film
 npx hyperframes check                            # lint, layout, motion, contrast
 npx hyperframes snapshot --at 3,8,15             # seconds — LOOK at these
@@ -67,8 +69,15 @@ Footage times are relative to the footage. In the composition, add the clip's
 ## What `compose` gives you, and what it does not
 
 It scaffolds the boring 80%: the footage on the timeline at the right size, a
-title card in a look, lower thirds already timed to the captions, a closing
-card, GSAP vendored locally, `hyperframes.json`.
+title card in a look, a chapter card before each shoot after the first, lower
+thirds already timed to the captions, a slow drift across each chapter and an
+emphasis push on its beats, a closing card, GSAP vendored, `hyperframes.json`.
+
+**Footage that is not the frame's aspect is inset, not cropped.** A terminal
+sizes from its grid and a phone viewport is portrait; either one scaled to fill
+1920×1080 would lose the thing the demo is about. They sit at 86% on the look's
+ground instead, which reads as a framed window rather than as letterboxing
+somebody forgot about.
 
 **Then you edit the HTML.** That is the point. Add a punch-in on a beat, a stat
 that counts, a chapter card between sections, a callout on the element the
@@ -103,6 +112,16 @@ Read `/hyperframes-core` for the full thing. The parts that bite:
 - **Never pair a CSS `transform` with a GSAP tween on the same property.** Set
   the initial state in `gsap.fromTo(...)` instead.
 - `<video>`/`<audio>` need an `id`. An id-less `<audio>` renders silent.
+- **Never fade a clip element itself.** An opacity tween that ends on the clip's
+  own boundary leaves stale state when the renderer seeks out of order
+  (`gsap_exit_missing_hard_kill`). Put the content in an inner non-clip `<div>`,
+  fade that, and add a zero-duration `tl.set(inner, { opacity: 0 }, end)`.
+- **One tween per property per element.** Two tweens on the same property at the
+  same time depend on GSAP's overwrite order, which is not guaranteed
+  (`overlapping_gsap_tweens`). The scaffold hits this with the camera: the
+  chapter drift and the beat punch are both `scale`, so the drift goes on an
+  untimed wrapper and the punch on the video. Nested transforms multiply, so it
+  composes correctly.
 
 ## Making it good rather than merely correct
 

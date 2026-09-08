@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { DEFAULT_LOOK, lookFor, type LookName } from "../scene/looks.js";
+import { DEFAULT_LOOK, lookFor, type Look, type LookName } from "../scene/looks.js";
 import { esc, escapeCss } from "../scene/templates.js";
 import type { ShotManifest } from "../shoot/manifest.js";
 import { log, ReelError } from "../util/log.js";
@@ -11,139 +11,146 @@ import { log, ReelError } from "../util/log.js";
  *
  * ## What this scaffolds, and what it deliberately does not
  *
- * The output is a real HyperFrames composition: an `index.html` whose root
- * carries `data-composition-id` / `data-width` / `data-height` / `data-duration`,
- * whose clips carry `data-start` / `data-duration`, and which registers exactly
- * one paused GSAP timeline at `window.__timelines[id]`. `npx hyperframes render`
- * takes it from there. Nothing here reimplements any of that — the engine is a
- * dependency, and staying on the contract is what keeps it one.
+ * The output is a real HyperFrames composition: a root carrying
+ * `data-composition-id` / `data-width` / `data-height` / `data-duration`, clips
+ * carrying `data-start` / `data-duration`, and exactly one paused GSAP timeline
+ * at `window.__timelines[id]`. `npx hyperframes render` takes it from there.
+ * Nothing here reimplements any of that — the engine is a dependency, and
+ * staying on its contract is what keeps it one.
  *
- * What this is *not* is a finished film. It is the boring 80%: the footage on
- * the timeline at the right size, a title card, lower thirds already timed to
- * the moments the driver recorded, and a closing card. An agent then edits the
- * HTML — that is the whole HyperFrames bet, and the `reel-compose` skill is
- * what teaches it to. Scaffolding further would be building templates again,
- * which is the mistake this rescope exists to undo.
+ * What this is *not* is a finished film. It is the boring 80%: footage on the
+ * timeline at the right size, a title card, chapter cards, lower thirds already
+ * timed to the moments the driver recorded, a closing card. An agent then edits
+ * the HTML — that is the whole HyperFrames bet, and `reel-compose` is the skill
+ * that teaches it. Scaffolding further would be building templates again, which
+ * is the mistake this rescope exists to undo.
  *
- * ## Two rules the scaffold never breaks
+ * ## Rules the scaffold never breaks
  *
- * **Nothing is fetched.** GSAP is copied in from `node_modules`, not linked from
- * a CDN. A render that reaches the network is a render that depends on someone
- * else's uptime, and in a sandboxed or offline environment it simply fails —
- * which is exactly how the first attempt at this failed.
+ * **Nothing is fetched.** GSAP is copied from `node_modules`, not linked from a
+ * CDN, and every named font family gets an `@font-face`. A render that reaches
+ * the network depends on someone else's uptime and fails outright in a sandbox
+ * — which is exactly how the first version of this failed.
  *
  * **Motion is seek-safe.** Every tween goes on the one paused timeline. No
- * `Date.now()`, no `requestAnimationFrame`, no infinite repeats. The renderer
- * samples frames out of order and in parallel; anything that accumulates state
+ * clocks, no `requestAnimationFrame`, no infinite repeats: the renderer samples
+ * frames out of order and in parallel, so anything that accumulates state
  * across frames desyncs.
  */
 
 export interface ComposeOptions {
-  /** Where to write the project. */
   out: string;
-  /** Visual identity for the cards. */
   look?: LookName;
-  /** Brand accent every look is built from. */
   accent: string;
-  /** Composition frame. Defaults to 1920×1080. */
   width: number;
   height: number;
   fps: number;
-  /** Overrides the manifest's name for the title card. */
+  /** Opening card headline. Defaults to the first chapter's name. */
   title?: string;
   subtitle?: string;
 }
 
+/** Seconds. */
+const TITLE = 3.4;
+const CHAPTER = 2.6;
+const OUTRO = 2.8;
+/** Longest a lower third stays up once it arrives. */
+const LOWER_THIRD = 3.6;
+/** Overlap so a card dissolves into what follows instead of splicing. */
+const HANDOFF = 0.5;
+/** How far the camera drifts across a chapter. Small on purpose. */
+const DRIFT = 0.05;
+/** The emphasis push on a beat, and how long it holds. */
+const PUNCH = 0.06;
+const PUNCH_HOLD = 1.5;
+/** Beats closer than this do not each get a push — that reads as a twitch. */
+const PUNCH_GAP = 3.5;
 
-/**
- * Families a browser resolves itself, which must not be declared.
- *
- * `-apple-system` and `BlinkMacSystemFont` are keywords rather than font names,
- * and the `ui-*` families plus the bare generics are CSS generics. Emitting an
- * `@font-face` for any of them would be declaring a face that does not exist.
- */
-const GENERIC_FAMILIES = new Set([
-  "-apple-system",
-  "blinkmacsystemfont",
-  "system-ui",
-  "ui-sans-serif",
-  "ui-serif",
-  "ui-monospace",
-  "ui-rounded",
-  "sans-serif",
-  "serif",
-  "monospace",
-  "cursive",
-  "fantasy",
-]);
-
-/**
- * Declare every named family a look uses, as a local face.
- *
- * HyperFrames' `check` rejects a family it cannot resolve, and it is right to:
- * a font the renderer silently substitutes produces typography that is not the
- * typography anyone approved. There is nothing to download here — these are
- * system faces — so `src: local(...)` is the documented way to say "this one is
- * expected to be on the machine", which is exactly the truth.
- */
-function fontFaces(...stacks: string[]): string {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const stack of stacks) {
-    for (const raw of stack.split(",")) {
-      const name = raw.trim().replace(/^["']|["']$/g, "");
-      const key = name.toLowerCase();
-      if (!name || seen.has(key) || GENERIC_FAMILIES.has(key)) continue;
-      seen.add(key);
-      out.push(`  @font-face { font-family: "${name}"; src: local("${name}"); }`);
-    }
-  }
-  return out.join("\n");
+/** One chapter of the film: a manifest, placed on the timeline. */
+interface Chapter {
+  shot: ShotManifest;
+  /** Index, for element ids. */
+  i: number;
+  /** Composition time the footage starts. */
+  at: number;
+  /** Composition time the chapter card starts, when there is one. */
+  cardAt?: number;
+  /** Scale the footage sits at, before any drift. */
+  fit: number;
+  file: string;
 }
 
-/** How long the cards run, in seconds. */
-const TITLE = 3.2;
-const OUTRO = 2.8;
-/** How long a lower third stays up once it arrives. */
-const LOWER_THIRD = 3.4;
-/** Overlap so the footage is already up behind the title as it leaves. */
-const HANDOFF = 0.5;
-
 export async function compose(
-  manifestPath: string,
+  manifestPaths: string[],
   opts: ComposeOptions,
-): Promise<{ dir: string; index: string; duration: number }> {
-  const shot = await readManifest(manifestPath);
+): Promise<{ dir: string; index: string; duration: number; chapters: number }> {
+  if (manifestPaths.length === 0) {
+    throw new ReelError(
+      "`reel compose` needs at least one shot manifest.",
+      "`reel shoot <spec>` writes one next to the footage it films.",
+    );
+  }
+  const shots = await Promise.all(manifestPaths.map(readManifest));
   const dir = resolve(opts.out);
   await mkdir(dir, { recursive: true });
 
-  const footageSrc = resolve(dirname(manifestPath), shot.footage);
-  await copyFile(footageSrc, join(dir, "footage.mp4")).catch(() => {
-    throw new ReelError(
-      `The manifest points at footage that is not there: ${footageSrc}`,
-      "Run `reel shoot` again — the manifest and its footage are written together.",
-    );
-  });
+  // Several chapters means several footage files in one directory, so they are
+  // numbered rather than all called footage.mp4.
+  const chapters: Chapter[] = [];
+  let t = TITLE - HANDOFF;
+  for (const [i, shot] of shots.entries()) {
+    const file = shots.length === 1 ? "footage.mp4" : `footage-${i}.mp4`;
+    const from = resolve(dirname(manifestPaths[i]!), shot.footage);
+    await copyFile(from, join(dir, file)).catch(() => {
+      throw new ReelError(
+        `The manifest points at footage that is not there: ${from}`,
+        "Run `reel shoot` again — the manifest and its footage are written together.",
+      );
+    });
+
+    // A chapter card between sections, but never before the first: the opening
+    // title already introduced it, and two cards back to back is a stall.
+    const cardAt = i > 0 ? t : undefined;
+    if (cardAt !== undefined) t += CHAPTER - HANDOFF;
+
+    chapters.push({
+      shot,
+      i,
+      at: t,
+      fit: fitScale(shot, opts),
+      file,
+      ...(cardAt === undefined ? {} : { cardAt }),
+    });
+    t += shot.duration;
+  }
+  const outroAt = t;
+  const duration = Number((outroAt + OUTRO).toFixed(3));
+
   await vendorGsap(dir);
-
-  const html = buildComposition(shot, opts);
   const index = join(dir, "index.html");
-  await writeFile(index, html);
-
-  // hyperframes.json is what makes the directory a project its CLI recognises.
+  await writeFile(index, buildComposition(chapters, duration, outroAt, opts));
   await writeFile(
     join(dir, "hyperframes.json"),
-    JSON.stringify({ name: slug(shot.name), entry: "index.html" }, null, 2) + "\n",
+    JSON.stringify({ name: slug(shots[0]!.name), entry: "index.html" }, null, 2) + "\n",
   );
 
-  const duration = totalDuration(shot);
-  log.info(`Composition ${index} — ${duration.toFixed(1)}s`);
+  log.info(`Composition ${index} — ${duration.toFixed(1)}s, ${chapters.length} chapter(s)`);
   log.info(`Render it:   npx hyperframes render --fps ${opts.fps}`);
-  return { dir, index, duration };
+  return { dir, index, duration, chapters: chapters.length };
 }
 
-function totalDuration(shot: ShotManifest): number {
-  return Number((TITLE - HANDOFF + shot.duration + OUTRO).toFixed(3));
+/**
+ * How large the footage sits in the frame.
+ *
+ * Footage shot at the composition's own aspect fills it. Anything else — a
+ * terminal sized from its grid, a mobile viewport — is inset instead, so the
+ * mismatch reads as a deliberately framed window rather than as letterboxing
+ * somebody forgot to fix. The look's ground shows in the margin.
+ */
+function fitScale(shot: ShotManifest, opts: ComposeOptions): number {
+  const frame = opts.width / opts.height;
+  const footage = shot.width / shot.height;
+  return Math.abs(frame - footage) < 0.02 ? 1 : 0.86;
 }
 
 async function readManifest(path: string): Promise<ShotManifest> {
@@ -169,8 +176,8 @@ async function readManifest(path: string): Promise<ShotManifest> {
 /**
  * Copy GSAP in rather than linking it.
  *
- * Resolved from Reel's own dependencies so the composition works the moment it
- * is written, with no install step in the project directory and no network at
+ * Resolved from Reel's own dependencies, so the composition works the moment it
+ * is written — no install step in the project directory, and no network at
  * render time.
  */
 async function vendorGsap(dir: string): Promise<void> {
@@ -191,54 +198,204 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "demo";
 }
 
+const r3 = (n: number): number => Number(n.toFixed(3));
+
 /**
- * The composition itself.
+ * Families a browser resolves itself, which must not be declared.
  *
- * Laid out as: title card → footage (with lower thirds timed to the manifest)
- * → closing card. The title and the footage overlap by `HANDOFF` so the cut is
- * a dissolve rather than a splice.
+ * `-apple-system` and `BlinkMacSystemFont` are keywords rather than font names,
+ * and the `ui-*` families plus the bare generics are CSS generics. An
+ * `@font-face` for any of them would declare a face that does not exist.
  */
-function buildComposition(shot: ShotManifest, opts: ComposeOptions): string {
-  const look = lookFor(opts.look ?? DEFAULT_LOOK);
-  const accent = escapeCss(opts.accent);
-  const id = slug(shot.name);
-  const footageAt = Number((TITLE - HANDOFF).toFixed(3));
-  const outroAt = Number((footageAt + shot.duration).toFixed(3));
-  const total = totalDuration(shot);
+const GENERIC_FAMILIES = new Set([
+  "-apple-system", "blinkmacsystemfont", "system-ui", "ui-sans-serif", "ui-serif",
+  "ui-monospace", "ui-rounded", "sans-serif", "serif", "monospace", "cursive", "fantasy",
+]);
 
-  // Captions become lower thirds. Each runs until the next one or LOWER_THIRD,
-  // whichever is shorter — a caption that outlives the sentence it belongs to
-  // is worse than no caption.
-  const thirds = shot.captions.map((c, i) => {
-    const next = shot.captions[i + 1]?.t ?? shot.duration;
-    const dur = Math.max(1.2, Math.min(LOWER_THIRD, next - c.t));
-    return { at: Number((footageAt + c.t).toFixed(3)), dur: Number(dur.toFixed(3)), text: c.text };
-  });
+/**
+ * Declare every named family a look uses, as a local face.
+ *
+ * HyperFrames' `check` rejects a family it cannot resolve, and it is right to: a
+ * font the renderer silently substitutes is not the typography anyone approved.
+ * Nothing here is downloadable — these are system faces — so `src: local(...)`
+ * says "expected to be on the machine", which is exactly the truth.
+ */
+function fontFaces(...stacks: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const stack of stacks) {
+    for (const raw of stack.split(",")) {
+      const name = raw.trim().replace(/^["']|["']$/g, "");
+      const key = name.toLowerCase();
+      if (!name || seen.has(key) || GENERIC_FAMILIES.has(key)) continue;
+      seen.add(key);
+      out.push(`  @font-face { font-family: "${name}"; src: local("${name}"); }`);
+    }
+  }
+  return out.join("\n");
+}
 
-  const thirdMarkup = thirds
-    .map(
-      (t, i) => `      <div class="clip lower" id="lt${i}" data-start="${t.at}" data-duration="${t.dur}">
-        <div class="lt-bar"></div><div class="lt-text">${esc(t.text)}</div>
-      </div>`,
-    )
-    .join("\n");
-
-  const thirdTweens = thirds
-    .map(
-      (t, i) =>
-        `      tl.fromTo("#lt${i} .lt-text", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .45, ease: "power3.out" }, ${t.at});\n` +
-        `      tl.fromTo("#lt${i} .lt-bar", { scaleX: 0 }, { scaleX: 1, duration: .5, ease: "power3.out" }, ${t.at});\n` +
-        `      tl.to("#lt${i}", { opacity: 0, duration: .3, ease: "power2.in" }, ${Number((t.at + t.dur - 0.3).toFixed(3))});`,
-    )
-    .join("\n");
-
-  const title = esc(opts.title ?? shot.name);
-  const subtitle = opts.subtitle ? esc(opts.subtitle) : "";
-  const words = title
+/** A headline split into per-word spans — the difference between a title and a slide. */
+function words(text: string): string {
+  return esc(text)
     .split(/\s+/)
     .filter(Boolean)
-    .map((w, i) => `<span class="w" data-i="${i}">${w}</span>`)
+    .map((w) => `<span class="w">${w}</span>`)
     .join(" ");
+}
+
+/**
+ * Beats worth pushing in on.
+ *
+ * Every beat would be a twitch. The first is skipped because the chapter has
+ * only just arrived, and anything within `PUNCH_GAP` of the last push is
+ * dropped so the camera settles between emphases.
+ */
+function punchBeats(shot: ShotManifest): { t: number; label: string }[] {
+  const out: { t: number; label: string }[] = [];
+  let last = -Infinity;
+  for (const b of shot.beats.slice(1)) {
+    if (b.t - last < PUNCH_GAP) continue;
+    if (b.t > shot.duration - PUNCH_HOLD) continue;
+    out.push({ t: b.t, label: b.label });
+    last = b.t;
+  }
+  return out;
+}
+
+function cardMarkup(
+  id: string,
+  at: number,
+  dur: number,
+  headline: string,
+  sub: string,
+  slate: string,
+): string {
+  // The fade lives on `.in`, never on the clip itself: HyperFrames owns a
+  // clip's visibility, and an opacity tween that ends on the clip boundary
+  // leaves stale state when the renderer seeks out of order. Its linter catches
+  // this (`gsap_exit_missing_hard_kill`), and it is right to.
+  return `    <div class="clip card" id="${id}" data-start="${r3(at)}" data-duration="${r3(dur)}">
+      <div class="in">
+        <div class="bg b1"></div><div class="bg b2"></div><div class="plate"></div>
+        ${slate ? `<div class="slate"><div class="k">Reel</div><div class="n">${esc(slate)}</div></div>` : ""}
+        <div class="headline">${words(headline)}</div>
+        <div class="rule"></div>
+        ${sub ? `<div class="sub">${esc(sub)}</div>` : ""}
+      </div>
+    </div>`;
+}
+
+/** Tweens shared by every card: words ripple in, rule draws, backdrop never stops. */
+function cardTweens(id: string, at: number, dur: number, hasSub: boolean, hasSlate: boolean): string {
+  return [
+    `  gsap.utils.toArray("#${id} .w").forEach(function (w, i) {`,
+    `    tl.fromTo(w, { opacity: 0, yPercent: 45, filter: "blur(12px)" },`,
+    `      { opacity: 1, yPercent: 0, filter: "blur(0px)", duration: .7, ease: "power3.out" }, ${r3(at)} + i * 0.075);`,
+    `  });`,
+    `  tl.fromTo("#${id} .rule", { scaleX: 0 }, { scaleX: 1, duration: .6, ease: "power3.out" }, ${r3(at + 0.3)});`,
+    hasSlate
+      ? `  tl.fromTo("#${id} .slate", { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: .5, ease: "power3.out" }, ${r3(at + 0.1)});`
+      : "",
+    hasSub
+      ? `  tl.fromTo("#${id} .sub", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .6, ease: "power3.out" }, ${r3(at + 0.45)});`
+      : "",
+    // The backdrop moves for the card's whole life. One that stops after the
+    // entrance is what makes a card read as a slide.
+    `  tl.fromTo("#${id} .b1", { scale: .88 }, { scale: 1.2, duration: ${r3(dur)}, ease: "none" }, ${r3(at)});`,
+    `  tl.fromTo("#${id} .b2", { scale: 1.18 }, { scale: .94, duration: ${r3(dur)}, ease: "none" }, ${r3(at)});`,
+    `  tl.to("#${id} .in", { opacity: 0, duration: ${HANDOFF}, ease: "power2.inOut" }, ${r3(at + dur - HANDOFF)});`,
+    // A zero-duration set on the boundary, so a seek landing past the fade gets
+    // the resolved state rather than whatever the tween last wrote.
+    `  tl.set("#${id} .in", { opacity: 0 }, ${r3(at + dur)});`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildComposition(
+  chapters: Chapter[],
+  duration: number,
+  outroAt: number,
+  opts: ComposeOptions,
+): string {
+  const look: Look = lookFor(opts.look ?? DEFAULT_LOOK);
+  const accent = escapeCss(opts.accent);
+  const first = chapters[0]!.shot;
+  const id = slug(first.name);
+  const title = opts.title ?? first.name;
+  const sub = opts.subtitle ?? "";
+
+  const footage: string[] = [];
+  const thirds: string[] = [];
+  const cards: string[] = [];
+  const tweens: string[] = [];
+
+  for (const ch of chapters) {
+    const fid = `f${ch.i}`;
+    // The video sits inside an untimed wrapper, and the two carry one move
+    // each: the wrapper drifts, the video punches. Both on the same element
+    // would be two tweens fighting over `scale`, and GSAP's overwrite order is
+    // not guaranteed — HyperFrames' linter flags exactly that
+    // (`overlapping_gsap_tweens`). Nested transforms multiply, so the effect
+    // composes correctly anyway. The wrapper carries no `data-start`, which
+    // also keeps it clear of the rule against nesting a timed video in a timed
+    // element.
+    const sid = `s${ch.i}`;
+    footage.push(
+      `    <div class="shot" id="${sid}">` +
+        `<video id="${fid}" class="footage" data-start="${r3(ch.at)}" data-duration="${r3(ch.shot.duration)}"` +
+        ` src="./${ch.file}" muted playsinline></video></div>`,
+    );
+
+    // A slow drift across the chapter. Costs nothing — the frames are already
+    // on disk — and it is the difference between footage and a held still.
+    tweens.push(
+      `  tl.fromTo("#${sid}", { scale: ${ch.fit} }, { scale: ${r3(ch.fit * (1 + DRIFT))}, duration: ${r3(ch.shot.duration)}, ease: "none" }, ${r3(ch.at)});`,
+    );
+
+    for (const b of punchBeats(ch.shot)) {
+      const at = r3(ch.at + b.t);
+      tweens.push(
+        `  // emphasis on beat "${esc(b.label)}"`,
+        `  tl.to("#${fid}", { scale: ${1 + PUNCH}, duration: .7, ease: "power2.out" }, ${at});`,
+        `  tl.to("#${fid}", { scale: 1, duration: .8, ease: "power2.inOut" }, ${r3(at + PUNCH_HOLD)});`,
+      );
+    }
+
+    for (const [n, c] of ch.shot.captions.entries()) {
+      const next = ch.shot.captions[n + 1]?.t ?? ch.shot.duration;
+      const dur = Math.max(1.2, Math.min(LOWER_THIRD, next - c.t));
+      const at = r3(ch.at + c.t);
+      const lid = `lt${ch.i}_${n}`;
+      thirds.push(
+        `    <div class="clip lower" id="${lid}" data-start="${at}" data-duration="${r3(dur)}">` +
+          `<div class="in"><div class="lt-bar"></div><div class="lt-text">${esc(c.text)}</div></div></div>`,
+      );
+      tweens.push(
+        `  tl.fromTo("#${lid} .lt-text", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: .45, ease: "power3.out" }, ${at});`,
+        `  tl.fromTo("#${lid} .lt-bar", { scaleX: 0 }, { scaleX: 1, duration: .5, ease: "power3.out" }, ${at});`,
+        `  tl.to("#${lid} .in", { opacity: 0, duration: .3, ease: "power2.in" }, ${r3(at + dur - 0.3)});`,
+        `  tl.set("#${lid} .in", { opacity: 0 }, ${r3(at + dur)});`,
+      );
+    }
+
+    if (ch.cardAt !== undefined) {
+      const cid = `ch${ch.i}`;
+      const slate = `${String(ch.i + 1).padStart(2, "0")} · Chapter`;
+      cards.push(cardMarkup(cid, ch.cardAt, CHAPTER, ch.shot.name, "", slate));
+      tweens.push(cardTweens(cid, ch.cardAt, CHAPTER, false, true));
+    }
+  }
+
+  cards.unshift(cardMarkup("title", 0, TITLE, title, sub, slug(first.name)));
+  tweens.push(cardTweens("title", 0, TITLE, Boolean(sub), true));
+
+  cards.push(cardMarkup("outro", outroAt, OUTRO, first.name, "", ""));
+  tweens.push(cardTweens("outro", outroAt, OUTRO, false, false));
+
+  const H = opts.height;
+  const W = opts.width;
 
   return `<!doctype html>
 <html lang="en">
@@ -249,104 +406,80 @@ function buildComposition(shot: ShotManifest, opts: ComposeOptions): string {
 <style>
 ${fontFaces(look.display, look.label)}
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: ${opts.width}px; height: ${opts.height}px; overflow: hidden; background: #000; }
+  html, body { width: ${W}px; height: ${H}px; overflow: hidden; background: #000; }
   body { font-family: ${look.display}; }
   #root { position: relative; overflow: hidden; background: ${look.ground}; }
   .clip { position: absolute; inset: 0; }
 
-  /* --- the cards ---------------------------------------------------- */
-  .card { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 8% 10%; }
+  /* The ground every chapter sits on. Untimed, so it needs its own layout —
+     the runtime only lays out elements that carry data-start. */
+  #ground { position: absolute; inset: 0; background: ${look.ground}; }
+  #ground i { position: absolute; inset: -30%; display: block; }
+  #ground .g1 { background: radial-gradient(closest-side, ${accent}, transparent 70%); filter: blur(120px) saturate(1.6); opacity: .3; }
+  #ground .g2 { background: radial-gradient(closest-side, ${accent}, transparent 72%); filter: blur(140px) saturate(1.4) hue-rotate(90deg); opacity: .22; }
+
+  /* --- footage -------------------------------------------------------
+     contain, never cover: cropping a product demo can cut off the thing the
+     demo is about, and nobody notices until it has shipped. Footage that is
+     not the frame's aspect is scaled down instead, so the margin reads as a
+     framed window rather than as letterboxing left in by mistake. */
+  .shot { position: absolute; inset: 0; }
+  .footage { width: 100%; height: 100%; object-fit: contain; }
+
+  /* --- cards ---------------------------------------------------------- */
+  .card .in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 8% 10%; }
   .card .bg { position: absolute; inset: -30%; pointer-events: none; }
-  .b1 { background: radial-gradient(closest-side, ${accent}, transparent 70%); filter: blur(70px) saturate(1.9); opacity: .85; }
-  .b2 { background: radial-gradient(closest-side, ${accent}, transparent 72%); filter: blur(90px) saturate(1.6) hue-rotate(80deg); opacity: .6; }
-  .plate { position: absolute; inset: 8% 4%; background: radial-gradient(ellipse at 50% 50%, ${look.dark ? "rgba(0,0,0,.85)" : "rgba(255,255,255,.9)"} 0%, transparent 74%); }
+  .b1 { background: radial-gradient(closest-side, ${accent}, transparent 70%); filter: blur(70px) saturate(2); opacity: .85; }
+  .b2 { background: radial-gradient(closest-side, ${accent}, transparent 72%); filter: blur(90px) saturate(1.7) hue-rotate(80deg); opacity: .6; }
+  .plate { position: absolute; inset: 8% 4%; background: radial-gradient(ellipse at 50% 50%, ${look.dark ? "rgba(0,0,0,.86)" : "rgba(255,255,255,.9)"} 0%, transparent 74%); }
   .headline {
     position: relative; color: ${look.ink};
-    font-size: ${Math.round(opts.height * 0.098)}px; font-weight: ${look.displayWeight};
-    letter-spacing: ${look.tracking}; line-height: 1.03; text-transform: ${look.transform};
+    font-size: ${Math.round(H * 0.09)}px; font-weight: ${look.displayWeight};
+    letter-spacing: ${look.tracking}; line-height: 1.04; text-transform: ${look.transform};
   }
   .headline .w { display: inline-block; }
-  .rule { position: relative; width: ${Math.round(opts.width * 0.08)}px; height: 4px; border-radius: 3px; background: ${accent}; margin: ${Math.round(opts.height * 0.03)}px 0; }
-  .sub { position: relative; color: ${look.muted}; font-size: ${Math.round(opts.height * 0.028)}px; max-width: 46ch; line-height: 1.45; }
+  .rule { position: relative; width: ${Math.round(W * 0.075)}px; height: 4px; border-radius: 3px; background: ${accent}; margin: ${Math.round(H * 0.03)}px 0; }
+  .sub { position: relative; color: ${look.muted}; font-size: ${Math.round(H * 0.027)}px; max-width: 46ch; line-height: 1.45; }
   .slate { position: absolute; top: 6%; left: 5%; text-align: left; padding-left: 14px; border-left: 3px solid ${accent}; }
-  .slate .k { font-family: ${look.label}; font-size: ${Math.round(opts.height * 0.014)}px; letter-spacing: .26em; text-transform: uppercase; color: ${look.muted}; }
-  .slate .n { color: ${look.ink}; font-size: ${Math.round(opts.height * 0.024)}px; font-weight: 650; margin-top: 4px; }
-
-  /* --- the footage --------------------------------------------------- */
-  /* contain, never cover: cropping a product demo can cut off the thing the
-     demo is about, and nobody notices until it ships. */
-  #footage { width: 100%; height: 100%; object-fit: contain; background: ${look.ground}; }
+  .slate .k { font-family: ${look.label}; font-size: ${Math.round(H * 0.014)}px; letter-spacing: .26em; text-transform: uppercase; color: ${look.muted}; }
+  .slate .n { color: ${look.ink}; font-size: ${Math.round(H * 0.023)}px; font-weight: 650; margin-top: 4px; }
 
   /* --- lower thirds ---------------------------------------------------
-     A band anchored to the bottom edge, not text floated over the picture.
-     The footage is full-bleed and its content moves, so anything placed *on*
-     it collides with the app sooner or later — and you only find out per demo,
-     after rendering. A band is deliberate at every frame of every demo. */
-  .lower {
-    inset: auto 0 0 0; height: 14%;
-    display: flex; align-items: center; gap: ${Math.round(opts.width * 0.014)}px;
-    padding: 0 7%;
+     A band on the bottom edge, not text floated over the picture. The footage
+     moves, so anything placed on it collides with the app eventually — and you
+     only find that out per demo, after a render. A band is right at every
+     frame of every demo. */
+  .lower .in {
+    position: absolute; inset: auto 0 0 0; height: 14%;
+    display: flex; align-items: center; gap: ${Math.round(W * 0.014)}px; padding: 0 7%;
     background: linear-gradient(transparent, rgba(6,8,14,.94) 46%);
   }
-  .lt-bar { flex: none; width: ${Math.round(opts.width * 0.035)}px; height: 4px; background: ${accent}; transform-origin: left; }
-  .lt-text {
-    color: #fff; font-size: ${Math.round(opts.height * 0.034)}px; font-weight: 600; letter-spacing: -.02em;
-    text-shadow: 0 2px 16px rgba(0,0,0,.85);
-  }
+  .lt-bar { flex: none; width: ${Math.round(W * 0.035)}px; height: 4px; background: ${accent}; transform-origin: left; }
+  .lt-text { color: #fff; font-size: ${Math.round(H * 0.033)}px; font-weight: 600; letter-spacing: -.02em; text-shadow: 0 2px 16px rgba(0,0,0,.85); }
 </style>
 </head>
 <body>
-  <div id="root" data-composition-id="${id}" data-start="0" data-duration="${total}"
-       data-width="${opts.width}" data-height="${opts.height}" data-fps="${opts.fps}">
+  <div id="root" data-composition-id="${id}" data-start="0" data-duration="${duration}"
+       data-width="${W}" data-height="${H}" data-fps="${opts.fps}">
 
-    <!-- Opening card -->
-    <div class="clip card" id="title" data-start="0" data-duration="${TITLE}">
-      <div class="bg b1"></div><div class="bg b2"></div><div class="plate"></div>
-      <div class="slate"><div class="k">Reel</div><div class="n">${esc(slug(shot.name))}</div></div>
-      <div class="headline">${words}</div>
-      <div class="rule"></div>
-      ${subtitle ? `<div class="sub">${subtitle}</div>` : ""}
-    </div>
+    <div id="ground"><i class="g1"></i><i class="g2"></i></div>
 
-    <!-- The app, filmed. Not a drawing of it. -->
-    <video id="footage" data-start="${footageAt}" data-duration="${shot.duration}"
-           src="./footage.mp4" muted playsinline></video>
+${footage.join("\n")}
 
-${thirdMarkup}
+${thirds.join("\n")}
 
-    <!-- Closing card -->
-    <div class="clip card" id="outro" data-start="${outroAt}" data-duration="${OUTRO}">
-      <div class="bg b1"></div><div class="bg b2"></div><div class="plate"></div>
-      <div class="headline" id="outro-h">${esc(shot.name)}</div>
-      <div class="rule"></div>
-    </div>
+${cards.join("\n")}
   </div>
 
 <script>
-  // One paused timeline, registered under the root's composition id. The engine
-  // seeks it per frame; nothing here may read a clock.
+  // One paused timeline, keyed by the root's composition id. The engine seeks
+  // it per frame; nothing in here may read a clock.
   const tl = gsap.timeline({ paused: true });
 
-  // Per-word arrival — the difference between a title and a slide.
-  gsap.utils.toArray("#title .w").forEach(function (w, i) {
-    tl.fromTo(w, { opacity: 0, yPercent: 40, filter: "blur(10px)" },
-      { opacity: 1, yPercent: 0, filter: "blur(0px)", duration: .7, ease: "power3.out" },
-      i * 0.08);
-  });
-  tl.fromTo("#title .rule", { scaleX: 0 }, { scaleX: 1, duration: .6, ease: "power3.out" }, .35);
-  ${subtitle ? `tl.fromTo("#title .sub", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: .6, ease: "power3.out" }, .5);` : ""}
-  tl.fromTo("#title .slate", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: .5, ease: "power3.out" }, .15);
-  // The backdrop keeps moving for the whole card, so it never freezes.
-  tl.fromTo("#title .b1", { scale: .9 }, { scale: 1.18, duration: ${TITLE}, ease: "none" }, 0);
-  tl.fromTo("#title .b2", { scale: 1.15 }, { scale: .95, duration: ${TITLE}, ease: "none" }, 0);
-  // Dissolve into the footage rather than cutting.
-  tl.to("#title", { opacity: 0, duration: ${HANDOFF}, ease: "power2.inOut" }, ${Number((TITLE - HANDOFF).toFixed(3))});
+  tl.fromTo("#ground .g1", { scale: .9, xPercent: -4 }, { scale: 1.15, xPercent: 4, duration: ${duration}, ease: "none" }, 0);
+  tl.fromTo("#ground .g2", { scale: 1.15 }, { scale: .92, duration: ${duration}, ease: "none" }, 0);
 
-${thirdTweens}
-
-  tl.fromTo("#outro-h", { opacity: 0, scale: .94 }, { opacity: 1, scale: 1, duration: .8, ease: "power3.out" }, ${outroAt});
-  tl.fromTo("#outro .rule", { scaleX: 0 }, { scaleX: 1, duration: .6, ease: "power3.out" }, ${Number((outroAt + 0.3).toFixed(3))});
-  tl.fromTo("#outro .b1", { scale: .95 }, { scale: 1.15, duration: ${OUTRO}, ease: "none" }, ${outroAt});
+${tweens.join("\n")}
 
   window.__timelines["${id}"] = tl;
 </script>

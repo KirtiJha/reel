@@ -468,7 +468,7 @@ program
 
 program
   .command("compose")
-  .argument("<manifest>", "path to a shots.json written by `reel shoot`")
+  .argument("<manifest...>", "one or more shots.json files — each becomes a chapter, in order")
   .description("Scaffold a HyperFrames composition around that footage.")
   .option("-o, --out <dir>", "where the project goes", "film")
   .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
@@ -477,7 +477,7 @@ program
   .option("--subtitle <text>", "opening card subtitle")
   .option("--size <WxH>", "composition frame", "1920x1080")
   .option("--fps <n>", "frame rate", "30")
-  .action(async (manifest: string, opts: ComposeOpts) => {
+  .action(async (manifest: string[], opts: ComposeOpts) => {
     await withErrors(async () => {
       const [width, height] = parseSize(opts.size);
       const res = await compose(manifest, {
@@ -490,7 +490,9 @@ program
         ...(opts.title === undefined ? {} : { title: opts.title }),
         ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
       });
-      emit("compose", true, { result: { dir: res.dir, index: res.index, duration: res.duration } });
+      emit("compose", true, {
+        result: { dir: res.dir, index: res.index, duration: res.duration, chapters: res.chapters },
+      });
     });
   });
 

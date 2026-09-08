@@ -64,6 +64,15 @@ export interface RunResult {
    * re-deriving that from the spec would mean re-running the spec.
    */
   captions: { t: number; text: string }[];
+  /**
+   * The size of the encoded picture, when one was encoded.
+   *
+   * Reported by the encoder rather than derived from the spec: the output is
+   * the canvas when a device frame is on, the content box when it is not, and a
+   * terminal demo sizes from its grid rather than from `viewport`. Anything
+   * that recomputes it is right for web demos and wrong for the rest.
+   */
+  size?: { width: number; height: number };
 }
 
 /**
@@ -520,6 +529,8 @@ export async function record(
           mp4: spec.output.mp4 ? resolveOutput(loaded, spec.output.mp4) : undefined,
           webm: spec.output.webm ? resolveOutput(loaded, spec.output.webm) : undefined,
         };
+    /** Filled in by the encoder, so the manifest can report what it wrote. */
+    let encodedSize: { width: number; height: number } | undefined;
     const encodeOpts = {
       fps: profile.fps,
       maxWidth: profile.maxWidth,
@@ -546,7 +557,7 @@ export async function record(
       fds: typeof fades,
     ): Promise<void> => {
       if (compositesCaptions(spec)) {
-        await renderWithZoom(
+        encodedSize = await renderWithZoom(
           fr,
           framesDir,
           { ...tgts, storyboard: sbDir },
@@ -938,7 +949,15 @@ export async function record(
       outputs.push(...narrated);
     }
 
-    return { frames: frames.length, beats: beats.length, durationMs, outputs, timeline: beats, captions };
+    return {
+      frames: frames.length,
+      beats: beats.length,
+      durationMs,
+      outputs,
+      timeline: beats,
+      captions,
+      ...(encodedSize ? { size: encodedSize } : {}),
+    };
   } finally {
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});

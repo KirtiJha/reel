@@ -99,10 +99,12 @@ export async function shoot(loaded: LoadedSpec, opts: ShootOptions): Promise<Sho
     spec: relative(dir, loaded.path) || basename(loaded.path),
     name: spec.name,
     footage: "footage.mp4",
-    // What the camera actually wrote, which is the viewport at its scale — not
-    // the viewport, and not the composition's frame.
-    width: Math.round(spec.viewport.width * spec.viewport.scale),
-    height: Math.round(spec.viewport.height * spec.viewport.scale),
+    // What the encoder actually wrote. Deriving this from `viewport` was wrong
+    // in two ways at once: a preset's `maxWidth` scales the picture down, and a
+    // terminal demo sizes from its grid rather than from a viewport at all — a
+    // 1000x624 terminal was being reported as 2560x1600.
+    width: res.size?.width ?? Math.round(spec.viewport.width * spec.viewport.scale),
+    height: res.size?.height ?? Math.round(spec.viewport.height * spec.viewport.scale),
     // The preset supplies an fps when the spec does not name one; falling back
     // to 30 here would put a number in the manifest the footage does not have.
     fps: spec.output.fps ?? PRESETS[spec.output.preset].fps,
