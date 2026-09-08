@@ -8,9 +8,10 @@ YAML.
 the tour — which needs a machine that can reach a text-to-speech endpoint.
 See "Part 6 — Finishing this on your own machine" at the end.**
 
-Part 7 (scenes: HTML compositions for the non-footage parts of a demo) was
-added after the fact and is built. It does not change anything Part 6 asks you
-to do.
+Parts 7 and 8 were added after the fact and are built: scenes (HTML
+compositions for the non-footage parts of a demo) and `output.player:` (the
+demo as a self-contained HTML document that re-performs the recording). Neither
+changes anything Part 6 asks you to do.
 
 Built: `fit: flow`, idle motion, `highlight`, `image`, `diagram`, transitions
 and fades, the preview tiers (`--draft`, `--only`), `reel narrate`, `reel say`,
@@ -753,3 +754,92 @@ because the app is still visible behind them.
   rendering risk.
 - **More templates.** Four is enough to prove the seam. Comparison, before/after
   and a metric counter are the obvious next ones.
+
+---
+
+# Part 8 — The demo as a document
+
+`output.player:` writes a self-contained HTML page that **re-performs** the
+recording instead of baking it into pixels.
+
+```yaml
+output:
+  mp4: out/demo.mp4          # for LinkedIn, YouTube, anywhere that takes video
+  player: out/demo.html      # for a README, a docs site, a PR preview
+```
+
+## The idea
+
+Every other deliverable flattens the demo. The camera becomes a cropped raster,
+a caption becomes burned-in text, an annotation becomes composited SVG. That is
+correct for a video, and it throws away everything that made the demo legible:
+the words stop being words, and the result is opaque to search, to translation
+and to a screen reader.
+
+Reel already collects everything needed to avoid that. The frames stay raster —
+they genuinely are a recording of an app. Everything layered on top stays what
+it was:
+
+| Collected | In the video | In the document |
+|---|---|---|
+| frames + times | 18,540 encoded frames | ~163 `<img>` swaps (the tour changes 100 times in 618s) |
+| zoom timeline | a crop baked by sharp | a CSS transform, interpolated per animation frame |
+| caption cues | pixels | real DOM text |
+| highlight spans | composited SVG | live SVG inside the camera transform |
+| fade cues | composited alpha | an overlay's opacity |
+| narration | muxed into the MP4 | one `<audio>` — **and the clock** |
+| beats, branches | a storyboard | scrub targets, deep links, choices |
+
+## One clock
+
+The hard part of any player is sync, and it always fails the same way: two
+timers that are each individually correct and drift apart. So there is exactly
+one. With narration it is `audio.currentTime`, because audio is what a viewer
+notices drifting; without, a plain elapsed counter. Nothing chases anything.
+
+The camera reuses the same resolved keyframes and the same `easeInOutCubic` the
+video compositor uses, interpolated per animation frame rather than per encoded
+frame — so the movement is **smoother than the video it came from**, not
+steppier.
+
+## What it costs, honestly
+
+- **It is not a video.** A social platform takes an MP4. This is a third
+  deliverable, not a replacement, and `mp4:` remains the one to publish.
+- **Determinism means something different.** Byte-identical is a promise about
+  rendered media. A document is deterministic in its *data*; what a reader sees
+  depends on their browser. `check` and `diff` compare media, so the document
+  would want data-level diffing — arguably better, since "the caption at 4.2s
+  changed" beats "pixels differ".
+- **Audio autoplay is blocked** until a gesture, so playback starts on a click.
+- **A busy demo gets heavy.** Frames are emitted on visual change; a flow with
+  video playing inside the app produces many. The taskflow example is 163
+  frames and 2.0 MB.
+
+## Two bugs the browser found that no unit test would have
+
+Both were caught by driving the generated page in Playwright and looking at it.
+
+1. **The annotation was drawn beside the camera instead of inside it.** `#marks`
+   was a sibling of the transformed shot, so a highlight sat in untransformed
+   viewport space — it appeared under the wrong list item the moment the camera
+   zoomed. A mark has to be carried by the same transform as the thing it marks.
+   It also needs `vector-effect="non-scaling-stroke"`, or the stroke fattens as
+   the camera pushes in.
+2. **The camera scaled against the viewport rather than the stage.** That gives
+   scale 1 at full frame, which leaves the shot at its authored pixel size
+   inside a stage that is almost always smaller.
+
+## Not built
+
+- **Branch choices in the document.** The click-through build has them; this one
+  has beats and deep links but plays one path.
+- **Data-level `diff`.** Comparing two documents by their timelines rather than
+  their pixels is the natural follow-on, and would describe a change in the
+  demo's own vocabulary.
+- **Lazy frame loading.** Every frame is a data URI in one file, which is what
+  makes it emailable and what makes it large. A directory build with real files
+  would suit a docs site better.
+- **Copyable terminal text.** In a terminal demo the text was real text before
+  it was pixels; the document could carry it, and a reader could copy the
+  command. This is the most obviously valuable thing left.

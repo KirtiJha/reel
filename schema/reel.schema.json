@@ -2881,6 +2881,10 @@
           "type": "string",
           "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
         },
+        "player": {
+          "type": "string",
+          "description": "The demo as a document: a self-contained page that re-performs the\nrecording instead of baking it into pixels.\n\nThe frames are the app's own, because those genuinely are a recording.\nEverything layered on top stays what it was — text is text, the camera is a\ntransform, an annotation is SVG — so the result is selectable,\ntranslatable, searchable and readable by a screen reader, none of which\nsurvives being burned into a video.\n\nNot a replacement for `mp4:`. A social platform takes a video; this is for\na README, a docs site or a pull-request preview, where being a document is\nan advantage rather than a format problem."
+        },
         "fps": {
           "type": "integer",
           "exclusiveMinimum": 0,
@@ -3010,6 +3014,10 @@
               "html": {
                 "type": "string",
                 "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
+              },
+              "player": {
+                "type": "string",
+                "description": "The demo as a document: a self-contained page that re-performs the\nrecording instead of baking it into pixels.\n\nThe frames are the app's own, because those genuinely are a recording.\nEverything layered on top stays what it was — text is text, the camera is a\ntransform, an annotation is SVG — so the result is selectable,\ntranslatable, searchable and readable by a screen reader, none of which\nsurvives being burned into a video.\n\nNot a replacement for `mp4:`. A social platform takes a video; this is for\na README, a docs site or a pull-request preview, where being a document is\nan advantage rather than a format problem."
               },
               "fps": {
                 "type": "integer",
