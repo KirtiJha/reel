@@ -1297,6 +1297,84 @@
               {
                 "type": "object",
                 "properties": {
+                  "scene": {
+                    "type": "object",
+                    "properties": {
+                      "template": {
+                        "type": "string",
+                        "enum": [
+                          "title",
+                          "chapter",
+                          "statement",
+                          "bullets"
+                        ],
+                        "description": "One of Reel's built-in compositions."
+                      },
+                      "file": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "…or your own HTML, relative to the spec."
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "subtitle": {
+                        "type": "string"
+                      },
+                      "eyebrow": {
+                        "type": "string",
+                        "description": "`chapter`: the small line above the title."
+                      },
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "`bullets`: the lines, revealed in sequence."
+                      },
+                      "attribution": {
+                        "type": "string",
+                        "description": "`statement`: who said it."
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 3000
+                      },
+                      "say": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        ],
+                        "description": "What the narrator says over it."
+                      },
+                      "sayIn": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "The same line in other languages, for `output.languages`."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "scene"
+                ],
+                "additionalProperties": false,
+                "description": "A scene: an HTML composition, seeked frame by frame.\n\nFor the parts of a demo that were never footage — the title, a chapter\nopener, a claim between two sections. A `card` is the two-line version of\nthis; a scene is the version where the browser does the layout, so it can\nbe typeset, staggered and themed.\n\nMotion is a pure function of the seek position rather than a clock: Reel\nwrites `--in` and `--out` and the composition reads them. There is nothing\nto freeze, which is a stronger guarantee than freezing something.\n\n`file:` points at a composition of your own — HTML, CSS, and optionally a\n`window.__reelScene = { seek(p) {…} }` for motion the variables cannot\nexpress. Local files only: a render never fetches, and a composition is\ncode that runs in the page."
+              },
+              {
+                "type": "object",
+                "properties": {
                   "transition": {
                     "anyOf": [
                       {
@@ -2336,6 +2414,84 @@
                                 ],
                                 "additionalProperties": false,
                                 "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "scene": {
+                                    "type": "object",
+                                    "properties": {
+                                      "template": {
+                                        "type": "string",
+                                        "enum": [
+                                          "title",
+                                          "chapter",
+                                          "statement",
+                                          "bullets"
+                                        ],
+                                        "description": "One of Reel's built-in compositions."
+                                      },
+                                      "file": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "…or your own HTML, relative to the spec."
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "subtitle": {
+                                        "type": "string"
+                                      },
+                                      "eyebrow": {
+                                        "type": "string",
+                                        "description": "`chapter`: the small line above the title."
+                                      },
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "description": "`bullets`: the lines, revealed in sequence."
+                                      },
+                                      "attribution": {
+                                        "type": "string",
+                                        "description": "`statement`: who said it."
+                                      },
+                                      "ms": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "default": 3000
+                                      },
+                                      "say": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          {
+                                            "type": "boolean",
+                                            "const": false
+                                          }
+                                        ],
+                                        "description": "What the narrator says over it."
+                                      },
+                                      "sayIn": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "description": "The same line in other languages, for `output.languages`."
+                                      }
+                                    },
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "required": [
+                                  "scene"
+                                ],
+                                "additionalProperties": false,
+                                "description": "A scene: an HTML composition, seeked frame by frame.\n\nFor the parts of a demo that were never footage — the title, a chapter\nopener, a claim between two sections. A `card` is the two-line version of\nthis; a scene is the version where the browser does the layout, so it can\nbe typeset, staggered and themed.\n\nMotion is a pure function of the seek position rather than a clock: Reel\nwrites `--in` and `--out` and the composition reads them. There is nothing\nto freeze, which is a stronger guarantee than freezing something.\n\n`file:` points at a composition of your own — HTML, CSS, and optionally a\n`window.__reelScene = { seek(p) {…} }` for motion the variables cannot\nexpress. Local files only: a render never fetches, and a composition is\ncode that runs in the page."
                               },
                               {
                                 "type": "object",

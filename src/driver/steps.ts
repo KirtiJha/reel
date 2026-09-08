@@ -8,6 +8,9 @@ import {
   showCard,
   showImage,
   hideImage,
+  showScene,
+  seekScene,
+  hideScene,
   smoothScroll,
   spotlight,
   toPlaywrightSelector,
@@ -18,6 +21,7 @@ import type { CaptionCue } from "../polish/captions.js";
 import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js";
 import { dipColor, type FadeCue } from "../polish/fade.js";
 import { loadImage } from "../media/image.js";
+import { buildScene } from "../scene/scene.js";
 import { loadDiagram } from "../media/diagram.js";
 import type { SpokenCue } from "../narrate/voice.js";
 import type { SfxCue } from "../encode/sfx.js";
@@ -127,6 +131,21 @@ function activeCaptionText(ctx: StepContext): string | undefined {
     return c.text;
   }
   return undefined;
+}
+
+/**
+ * Take any caption off screen.
+ *
+ * A full-frame composition — a card, a scene, a `full` image — replaces the
+ * picture entirely, and a caption from an earlier step has nothing left to
+ * caption. Captions are composited in post from this cue list, where a cue runs
+ * until the next one, so the only way to end one early is to say so. An empty
+ * cue is how: `captionAt` treats blank text as nothing on screen.
+ */
+function clearCaption(ctx: StepContext): void {
+  const last = ctx.captions[ctx.captions.length - 1];
+  if (!last || !last.text.trim()) return; // nothing up, nothing to clear
+  ctx.captions.push({ t: ctx.now(), text: "", position: last.position });
 }
 
 /** Camera directions, not chapter names — they shouldn't reach the chapter rail. */
@@ -446,6 +465,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     if (cinematic) {
       ctx.sfx.push({ t: ctx.now(), kind: "card" });
       zoomOut(ctx); // never crop into a full-screen card
+      clearCaption(ctx);
       await showCard(page, c.title, c.subtitle);
       await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap
       ctx.cardAt = ctx.now();
@@ -481,6 +501,59 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     return;
   }
 
+  if ("scene" in step) {
+    const sc = step.scene;
+    // A scene is a moment, so it narrates like a card — and is recorded in
+    // every mode so `reel check` can audit the line and the voice cache.
+    if (sc.say) ctx.say.push({ t: ctx.now(), text: sc.say, alt: sc.sayIn });
+
+    if (!sc.file && !sc.template && !sc.title) {
+      throw new ReelError(
+        "A `scene:` step needs something to show.",
+        "Give it a `template:` with a `title:`, or a `file:` pointing at your own composition.",
+      );
+    }
+
+    const html = await buildScene(
+      {
+        ...(sc.template ? { template: sc.template } : {}),
+        ...(sc.file ? { file: sc.file } : {}),
+        fields: {
+          ...(sc.title === undefined ? {} : { title: sc.title }),
+          ...(sc.subtitle === undefined ? {} : { subtitle: sc.subtitle }),
+          ...(sc.eyebrow === undefined ? {} : { eyebrow: sc.eyebrow }),
+          ...(sc.items === undefined ? {} : { items: sc.items }),
+          ...(sc.attribution === undefined ? {} : { attribution: sc.attribution }),
+        },
+        style: {
+          accent: ctx.spec.polish.accent,
+          background: ctx.spec.polish.background,
+          theme: ctx.spec.theme,
+        },
+      },
+      ctx.specDir,
+    );
+
+    if (cinematic) {
+      ctx.sfx.push({ t: ctx.now(), kind: "card" });
+      zoomOut(ctx); // never crop into a full-frame composition
+      clearCaption(ctx);
+      ctx.beats.push({ label: sc.title ?? "scene", t: ctx.now() });
+      await showScene(page, html);
+      // The same primitive that synthesizes a scroll: one frame per output
+      // frame at an exact timeline position, so the scene's motion is a
+      // function of the spec rather than of how fast this machine is.
+      await ctx.rec.motion(sc.ms, async (p) => {
+        await seekScene(page, p);
+      });
+      ctx.cardAt = ctx.now();
+      snap(ctx, sc.title ?? "scene", { chapter: sc.title });
+      await hideScene(page);
+      await ctx.rec.hold(HOLD.afterCard);
+    }
+    return;
+  }
+
   if ("image" in step || "diagram" in step) {
     const media = "image" in step
       ? typeof step.image === "string"
@@ -507,7 +580,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
     if (cinematic && loaded) {
       // Never crop into a picture that already fills the frame.
-      if (media.as !== "inset") zoomOut(ctx);
+      if (media.as !== "inset") {
+        zoomOut(ctx);
+        // `inset` leaves the app visible behind it, so a caption still belongs.
+        if (media.as === "full") clearCaption(ctx);
+      }
       await showImage(page, loaded.dataUri, media.as, media.corner);
       await ctx.rec.hold(Math.min(500, media.ms));
       const label = media.alt ?? ("mermaid" in media ? "Diagram" : media.file);

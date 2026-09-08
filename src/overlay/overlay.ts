@@ -220,6 +220,24 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
       shot.appendChild(shotImg);
       root.appendChild(shot);
 
+      // --- Scene layer ---
+      //
+      // An iframe, not a div, so the app's CSS cannot reach a composition and a
+      // composition cannot reach the app. `srcdoc` keeps it same-origin, which
+      // is what lets Reel seek it directly instead of talking to it by message.
+      const scene = document.createElement("iframe");
+      Object.assign(scene.style, {
+        position: "fixed",
+        inset: "0",
+        width: "100%",
+        height: "100%",
+        border: "0",
+        opacity: "0",
+        pointerEvents: "none",
+        zIndex: "6", // above the title card, which it replaces
+      } as CSSStyleDeclaration);
+      root.appendChild(scene);
+
       // --- Caption bar (used when captions aren't composited in post) ---
       const caption = document.createElement("div");
       Object.assign(caption.style, {
@@ -353,6 +371,32 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
           cardTitle.style.transform = "translateY(0)";
           cardSub.style.transform = "translateY(0)";
           cardRule.style.width = "72px";
+        },
+        /**
+         * Mount a scene and wait for it to be ready to seek.
+         *
+         * Resolves only once the document has parsed and its runtime is
+         * installed. A frame sampled before that is a blank iframe, and whether
+         * it happened would depend on how fast the machine is — exactly the
+         * nondeterminism this codebase exists to avoid.
+         */
+        sceneIn(html: string) {
+          return new Promise<void>((resolve) => {
+            scene.onload = () => {
+              scene.style.opacity = "1";
+              resolve();
+            };
+            scene.srcdoc = html;
+          });
+        },
+        /** Put the scene at progress p. Pure: same p, same pixels. */
+        sceneSeek(p: number) {
+          const w = scene.contentWindow as unknown as { __reelSeek?: (p: number) => void } | null;
+          w?.__reelSeek?.(p);
+        },
+        sceneOut() {
+          scene.style.opacity = "0";
+          scene.srcdoc = "";
         },
         cardOut() {
           card.style.opacity = "0";
@@ -606,6 +650,29 @@ export async function showImage(
     ([src, m, c]) => (window as any).__reel__?.image(src, m, c),
     [dataUri, mode, corner] as [string, string, string],
   );
+}
+
+/**
+ * Show a scene and wait until it can be seeked.
+ *
+ * The composition is passed as `srcdoc` rather than served: a render never
+ * fetches, and a scene that loaded over HTTP would make the film depend on a
+ * server being up.
+ */
+export async function showScene(page: Page, html: string): Promise<void> {
+  await page.evaluate(
+    (doc) => (window as any).__reel__?.sceneIn(doc),
+    html,
+  );
+}
+
+/** Put the scene at progress `p` (0–1). Called once per output frame. */
+export async function seekScene(page: Page, p: number): Promise<void> {
+  await page.evaluate((v) => (window as any).__reel__?.sceneSeek(v), p);
+}
+
+export async function hideScene(page: Page): Promise<void> {
+  await page.evaluate(() => (window as any).__reel__?.sceneOut());
 }
 
 export async function hideImage(page: Page): Promise<void> {

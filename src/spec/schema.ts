@@ -731,6 +731,44 @@ const baseStepSchema = z.union([
     ]),
   }).strict(),
   /**
+   * A scene: an HTML composition, seeked frame by frame.
+   *
+   * For the parts of a demo that were never footage — the title, a chapter
+   * opener, a claim between two sections. A `card` is the two-line version of
+   * this; a scene is the version where the browser does the layout, so it can
+   * be typeset, staggered and themed.
+   *
+   * Motion is a pure function of the seek position rather than a clock: Reel
+   * writes `--in` and `--out` and the composition reads them. There is nothing
+   * to freeze, which is a stronger guarantee than freezing something.
+   *
+   * `file:` points at a composition of your own — HTML, CSS, and optionally a
+   * `window.__reelScene = { seek(p) {…} }` for motion the variables cannot
+   * express. Local files only: a render never fetches, and a composition is
+   * code that runs in the page.
+   */
+  z.object({
+    scene: z.object({
+      /** One of Reel's built-in compositions. */
+      template: z.enum(["title", "chapter", "statement", "bullets"]).optional(),
+      /** …or your own HTML, relative to the spec. */
+      file: z.string().min(1).optional(),
+      title: z.string().optional(),
+      subtitle: z.string().optional(),
+      /** `chapter`: the small line above the title. */
+      eyebrow: z.string().optional(),
+      /** `bullets`: the lines, revealed in sequence. */
+      items: z.array(z.string()).optional(),
+      /** `statement`: who said it. */
+      attribution: z.string().optional(),
+      ms: durationMs.default(3000),
+      /** What the narrator says over it. */
+      say: sayText.optional(),
+      /** The same line in other languages, for `output.languages`. */
+      sayIn: sayIn.optional(),
+    }).strict(),
+  }).strict(),
+  /**
    * Dip the picture to a colour and back — a soft cut.
    *
    * `fade` is the one kind implemented, and the only one a single recording can
