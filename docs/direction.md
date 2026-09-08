@@ -985,3 +985,108 @@ different looks inside one film, which is what actually exercises the driver.
   `brutal` scene probably wants to arrive faster than an `editorial` one.
 - **Type scale as data.** Sizes are still `clamp()` literals in `templates.ts`.
   They belong in the look.
+
+---
+
+# Part 10 — The rescope: Reel shoots, HyperFrames cuts
+
+## The decision
+
+Reel was a whole pipeline: drive the app, film it, composite captions and
+chrome, encode, diff, and fail CI when the app drifted. Part 9 added scene
+looks to that pipeline. Then the scope changed on purpose — the goal is
+HyperFrames-quality product and CLI demo films, and the byte-identical/CI half
+is not what makes those.
+
+So Reel keeps the half nobody else has, and stops doing the half that is
+already solved better elsewhere.
+
+| | Does it |
+| --- | --- |
+| **Reel** | Drives the real app or a real terminal through a scripted, asserted flow and films what happened |
+| **HyperFrames** | Renders HTML to video — seek-per-frame, GSAP, FFmpeg, audio mix, transitions |
+
+HyperFrames' own `capture` reads a *website's design* — screenshots, tokens,
+fonts — so an agent can rebuild it. It has no way to drive an app through a
+flow. That gap is exactly Reel's shape, and it is why this is a combination
+rather than a clone.
+
+## The core is a dependency, not a reimplementation
+
+`hyperframes` and `@hyperframes/core` are Apache-2.0 on npm, so "the same core"
+is literally the same core, and it stays the same as they ship. Reimplementing
+the parser, seven runtime adapters, the audio mixer, shader transitions,
+chunked parallel encode and the lint suite would take months and trail forever.
+Nothing in `src/compose` reimplements any of it; it writes HTML that honours
+the contract and hands off.
+
+## The seam: a shot manifest
+
+A bare mp4 is a poor handoff, because a composition needs to *time* things
+against the footage and an author is otherwise left scrubbing and guessing.
+The driver already knows every one of those moments — it caused them.
+
+`reel shoot` therefore writes `footage.mp4` **and** `shots.json`:
+
+```json
+{ "version": 1, "name": "TaskFlow", "duration": 15.34,
+  "beats":    [{ "label": "hero", "t": 0.95 }, { "label": "added", "t": 10.44 }],
+  "captions": [{ "t": 0, "text": "Capture work in a snap" }] }
+```
+
+`shoot` also strips the picture back to footage: no browser chrome, no
+burned-in captions, no cards, no fades. Each of those is now the composition's
+to decide, and a decision baked into a frame cannot be unmade. Zoom is the one
+thing kept, because a push-in was chosen while the app was being driven with
+the element's real box in hand, and it cannot be recovered from a flat
+recording afterwards. `--flat` turns it off.
+
+`reel compose` scaffolds the project around that manifest — footage on the
+timeline, a title card in a look, lower thirds already timed to the captions, a
+closing card, GSAP vendored, `hyperframes.json`. Then an agent edits the HTML,
+which is the whole HyperFrames bet. Scaffolding further would be building
+templates again.
+
+## Three things the first attempt got wrong
+
+1. **The CDN.** The scaffold linked GSAP from jsdelivr and the render failed
+   outright behind an egress proxy — `sub_timeline_script_failure`. It is now
+   copied from `node_modules`. A render that fetches depends on someone else's
+   uptime, which Reel already believed and the composition had quietly stopped
+   honouring.
+2. **Fonts.** `hyperframes check` rejects a family it cannot resolve, and it is
+   right to: a silently substituted font is not the typography anyone approved.
+   The composer now emits `@font-face { src: local("…") }` for every named
+   family in a look.
+3. **Lower thirds floated over the picture.** They collided with the app card.
+   The fix is not more padding — the footage is full-bleed and its content
+   moves, so *anything* placed on it collides eventually, and you only find out
+   per demo after a three-minute render. They are a band at the bottom edge now,
+   which is correct at every frame of every demo.
+
+## Proven end to end
+
+`check` clean across lint, runtime, layout, motion and contrast (10/10 WCAG AA),
+then a 20.8s 1920×1080 render: title card → real TaskFlow footage with lower
+thirds on the manifest's timings → closing card.
+
+`hyperframes snapshot --at <seconds>` is the iteration loop — seconds, against
+three and a half minutes for a render. It does not inject decoded video frames,
+so it judges graphics and cards but not the footage itself.
+
+## Still to do
+
+- **Delete the old half.** `check`, `diff`, `ci`, the fingerprint/stamp
+  machinery, `src/encode`, the interactive player and the burn-in compositors
+  come out in one reviewable commit now that the new path renders. Nothing has
+  been removed yet, deliberately: the old surface stays until the new one is
+  finished.
+- **Terminal footage.** `src/terminal` is the other thing HyperFrames cannot do
+  and it already works; it needs a `shoot` path and a manifest of its own
+  (commands, their output regions, exit codes).
+- **Narration onto the composition timeline.** Reel's voice cache should land
+  as `<audio>` clips with the caption timings, rather than being mixed by Reel.
+- **Looks as composition CSS.** `src/scene/looks.ts` currently only dresses
+  Reel's own scenes; the composer reimplements a subset. One source.
+- **Beat-driven camera.** The manifest has the beats; `compose` should be able
+  to emit a punch-in on each one rather than leaving every camera move manual.

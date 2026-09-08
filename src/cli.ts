@@ -26,6 +26,8 @@ import { say } from "./commands/say.js";
 import { draftNarration, printScript, readScript } from "./commands/narrate.js";
 import { runDirect } from "./commands/direct.js";
 import { lookSheet, previewScene } from "./commands/scene.js";
+import { shoot } from "./commands/shoot.js";
+import { compose } from "./compose/compose.js";
 import { LOOK_NAMES, lookFor } from "./scene/looks.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
@@ -48,6 +50,16 @@ interface SceneOpts {
   frames: string;
   size: string;
   out: string;
+}
+
+interface ComposeOpts {
+  out: string;
+  look?: string;
+  accent: string;
+  title?: string;
+  subtitle?: string;
+  size: string;
+  fps: string;
 }
 
 interface LooksOpts {
@@ -429,6 +441,57 @@ program
         .join("");
       process.stdout.write(`  ${base} ${swatch}  ${name}\n`);
     }
+  });
+
+program
+  .command("shoot")
+  .argument("<spec>", "path to a .reel.yaml spec")
+  .description("Film the app as raw footage plus a shot manifest, for a composition to cut.")
+  .option("-o, --out <dir>", "where the footage and manifest go", "shot")
+  .option("--flat", "no camera moves at all — the composition does its own framing", false)
+  .action(async (specPath: string, opts: { out: string; flat: boolean }) => {
+    await withErrors(async () => {
+      const loaded = await loadSpec(specPath);
+      const res = await shoot(loaded, { out: opts.out, flat: opts.flat, version: VERSION });
+      emit("shoot", true, {
+        result: {
+          dir: res.dir,
+          footage: res.footage,
+          manifest: res.manifest,
+          duration: res.shot.duration,
+          beats: res.shot.beats.length,
+          captions: res.shot.captions.length,
+        },
+      });
+    });
+  });
+
+program
+  .command("compose")
+  .argument("<manifest>", "path to a shots.json written by `reel shoot`")
+  .description("Scaffold a HyperFrames composition around that footage.")
+  .option("-o, --out <dir>", "where the project goes", "film")
+  .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
+  .option("--accent <color>", "brand accent the cards are built from", "#6d8bff")
+  .option("--title <text>", "opening card headline (defaults to the spec's name)")
+  .option("--subtitle <text>", "opening card subtitle")
+  .option("--size <WxH>", "composition frame", "1920x1080")
+  .option("--fps <n>", "frame rate", "30")
+  .action(async (manifest: string, opts: ComposeOpts) => {
+    await withErrors(async () => {
+      const [width, height] = parseSize(opts.size);
+      const res = await compose(manifest, {
+        out: opts.out,
+        ...(opts.look ? { look: opts.look as never } : {}),
+        accent: opts.accent,
+        width,
+        height,
+        fps: Math.max(1, Number(opts.fps) || 30),
+        ...(opts.title === undefined ? {} : { title: opts.title }),
+        ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
+      });
+      emit("compose", true, { result: { dir: res.dir, index: res.index, duration: res.duration } });
+    });
   });
 
 program
