@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_THEME, THEME_NAMES, TERMINAL_THEMES } from "../terminal/themes.js";
+import { LOOK_NAMES } from "../scene/looks.js";
 
 /**
  * The Reel demo spec — the heart of the tool.
@@ -16,6 +17,15 @@ import { DEFAULT_THEME, THEME_NAMES, TERMINAL_THEMES } from "../terminal/themes.
 export const SPEC_VERSION = 1;
 
 const cssColor = z.string().min(1);
+
+/**
+ * The named visual identities a `scene:` can be drawn in.
+ *
+ * Enumerated from the catalogue rather than hand-listed, so adding a look to
+ * `src/scene/looks.ts` offers it in the spec, in the JSON Schema and in the
+ * Studio without a second edit — the same rule the step kinds follow.
+ */
+const lookName = z.enum(LOOK_NAMES as [string, ...string[]]);
 
 /** The browser window the demo is filmed in. */
 export const viewportSchema = z.object({
@@ -122,6 +132,22 @@ export const polishSchema = z.object({
    * the title-card rule. One knob so a repo's demos look like one product.
    */
   accent: cssColor.default("#6d8bff"),
+  /**
+   * The visual identity every `scene:` in this spec is drawn in — its ground,
+   * its ink, its type and its backdrop. One word, and the whole film changes
+   * register.
+   *
+   * A look deliberately owns the scene's ground in preference to `background`
+   * above, which is the *film's* ground (what sits behind a padded frame)
+   * rather than a scene's. What a look never owns is `accent`: every backdrop
+   * in the catalogue is built out of it, so the same look on two products does
+   * not produce the same picture.
+   *
+   * When no look in the catalogue is the one you want, stop reaching for
+   * templates: `scene: { file: … }` renders a composition written for that one
+   * demo, and the `reel-scene` skill teaches an agent how to write one.
+   */
+  look: lookName.default("aurora"),
   /**
    * Playback rate for every authored duration — holds, captions, typing, camera
    * moves. 2 renders the same demo in half the time; 0.5 slows it down. Real
@@ -776,6 +802,21 @@ const baseStepSchema = z.union([
       items: z.array(z.string()).optional(),
       /** `statement`: who said it. */
       attribution: z.string().optional(),
+      /**
+       * The corner slate — a short label in letter-spaced caps, held for the
+       * whole scene. A film convention, and most of why a frame reads as
+       * produced rather than presented. Something like `03 · Chapter`.
+       */
+      slate: z.string().optional(),
+      /** The slate's second line — the product, a URL, a date. */
+      slateNote: z.string().optional(),
+      /**
+       * Which visual identity to draw this one scene in, overriding
+       * `polish.look`. Use it to let a chapter opener depart from the rest of
+       * the film — a `statement` in `editorial` between two `neon` chapters
+       * lands harder than either would alone.
+       */
+      look: lookName.optional(),
       ms: durationMs.default(3000),
       /** What the narrator says over it. */
       say: sayText.optional(),

@@ -25,6 +25,8 @@ import { capture } from "./commands/capture.js";
 import { say } from "./commands/say.js";
 import { draftNarration, printScript, readScript } from "./commands/narrate.js";
 import { runDirect } from "./commands/direct.js";
+import { lookSheet, previewScene } from "./commands/scene.js";
+import { LOOK_NAMES, lookFor } from "./scene/looks.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -32,6 +34,42 @@ import { StepFailure } from "./driver/run.js";
 import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 import { VERSION } from "./version.js";
+
+interface SceneOpts {
+  template?: string;
+  look?: string;
+  accent: string;
+  title?: string;
+  subtitle?: string;
+  eyebrow?: string;
+  slate?: string;
+  note?: string;
+  item: string[];
+  frames: string;
+  size: string;
+  out: string;
+}
+
+interface LooksOpts {
+  accent: string;
+  title: string;
+  size: string;
+  at: string;
+  out: string;
+  list: boolean;
+}
+
+/** commander's repeatable-option accumulator. */
+function collect(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+/** `1280x720` → `[1280, 720]`. */
+function parseSize(s: string): [number, number] {
+  const m = /^(\d+)x(\d+)$/.exec(s.trim());
+  if (!m) throw new ReelError(`\`--size ${s}\` is not a size.`, "Write it as WIDTHxHEIGHT, like 1280x720.");
+  return [Number(m[1]), Number(m[2])];
+}
 
 
 const program = new Command();
@@ -391,6 +429,82 @@ program
         .join("");
       process.stdout.write(`  ${base} ${swatch}  ${name}\n`);
     }
+  });
+
+program
+  .command("scene")
+  .argument("[file]", "a composition of your own (.html), relative to the cwd")
+  .description("Shoot a scene across its seek range into one contact sheet.")
+  .option("--template <name>", "draw a built-in template instead: title, chapter, statement, bullets")
+  .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
+  .option("--accent <color>", "brand accent the look is built from", "#6d8bff")
+  .option("--title <text>", "template field")
+  .option("--subtitle <text>", "template field")
+  .option("--eyebrow <text>", "template field")
+  .option("--slate <text>", "corner slate, top line")
+  .option("--note <text>", "corner slate, second line")
+  .option("--item <text>", "a `bullets` line; repeat for more", collect, [])
+  .option("--frames <n>", "how many positions to shoot", "6")
+  .option("--size <WxH>", "frame size", "1280x720")
+  .option("-o, --out <path>", "where to write the sheet", ".reel/scene.png")
+  .action(async (file: string | undefined, opts: SceneOpts) => {
+    await withErrors(async () => {
+      const [width, height] = parseSize(opts.size);
+      const res = await previewScene(
+        {
+          ...(file ? { file } : {}),
+          ...(opts.template ? { template: opts.template } : {}),
+          ...(opts.look ? { look: opts.look } : {}),
+          accent: opts.accent,
+          fields: {
+            ...(opts.title === undefined ? {} : { title: opts.title }),
+            ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
+            ...(opts.eyebrow === undefined ? {} : { eyebrow: opts.eyebrow }),
+            ...(opts.slate === undefined ? {} : { slate: opts.slate }),
+            ...(opts.note === undefined ? {} : { slateNote: opts.note }),
+            ...(opts.item.length ? { items: opts.item } : {}),
+          },
+          width,
+          height,
+          frames: Math.max(1, Number(opts.frames) || 6),
+          out: opts.out,
+        },
+        process.cwd(),
+      );
+      log.info(`Wrote ${res.out}`);
+      emit("scene", true, { result: { out: res.out, points: res.points } });
+    });
+  });
+
+program
+  .command("looks")
+  .description("Show every visual identity a scene can be drawn in, side by side.")
+  .option("--accent <color>", "brand accent the looks are built from", "#6d8bff")
+  .option("--title <text>", "what to set in each tile", "The same words")
+  .option("--size <WxH>", "frame size", "960x540")
+  .option("--at <p>", "where in the scene to shoot, 0-1", "0.5")
+  .option("-o, --out <path>", "where to write the sheet", ".reel/looks.png")
+  .option("--list", "print the catalogue as text instead of rendering it", false)
+  .action(async (opts: LooksOpts) => {
+    await withErrors(async () => {
+      if (opts.list) {
+        for (const name of LOOK_NAMES) {
+          process.stdout.write(`  ${pc.bold(name.padEnd(11))} ${pc.dim(lookFor(name).mood)}\n`);
+        }
+        return;
+      }
+      const [width, height] = parseSize(opts.size);
+      const res = await lookSheet({
+        accent: opts.accent,
+        title: opts.title,
+        width,
+        height,
+        frames: 1,
+        at: Math.min(1, Math.max(0, Number(opts.at) || 0.5)),
+        out: opts.out,
+      });
+      emit("looks", true, { result: { out: res.out, looks: res.looks } });
+    });
   });
 
 program

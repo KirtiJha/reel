@@ -843,3 +843,145 @@ Both were caught by driving the generated page in Playwright and looking at it.
 - **Copyable terminal text.** In a terminal demo the text was real text before
   it was pixels; the document could carry it, and a reader could copy the
   command. This is the most obviously valuable thing left.
+
+---
+
+# Part 9 — Looks: making every demo not look like every other demo
+
+## The mistake this corrects
+
+Part 7 shipped four scene templates. Part 8's first pass at making them
+*good* hard-coded one backdrop into `templates.ts` — concentric saturated
+rings, borrowed from a HyperFrames showcase poster. It looked expensive, and it
+was exactly wrong: every demo Reel ever rendered would have opened on the same
+picture. A tool that produces one look does not produce a look. It produces a
+watermark.
+
+The redirect came from a fair question — *"the goal is not the ring; it can't be
+the same for every demo. How does the other tool generate these?"* — so the
+right move was to go and read, rather than tune CSS harder.
+
+## What HyperFrames actually does
+
+It ships **no templates at all.** There is no design in its framework code. Its
+engine's entire contract is four data attributes and one global:
+
+```html
+<div id="stage" data-composition-id="launch" data-width="1920" data-height="1080">
+  <h1 class="clip" data-start="1" data-duration="4">Launch day</h1>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  window.__timelines.launch = tl;   // paused, seekable
+</script>
+```
+
+The renderer seeks that paused timeline once per frame in headless Chrome and
+encodes with FFmpeg. Every pixel of design is **LLM-written HTML, bespoke per
+project**. The framer rings were not a feature; an agent wrote them for one
+video.
+
+What makes the output good lives one layer up, in ~20 Claude Code skills:
+`hyperframes-creative` alone carries 15 reference documents (`visual-styles.md`,
+`typography.md`, `motion-principles.md`, `beat-direction.md`), nine palettes, and
+13 `frame-presets` — each a complete `FRAME.md` design language. `visual-styles.md`
+names identities grounded in real traditions ("Swiss Pulse — Josef
+Müller-Brockmann, clinical, precise, for SaaS and dev tools") as copy-paste token
+blocks.
+
+**The design intelligence is in the prompt layer. The framework only guarantees
+determinism.** That is the inversion worth copying.
+
+## What Reel already had
+
+More than expected. `window.__reelScene = { seek(p) }` plus `--p`/`--in`/`--out`
+*is* the `window.__timelines` contract, and arguably stronger: suppressing CSS
+`animation` and `transition` in every document means there is no clock to
+freeze, rather than a clock that must be paused correctly. `scene: { file: … }`
+already took a bespoke composition. Reel already shipped a Claude Code plugin.
+
+Missing were the design layer and the authoring loop.
+
+## The look layer
+
+`src/scene/looks.ts` — ten named visual identities, as **data**:
+
+| Look | For |
+| ---- | --- |
+| `aurora` | The default. Calm, premium, safe with any accent. |
+| `neon` | Launch films and hero titles. Loud on purpose. |
+| `swiss` | Dev tools, data, APIs. Clinical and gridded. |
+| `editorial` | Claims and quotes. Serif, cream, unhurried. |
+| `brutal` | One big announcement, or a single number. |
+| `terminal` | CLI demos and anything about code. |
+| `blueprint` | Architecture, specs, systems diagrams. |
+| `poster` | Chapter openers and section breaks. |
+| `mono` | When the app itself is the colour. |
+| `dawn` | Consumer apps and onboarding. |
+
+A look owns the ground, the ink, the backdrop, the type and how words arrive.
+Templates became **layout only**. So `look: swiss` and `look: neon` are the same
+four templates wearing different films, and adding an eleventh look needs no
+change to `templates.ts`.
+
+```yaml
+polish:
+  look: neon
+  accent: "#22d3ee"
+steps:
+  - scene: { template: chapter, title: Branching paths, look: poster }
+```
+
+**A look never owns the accent.** Every backdrop is built out of
+`polish.accent` — hue-rotated, tinted, repeated — which is why `neon` on a cyan
+product is not the picture in these docs. `scene.look` overrides `polish.look`
+for one scene; an `editorial` statement between two `neon` chapters lands harder
+than either alone.
+
+The one thing a look must not skip is reading `--p`. `--in` is spent by 28% of
+the scene, so a backdrop driven only by `--in` arrives and then sits still —
+which is precisely what makes a scene read as a slide. A test asserts every look
+in the catalogue reads `--p`; `brutal` failed it on the first run and got a
+register mark that steps across the top.
+
+## The authoring loop
+
+Motion cannot be judged from source, and an agent cannot scrub an MP4. Two
+commands close that:
+
+```bash
+reel looks --accent "#22d3ee" --title "The demo's title"   # .reel/looks.png
+reel scene --template chapter --look poster --title "…"    # .reel/scene.png
+reel scene scenes/opening.html                             # your own composition
+```
+
+`looks` renders the whole catalogue side by side — the same argument as `reel
+themes` printing swatches instead of names. `scene` seeks one composition at six
+positions and tiles them into a contact sheet, weighted toward the entrance
+because that is where everything happens. Both are shot with the same seek
+runtime and the same deterministic launch flags as a real render, so a sheet
+that looks right is not a different picture from the film.
+
+The `reel-scene` skill teaches the rest: the three variables, the five rules,
+the `__reelScene.seek(p)` escape hatch for motion CSS cannot express, and a
+skeleton that obeys all of it.
+
+## Determinism
+
+Verified two-run byte-identical on six looks including the ones that worried me
+— `neon` uses `mix-blend-mode: screen` across three layers, `aurora` blurs at
+90px. All identical. Then an end-to-end draft render with two scenes at
+different looks inside one film, which is what actually exercises the driver.
+
+## Not built
+
+- **Custom looks in a spec.** The catalogue is code. A `looks:` block letting a
+  repo define its own — HyperFrames' `frame.md` — is the obvious next step, and
+  the shape is already right for it: a look is data.
+- **Looks beyond scenes.** Captions, the browser frame and the callout spotlight
+  still read `polish.accent` directly rather than the look's palette. A look
+  ought to dress the whole film.
+- **Per-look motion timing.** `IN_FRACTION` and `OUT_FRACTION` are global. A
+  `brutal` scene probably wants to arrive faster than an `editorial` one.
+- **Type scale as data.** Sizes are still `clamp()` literals in `templates.ts`.
+  They belong in the look.

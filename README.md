@@ -361,6 +361,54 @@ elements fire **no click at all**, so before this the whole gesture produced no
 event, no step, and nothing in the skipped list either. The demo silently lost
 the thing it was about.
 
+## Scenes & looks — the parts that were never footage
+
+A title card, a chapter opener, a claim between two sections. Reel films the app
+for everything else; these it draws, as HTML, seeked once per frame:
+
+```yaml
+polish:
+  look: neon                # the whole film's visual identity
+  accent: "#22d3ee"         # every look is built from this
+steps:
+  - scene:
+      template: chapter     # title | chapter | statement | bullets
+      eyebrow: Chapter three
+      title: Branching paths
+      slate: "03 · Chapter" # corner slate, held for the whole scene
+      slateNote: taskflow.app
+      ms: 3200
+  - scene: { template: statement, look: editorial, title: "One spec, one film." }
+```
+
+Ten looks ship — `aurora` `neon` `swiss` `editorial` `brutal` `terminal`
+`blueprint` `poster` `mono` `dawn`. A look owns the ground, the ink, the
+backdrop and the type; templates are layout only, so the same four templates
+wear ten different films. What a look never owns is the **accent**: every
+backdrop is built out of `polish.accent`, so `neon` on your product is not the
+picture in these docs. `scene.look` overrides the film's look for one scene.
+
+Pick by looking, not by name:
+
+```bash
+reel looks                                          # the catalogue, side by side
+reel scene --template chapter --look poster --title "Branching paths"
+reel scene scenes/opening.html                      # a composition of your own
+```
+
+Both write a contact sheet — the scene seeked at several positions and tiled —
+because motion cannot be judged from source.
+
+When the catalogue has no word for what a demo needs, `scene: { file: … }` takes
+an HTML file written for that one demo. Its motion must be a pure function of
+three custom properties Reel rewrites per frame — `--p` (progress), `--in`
+(arrival), `--out` (departure) — with `window.__reelScene = { seek(p) }` for
+anything CSS cannot express. No CSS `animation` or `transition`: the determinism
+layer suppresses both in every document, so there is no clock to freeze. Local
+files only; a render never fetches.
+
+The `reel-scene` skill teaches all of this to Claude Code.
+
 ## Interactive HTML — the format a GIF can't be
 
 A recorded demo is passive: the viewer watches at your pace. Add one line and the

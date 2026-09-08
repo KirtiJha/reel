@@ -22,6 +22,7 @@ import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js"
 import { dipColor, type FadeCue } from "../polish/fade.js";
 import { loadImage } from "../media/image.js";
 import { buildScene } from "../scene/scene.js";
+import type { LookName } from "../scene/looks.js";
 import { loadDiagram } from "../media/diagram.js";
 import type { SpokenCue } from "../narrate/voice.js";
 import type { SfxCue } from "../encode/sfx.js";
@@ -524,11 +525,13 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
           ...(sc.eyebrow === undefined ? {} : { eyebrow: sc.eyebrow }),
           ...(sc.items === undefined ? {} : { items: sc.items }),
           ...(sc.attribution === undefined ? {} : { attribution: sc.attribution }),
+          ...(sc.slate === undefined ? {} : { slate: sc.slate }),
+          ...(sc.slateNote === undefined ? {} : { slateNote: sc.slateNote }),
         },
         style: {
           accent: ctx.spec.polish.accent,
-          background: ctx.spec.polish.background,
-          theme: ctx.spec.theme,
+          // A scene's look is the spec's, unless this one scene departs from it.
+          look: (sc.look ?? ctx.spec.polish.look) as LookName,
         },
       },
       ctx.specDir,

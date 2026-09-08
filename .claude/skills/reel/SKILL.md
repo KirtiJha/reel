@@ -87,6 +87,12 @@ Two grammar facts worth knowing without opening either file:
 - **A caption speaks its own text** when narration is on. `say:` overrides it
   for the ear; `say: false` keeps one caption silent.
 
+For the title cards, chapter openers and claims — the parts that are *not*
+footage — use `scene:` and pick a `look:`, and read the **`reel-scene`** skill
+before designing one. It covers the ten looks, the seek contract a bespoke
+composition obeys, and `reel scene` / `reel looks`, which shoot a contact sheet
+so you can actually see the motion instead of guessing at it.
+
 ## Selectors
 
 Ranked by how stable their *meaning* is, which is what survives a redesign:

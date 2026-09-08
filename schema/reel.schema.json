@@ -210,6 +210,23 @@
           "default": "#6d8bff",
           "description": "Brand accent — used by the click ripple, the callout spotlight ring, and\nthe title-card rule. One knob so a repo's demos look like one product."
         },
+        "look": {
+          "type": "string",
+          "enum": [
+            "aurora",
+            "neon",
+            "swiss",
+            "editorial",
+            "brutal",
+            "terminal",
+            "blueprint",
+            "poster",
+            "mono",
+            "dawn"
+          ],
+          "default": "aurora",
+          "description": "The visual identity every `scene:` in this spec is drawn in — its ground,\nits ink, its type and its backdrop. One word, and the whole film changes\nregister.\n\nA look deliberately owns the scene's ground in preference to `background`\nabove, which is the *film's* ground (what sits behind a padded frame)\nrather than a scene's. What a look never owns is `accent`: every backdrop\nin the catalogue is built out of it, so the same look on two products does\nnot produce the same picture.\n\nWhen no look in the catalogue is the one you want, stop reaching for\ntemplates: `scene: { file: … }` renders a composition written for that one\ndemo, and the `reel-scene` skill teaches an agent how to write one."
+        },
         "speed": {
           "type": "number",
           "exclusiveMinimum": 0,
@@ -1336,6 +1353,30 @@
                         "type": "string",
                         "description": "`statement`: who said it."
                       },
+                      "slate": {
+                        "type": "string",
+                        "description": "The corner slate — a short label in letter-spaced caps, held for the\nwhole scene. A film convention, and most of why a frame reads as\nproduced rather than presented. Something like `03 · Chapter`."
+                      },
+                      "slateNote": {
+                        "type": "string",
+                        "description": "The slate's second line — the product, a URL, a date."
+                      },
+                      "look": {
+                        "type": "string",
+                        "enum": [
+                          "aurora",
+                          "neon",
+                          "swiss",
+                          "editorial",
+                          "brutal",
+                          "terminal",
+                          "blueprint",
+                          "poster",
+                          "mono",
+                          "dawn"
+                        ],
+                        "description": "Which visual identity to draw this one scene in, overriding\n`polish.look`. Use it to let a chapter opener depart from the rest of\nthe film — a `statement` in `editorial` between two `neon` chapters\nlands harder than either would alone."
+                      },
                       "ms": {
                         "type": "integer",
                         "minimum": 0,
@@ -2456,6 +2497,30 @@
                                       "attribution": {
                                         "type": "string",
                                         "description": "`statement`: who said it."
+                                      },
+                                      "slate": {
+                                        "type": "string",
+                                        "description": "The corner slate — a short label in letter-spaced caps, held for the\nwhole scene. A film convention, and most of why a frame reads as\nproduced rather than presented. Something like `03 · Chapter`."
+                                      },
+                                      "slateNote": {
+                                        "type": "string",
+                                        "description": "The slate's second line — the product, a URL, a date."
+                                      },
+                                      "look": {
+                                        "type": "string",
+                                        "enum": [
+                                          "aurora",
+                                          "neon",
+                                          "swiss",
+                                          "editorial",
+                                          "brutal",
+                                          "terminal",
+                                          "blueprint",
+                                          "poster",
+                                          "mono",
+                                          "dawn"
+                                        ],
+                                        "description": "Which visual identity to draw this one scene in, overriding\n`polish.look`. Use it to let a chapter opener depart from the rest of\nthe film — a `statement` in `editorial` between two `neon` chapters\nlands harder than either would alone."
                                       },
                                       "ms": {
                                         "type": "integer",
