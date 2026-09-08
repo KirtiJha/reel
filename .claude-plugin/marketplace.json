@@ -1,0 +1,11 @@
+{
+  "name": "reel",
+  "owner": { "name": "Kirti Jha", "url": "https://github.com/KirtiJha" },
+  "plugins": [
+    {
+      "name": "reel",
+      "source": "./",
+      "description": "Demos as code: drive a real app, film what happened, and fail CI when it drifts."
+    }
+  ]
+}

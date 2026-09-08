@@ -80,6 +80,37 @@ npm run reel -- record examples/taskflow/demo.reel.yaml
 
 That example boots its own app and records a GIF/MP4/storyboard.
 
+## Use it from Claude Code
+
+Reel ships as a Claude Code plugin, so you can build a demo by asking for one
+instead of remembering the grammar. Nothing about the tool changes — the skills
+drive the same commands, so anything Claude does here you can do yourself.
+
+Clone the repo and the skills are already active (they live in
+`.claude/skills/`). To use them in *another* project:
+
+```
+/plugin marketplace add KirtiJha/reel
+/plugin install reel@reel
+```
+
+Then just ask:
+
+> "Record a demo of the signup flow at localhost:3000"
+> "This demo is boring — the picture sits still while it talks"
+> "Why did `reel check` fail?"
+
+Two skills, both invocable directly as `/reel` and `/reel-polish`:
+
+| Skill | What it knows |
+|---|---|
+| `reel` | The spec grammar, the `check → narrate → direct → draft → record` loop, selector ranking, and the determinism rules. |
+| `reel-polish` | How to diagnose a demo that drags: measure frozen time with `freezedetect`, then fix it with `audio.fit`, `idleMotion`, `highlight` and fades. |
+
+The first rule both skills carry is the one that matters: **never hand-author a
+demo that pretends to be the product.** If it can't be driven, it doesn't get
+made.
+
 ## Reel Studio (web UI)
 
 Prefer a UI? Reel ships a local **Studio** (Next.js + Tailwind, in this repo under

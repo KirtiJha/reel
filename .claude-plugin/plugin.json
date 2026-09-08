@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "reel",
+  "displayName": "Reel — demos as code",
+  "version": "0.4.0",
+  "description": "Build, render and verify demo videos of a real app from a .reel.yaml spec. Drives the app in a browser, films what actually happened, and fails CI when the app drifts.",
+  "author": { "name": "Kirti Jha", "url": "https://github.com/KirtiJha" },
+  "homepage": "https://github.com/KirtiJha/reel#readme",
+  "repository": "https://github.com/KirtiJha/reel",
+  "license": "MIT",
+  "keywords": ["demo", "video", "screencast", "documentation", "playwright", "ffmpeg", "demos-as-code"],
+  "skills": "./.claude/skills/"
+}
