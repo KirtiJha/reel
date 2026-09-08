@@ -8,6 +8,10 @@ YAML.
 the tour — which needs a machine that can reach a text-to-speech endpoint.
 See "Part 6 — Finishing this on your own machine" at the end.**
 
+Part 7 (scenes: HTML compositions for the non-footage parts of a demo) was
+added after the fact and is built. It does not change anything Part 6 asks you
+to do.
+
 Built: `fit: flow`, idle motion, `highlight`, `image`, `diagram`, transitions
 and fades, the preview tiers (`--draft`, `--only`), `reel narrate`, `reel say`,
 `reel direct`, `reel capture` writing `highlight` and `say`, and all four
@@ -641,3 +645,111 @@ the kind of thing worth confirming once.
 - **`reel capture` writing `image:` and `diagram:` steps.** It writes `click`,
   `type`, `waitFor`, `caption`, `say` and `highlight` today. The rest are
   directorial, and a picture is not something you perform in a browser.
+
+---
+
+# Part 7 — Scenes: HTML for the parts that were never footage
+
+Prompted by [HyperFrames](https://github.com/heygen-com/hyperframes), which
+renders HTML compositions to MP4 by seeking a paused timeline in headless
+Chrome. The idea is right; the scope needs care.
+
+## What was taken, and what was not
+
+**Not taken: authoring the demo in HTML.** HyperFrames composes *authored*
+content. Reel drives a real app and films what happened, and that difference is
+the product — `check` fails CI when the app drifts, `heal` repairs selectors,
+and "when the media in a pull request changes, something in the product really
+changed" is the claim chapter 3 of the tour makes. An HTML-authored demo renders
+whether or not the app still works. It can lie. Rebuilding Reel on that concept
+would mean competing with Remotion and HyperFrames having thrown away the one
+thing neither has.
+
+**Taken: HTML for everything that was never footage.** A title, a chapter
+opener, a claim between two sections — none of that is a recording. Until now
+Reel drew a title card as a flex `div` with two lines of text, because the rest
+of the render path composites with sharp and sharp cannot lay out a paragraph.
+
+The evidence that this was the right seam: Reel had **1,887 lines** hand-rolling
+what a browser does for free — word wrapping from advances measured in the
+browser and shipped back out (`captions.ts`), a `text.length * fs * 0.54`
+character-width *estimate* for label placement (`highlight.ts`), device chrome
+as generated SVG strings (`frame.ts`). Meanwhile a Chromium was already open.
+
+## The `scene:` step
+
+```yaml
+- scene:
+    template: chapter        # title | chapter | statement | bullets
+    eyebrow: "Chapter one"
+    title: "Capture work in a snap"
+    subtitle: "One keystroke, from anywhere in the app."
+    ms: 2400
+    say: "Let's start where everyone starts."
+```
+
+Or a composition of your own:
+
+```yaml
+- scene: { file: scenes/opening.html, ms: 3000 }
+```
+
+Templates take the spec's `accent`, `background` and `theme`, so a scene looks
+like the rest of the demo rather than like a slide someone pasted in.
+
+## How it renders, and why it stays deterministic
+
+The composition is mounted as a **same-origin `srcdoc` iframe** in the overlay
+layer — an iframe so the app's CSS cannot reach the composition and the
+composition cannot reach the app, `srcdoc` so Reel can seek it directly instead
+of talking to it by message.
+
+Seeking uses a primitive Reel already had. `Recorder.motion(ms, render)` calls
+`render(p)` once per output frame and captures at an exact timeline position, so
+the frame count is a function of duration and fps rather than of how fast
+screenshots come back. That is precisely HyperFrames' seek-per-frame model,
+already implemented, previously used for scrolls.
+
+**The animation model differs from HyperFrames' on purpose.** HyperFrames seeks
+paused GSAP timelines. Reel cannot: the determinism layer suppresses CSS
+animation and transition inside *every* document, including nested ones, so a
+clock-driven entrance would not move at all. Instead a scene's motion is a pure
+function of the seek position — Reel writes `--in` and `--out` as CSS custom
+properties and the composition reads them:
+
+```css
+.title { opacity: var(--in); transform: translateY(calc((1 - var(--in)) * 2.2vh)); }
+```
+
+There is no clock to freeze, which is a stronger guarantee than freezing one. A
+custom composition can also export `window.__reelScene = { seek(p) {…} }` for
+motion the variables cannot express.
+
+Verified: a spec with three scenes rendered twice produced identical md5s.
+
+## What this fixed on the way
+
+Captions are composited in post from a cue list where a cue runs until the next
+one. Nothing ended a caption when a full-frame composition replaced the picture,
+so an old caption sat on top of the first scene. It did the same over a `card`
+and a `full` image — invisible until now only because the tour sets
+`captions: false`. All three now clear the caption; `inset` images do not,
+because the app is still visible behind them.
+
+## Not built
+
+- **An HTML compositor for the overlay layer** (captions, highlights, device
+  chrome, fades). This is the bigger prize and the same idea, but it moves the
+  *app footage* through Chromium's rasterizer instead of sharp's, which widens
+  the determinism surface considerably — Reel has already been bitten once, by
+  Chromium partial raster. It also loses `mapPool` parallelism across cores and
+  lanczos3 downscaling. Worth doing behind a flag, validated by rendering the
+  same spec both ways and diffing frames. Not worth doing casually.
+- **A track abstraction.** There are now five parallel cue lists — captions,
+  highlights, fades, zoom, sfx — each with its own retime remap and its own cut
+  slice. `remapHighlights` and `remapFades` are the same function twice.
+  HyperFrames' `data-start`/`data-duration` convention is the better model; one
+  `{from, to}` track type would collapse them. A contained refactor with no
+  rendering risk.
+- **More templates.** Four is enough to prove the seam. Comparison, before/after
+  and a metric counter are the obvious next ones.
