@@ -336,6 +336,21 @@ export const outputSchema = z
      * hotspots on the elements you acted on. One file, no hosting.
      */
     html: z.string().optional(),
+  /**
+   * The demo as a document: a self-contained page that re-performs the
+   * recording instead of baking it into pixels.
+   *
+   * The frames are the app's own, because those genuinely are a recording.
+   * Everything layered on top stays what it was — text is text, the camera is a
+   * transform, an annotation is SVG — so the result is selectable,
+   * translatable, searchable and readable by a screen reader, none of which
+   * survives being burned into a video.
+   *
+   * Not a replacement for `mp4:`. A social platform takes a video; this is for
+   * a README, a docs site or a pull-request preview, where being a document is
+   * an advantage rather than a format problem.
+   */
+  player: z.string().optional(),
     /** Frame rate for video (overrides preset). */
     fps: z.number().int().positive().max(60).optional(),
     /** Cap the output width in px (overrides preset). */
@@ -363,8 +378,8 @@ export const outputSchema = z
      */
     targetDuration: z.union([z.number().positive(), z.string()]).optional(),
   })
-  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html, {
-    message: "output must specify at least one of: gif, mp4, webm, storyboard, html",
+  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html || o.player, {
+    message: "output must specify at least one of: gif, mp4, webm, storyboard, html, player",
   });
 export type Output = z.infer<typeof outputSchema>;
 

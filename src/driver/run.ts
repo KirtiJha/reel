@@ -42,6 +42,7 @@ import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
 import { dipColor, endFades, type FadeCue } from "../polish/fade.js";
+import { writeDocument } from "../encode/document.js";
 import { diagramSources, missingDiagrams } from "../media/diagram.js";
 import { beatLabels, draftProfile, driveThrough, previewRange, type Preview } from "../polish/preview.js";
 import { log, ReelError } from "../util/log.js";
@@ -864,6 +865,29 @@ export async function record(
 
     // Interactive build: the same demo as a self-contained click-through, and
     // the only output that can carry more than one path.
+    // The demo as a document. Built from the same cue lists the video is
+    // composited from, so the two cannot describe different demos.
+    if (spec.output.player && !previewing) {
+      log.phase("Player");
+      await writeDocument({
+        frames,
+        framesDir,
+        outPath: resolveOutput(loaded, spec.output.player),
+        spec,
+        durationMs,
+        maxWidth: profile.maxWidth,
+        zoom,
+        captions,
+        highlights,
+        fades,
+        beats,
+        // The mixed track, when the render produced one. Inlined so the page
+        // stays a single file you can email.
+        audioFile: outputs.find((o) => o.endsWith(".m4a")),
+      });
+      outputs.push(resolveOutput(loaded, spec.output.player));
+    }
+
     if (spec.output.html && !previewing) {
       const htmlPath = resolveOutput(loaded, spec.output.html);
       log.phase("Interactive");
