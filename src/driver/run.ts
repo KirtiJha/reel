@@ -78,6 +78,14 @@ export interface RunResult {
    * ear afterwards, because only the driver knows when the press happened.
    */
   sfx: { t: number; kind: string; durationMs?: number }[];
+  /**
+   * The narration cues, as text and timing.
+   *
+   * The *cues*, not the audio: synthesis is a post-process that may need a key,
+   * and a caller that only wants to know what the demo says should not have to
+   * be able to speak it.
+   */
+  say: { t: number; text: string }[];
 }
 
 /**
@@ -342,7 +350,16 @@ export async function record(
         }
       }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
-      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats, captions, sfx };
+      return {
+      frames: 0,
+      beats: beats.length,
+      durationMs,
+      outputs: [],
+      timeline: beats,
+      captions,
+      sfx,
+      say: say.map((c) => ({ t: c.t, text: c.text })),
+    };
     }
 
     // Narration.
@@ -855,6 +872,7 @@ export async function record(
       timeline: beats,
       captions,
       sfx,
+      say: say.map((c) => ({ t: c.t, text: c.text })),
       ...(encodedSize ? { size: encodedSize } : {}),
     };
   } finally {

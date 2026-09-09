@@ -130,7 +130,8 @@ wrote while filming.
 - duration: ${f.duration.toFixed(2)}s
 - transition_in: ${f.transitionIn}
 - scene: ${f.scene}
-- poster: ${f.poster.toFixed(2)}
+- poster: ${f.poster.toFixed(2)}${f.voiceover ? `
+- voiceover: ${f.voiceover.replace(/\n/g, " ")}` : ""}
 `,
     )
     .join("");
@@ -152,10 +153,19 @@ wrote while filming.
  * including its handoff, so the index stays a running order — which is what
  * makes a scene editable without reading the rest of the cut.
  */
+export interface MusicBed {
+  /** Path to the track, relative to index.html. */
+  file: string;
+  /** Resting level, 0-1. */
+  level: number;
+  /** Spans where narration is speaking, in composition time. */
+  duckAt: { at: number; dur: number }[];
+}
+
 export function indexHtml(
   frames: SceneFrame[],
   look: Look,
-  opts: { id: string; width: number; height: number; fps: number; duration: number },
+  opts: { id: string; width: number; height: number; fps: number; duration: number; music?: MusicBed },
 ): string {
   const clips = frames
     .map(
@@ -197,6 +207,7 @@ ${fontFaces(look.display, look.label)}
 
 ${clips}
 
+${opts.music ? `      <audio id="bed" src="${opts.music.file}" data-start="0"\n           data-duration="${opts.duration.toFixed(3)}" data-volume="${opts.music.level}"></audio>\n` : ""}
       <div id="grade"></div>
     </div>
 
@@ -207,11 +218,40 @@ ${clips}
       // grade gives this one something real to drive.
       var tl = gsap.timeline({ paused: true });
       tl.fromTo("#grade", { opacity: .55 }, { opacity: .95, duration: ${opts.duration.toFixed(3)}, ease: "none" }, 0);
+${duckTweens(opts.music)}
       window.__timelines["${opts.id}"] = tl;
     </script>
   </body>
 </html>
 `;
+}
+
+/**
+ * Duck the bed under every spoken line.
+ *
+ * A music bed that holds one level through narration is the reason people reach
+ * for the volume control: the voice and the pad occupy the same few hundred
+ * hertz, and the ear cannot separate them by loudness alone. Dropping the bed
+ * roughly 12dB while a line runs, and bringing it back over half a second, is
+ * the whole trick.
+ *
+ * Timed off the narration cues rather than measured from the audio — the driver
+ * knows when each line starts because it scheduled it, and a level automation
+ * derived from the waveform would only ever be an estimate of that.
+ */
+function duckTweens(music: MusicBed | undefined): string {
+  if (!music || music.duckAt.length === 0) return "";
+  const lines: string[] = [];
+  const ducked = Number((music.level * 0.25).toFixed(3));
+  for (const span of music.duckAt) {
+    const at = Number(Math.max(0, span.at - 0.35).toFixed(3));
+    const back = Number((span.at + span.dur).toFixed(3));
+    lines.push(
+      `      tl.to("#bed", { volume: ${ducked}, duration: .35, ease: "power2.out" }, ${at});`,
+      `      tl.to("#bed", { volume: ${music.level}, duration: .6, ease: "power2.inOut" }, ${back});`,
+    );
+  }
+  return lines.join("\n");
 }
 
 /** The manifest that makes a directory a project its CLI recognises. */

@@ -56,6 +56,7 @@ interface ComposeOpts {
   accent: string;
   title?: string;
   subtitle?: string;
+  music?: string;
   size: string;
   fps: string;
 }
@@ -300,6 +301,7 @@ program
   .option("--accent <color>", "brand accent the cards are built from", "#6d8bff")
   .option("--title <text>", "opening card headline (defaults to the spec's name)")
   .option("--subtitle <text>", "opening card subtitle")
+  .option("--music <file>", "music bed: a path to a track, or `none`. Omit for a synthesized bed.")
   .option("--size <WxH>", "composition frame", "1920x1080")
   .option("--fps <n>", "frame rate", "30")
   .action(async (manifest: string[], opts: ComposeOpts) => {
@@ -315,6 +317,7 @@ program
         fps: Math.max(1, Number(opts.fps) || 30),
         ...(opts.title === undefined ? {} : { title: opts.title }),
         ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
+        ...(opts.music === undefined ? {} : { music: opts.music }),
       });
       emit("compose", true, {
         result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames },

@@ -6,10 +6,11 @@ import { fontRequests, loadPreset, presetToLook } from "../scene/presets.js";
 import { faceRules, reportFonts, vendorFonts } from "./fonts.js";
 import { escapeCss } from "../scene/templates.js";
 import { renderSfx, toWav, type SfxCue, type SfxKind } from "../encode/sfx.js";
+import { renderMusic } from "./music.js";
 import type { ShotManifest } from "../shoot/manifest.js";
 import { log, ReelError } from "../util/log.js";
 import { cardScene, shotScene, HANDOFF, type SceneFrame } from "./scenes.js";
-import { frameMd, hyperframesJson, indexHtml, storyboardMd } from "./project.js";
+import { frameMd, hyperframesJson, indexHtml, storyboardMd, type MusicBed } from "./project.js";
 
 /**
  * `reel compose` — assemble footage into a HyperFrames project.
@@ -55,6 +56,14 @@ export interface ComposeOptions {
   fps: number;
   title?: string;
   subtitle?: string;
+  /**
+   * A music bed: a path to a track, `"none"`, or omitted for a synthesized one.
+   *
+   * Synthesized is the default because a recording needs a licence and a
+   * generated pad does not, and because a render must not fetch. Give it a real
+   * track whenever you have one cleared.
+   */
+  music?: string;
 }
 
 /** Seconds. */
@@ -74,6 +83,10 @@ interface Chapter {
   footage: string;
   sfx?: string;
   fit: number;
+  /** Narration clips, in the scene's own time. */
+  voice: { at: number; dur: number; file: string }[];
+  /** Where this shot's scene starts on the film's timeline. Filled in below. */
+  at?: number;
 }
 
 export async function compose(
@@ -130,7 +143,8 @@ export async function compose(
       );
     });
     const sfx = await writeSfx(dir, i, shot);
-    chapters.push({ shot, i, footage, fit: fitScale(shot, opts), ...(sfx ? { sfx } : {}) });
+    const voice = await copyVoice(dir, dirname(manifestPaths[i]!), shot);
+    chapters.push({ shot, i, footage, fit: fitScale(shot, opts), voice, ...(sfx ? { sfx } : {}) });
   }
 
   // --- scenes -------------------------------------------------------------
@@ -150,6 +164,7 @@ export async function compose(
       title: f.title,
       poster: f.poster,
       transitionIn: f.transitionIn,
+      ...(f.voiceover ? { voiceover: f.voiceover } : {}),
     });
   };
 
@@ -206,6 +221,8 @@ export async function compose(
     }
 
     const id = `${SCENE_ID_PREFIX}${pad(frames.length)}-shot-${slug(ch.shot.name)}`;
+    // Recorded so the bed knows, in the film's own time, where the voice is.
+    ch.at = at;
     await push({
       id,
       at,
@@ -214,6 +231,9 @@ export async function compose(
       scene: `Real footage of ${ch.shot.name}; ${ch.shot.captions.length} lower thirds, ${ch.shot.beats.length} beats.`,
       poster: Math.min(2, ch.shot.duration / 2),
       transitionIn: "crossfade",
+      ...(ch.shot.narration.length
+        ? { voiceover: ch.shot.narration.map((l) => l.text).join(" ") }
+        : {}),
       html: shotScene({
         id,
         look,
@@ -221,6 +241,7 @@ export async function compose(
         frame,
         shot: ch.shot,
         faces,
+        ...(ch.voice.length ? { voice: ch.voice } : {}),
         footage: ch.footage,
         ...(ch.sfx ? { sfx: ch.sfx } : {}),
         fit: ch.fit,
@@ -255,9 +276,15 @@ export async function compose(
   });
   const duration = Number((at + OUTRO).toFixed(3));
 
+  // --- audio bed ----------------------------------------------------------
+  const music = await writeMusic(dir, duration, chapters, opts);
+
   // --- project files ------------------------------------------------------
   const id = slug(name);
-  await writeFile(join(dir, "index.html"), indexHtml(frames, look, { id, ...frame, fps: opts.fps, duration }));
+  await writeFile(
+    join(dir, "index.html"),
+    indexHtml(frames, look, { id, ...frame, fps: opts.fps, duration, ...(music ? { music } : {}) }),
+  );
   await writeFile(join(dir, "frame.md"), frameMd(look, accent, name, frame));
   await writeFile(
     join(dir, "STORYBOARD.md"),
@@ -326,6 +353,87 @@ async function writeSfx(dir: string, i: number, shot: ShotManifest): Promise<str
   const rel = `media/sfx-${i}.wav`;
   await writeFile(join(dir, FRAMES, rel), toWav(renderSfx(cues, shot.duration * 1000, "subtle")));
   return rel;
+}
+
+/**
+ * Copy a shot's narration audio in beside its footage.
+ *
+ * Lines with no audio are skipped here and picked up by the storyboard instead,
+ * where they become `voiceover:` guides — their format has a field for exactly
+ * this. That is the honest degradation: the words survive even when the voice
+ * does not, and the storyboard says which frames are missing a track.
+ */
+async function copyVoice(
+  dir: string,
+  from: string,
+  shot: ShotManifest,
+): Promise<{ at: number; dur: number; file: string }[]> {
+  const out: { at: number; dur: number; file: string }[] = [];
+  for (const [i, line] of shot.narration.entries()) {
+    if (!line.file) continue;
+    const rel = `media/voice-${shot.name.replace(/[^a-z0-9]+/gi, "").slice(0, 8)}-${i}.mp3`;
+    try {
+      await copyFile(resolve(from, line.file), join(dir, FRAMES, rel));
+    } catch {
+      continue; // The manifest promised audio that is not there; the text still travels.
+    }
+    out.push({
+      at: line.t,
+      // A line whose length was never measured still has to occupy time, or the
+      // clip is zero-length and the framework never plays it.
+      dur: line.ms ?? Math.max(1.5, line.text.split(/\s+/).length / 2.6),
+      file: rel,
+    });
+  }
+  return out;
+}
+
+/**
+ * The music bed, and where it has to get out of the way.
+ *
+ * `--music none` skips it; `--music <file>` copies a real track in; anything
+ * else synthesizes one. The duck spans come from the narration cues rather than
+ * from the audio, because the driver knows when each line starts — it scheduled
+ * it — and reading the level back off a waveform would only estimate that.
+ */
+async function writeMusic(
+  dir: string,
+  duration: number,
+  chapters: Chapter[],
+  opts: ComposeOptions,
+): Promise<MusicBed | undefined> {
+  if (opts.music === "none") return undefined;
+
+  const file = "media/bed.wav";
+  await mkdir(join(dir, "media"), { recursive: true });
+  if (opts.music) {
+    const ext = opts.music.slice(opts.music.lastIndexOf("."));
+    const rel = `media/bed${ext || ".mp3"}`;
+    try {
+      await copyFile(resolve(opts.music), join(dir, rel));
+      log.info(`Music       ${opts.music}`);
+      return { file: rel, level: 0.5, duckAt: duckSpans(chapters) };
+    } catch {
+      throw new ReelError(
+        `No music track at ${opts.music}.`,
+        "Pass a path to an audio file, `none` for silence, or omit it for a synthesized bed.",
+      );
+    }
+  }
+
+  await writeFile(join(dir, file), toWav(renderMusic(duration * 1000)));
+  log.info(`Music       synthesized bed — no licence to clear, and nothing fetched`);
+  return { file, level: 0.55, duckAt: duckSpans(chapters) };
+}
+
+/** Where narration speaks, in composition time. */
+function duckSpans(chapters: Chapter[]): { at: number; dur: number }[] {
+  const out: { at: number; dur: number }[] = [];
+  for (const ch of chapters) {
+    if (ch.at === undefined) continue;
+    for (const v of ch.voice) out.push({ at: Number((ch.at + v.at).toFixed(3)), dur: v.dur });
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 
 async function readManifest(path: string): Promise<ShotManifest> {

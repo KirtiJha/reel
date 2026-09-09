@@ -1283,3 +1283,71 @@ Typecheck and unit tests on Linux and Windows — Windows because that is where
 Reel's process handling is thinnest, since app and terminal teardown both signal
 a process group and Windows has none — plus the capture self-test on Linux,
 which needs a browser. No media is regenerated, committed or policed.
+
+---
+
+# Part 13 — Audio
+
+The films were near-silent: clicks and keystrokes, nothing else. Three layers
+now, and each arrives differently on purpose.
+
+## Interaction sound
+
+Already there from Part 10, and worth restating because it is the one thing in
+the mix nobody else can produce. Reel's driver caused every click and keystroke,
+so it knows when each happened to the millisecond. A click landing on the exact
+frame the button went down cannot be placed by ear afterwards.
+
+## Narration, and admitting when there is none
+
+`RunResult` and the shot manifest carry the spoken lines as **text always,
+audio only when it exists** — synthesized now, or already in the committed voice
+cache. The split is the point. A line with no audio is not dropped: it reaches
+the composition as text, lands in `STORYBOARD.md` as a `voiceover:` guide —
+their storyboard format has a field for exactly this — and `shoot` reports how
+many lines are missing a track.
+
+This sandbox has no voice cache and no API key, so the path was built and
+exercised in its degraded mode: *"3 spoken lines, and no `audio.voice` to say
+them — the film will carry the text only."* That is the honest outcome. A demo
+that quietly ships two-thirds narrated is worse than one that says it is silent.
+
+## A music bed, synthesized
+
+`src/compose/music.ts` renders a slow four-chord pad sized to the film, ducked
+about 12dB under every spoken line. `--music <file>` takes a real track instead;
+`--music none` is silence.
+
+Synthesized rather than shipped, and the argument is stronger than it was for
+the sound effects: a recording needs a licence, and a licence that is right for
+Reel's repository is not necessarily right for the demo someone cuts with it.
+"Royalty-free" covers a dozen incompatible things and the person who discovers
+theirs was not covered discovers it from a takedown. None of this is a
+recording, so there is nothing to clear — and it is deterministic and offline,
+which the render already has to be.
+
+**The first version was a rumble.** Voiced -7 to +12 semitones around a 110Hz
+root, every partial that mattered fell under 200Hz; a spectrogram of it is one
+band along the bottom of the image. Inaudible on a laptop speaker, gone entirely
+on a phone. Re-voiced upward from a 220Hz root with stronger second and third
+partials, the energy above 300Hz now sits 2.4dB below the full-band level rather
+than being absent. A test pins it, because "is there anything above the bass"
+is not a question a listener of the code can answer.
+
+Ducking is timed from the narration cues rather than measured off the waveform:
+the driver knows when each line starts because it scheduled it, and a level
+automation derived from the audio would only ever be an estimate of that.
+
+## Still open
+
+- **Real narration end to end.** The plumbing is exercised only in its degraded
+  path here. With a key or a warm cache, `shoot` copies the per-line audio into
+  the shot directory and `compose` places it — but nothing in this session has
+  heard it.
+- **The `hyperframes-audio` chain.** Their EQ, compressor and voiceover *carve*
+  — ducking only the bands the voice occupies, rather than the whole bed — is a
+  better ducker than a volume tween, and `<hf-audio-group>` would let the bed
+  and the effects share one fader.
+- **Music that fits the look.** The bed is the same pad for every film. A
+  `brutal` cut and an `editorial` one want different beds, and the look already
+  knows which it is.

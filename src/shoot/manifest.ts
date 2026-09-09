@@ -51,6 +51,24 @@ export interface ShotSfx {
   ms?: number;
 }
 
+/**
+ * A line of narration, and when it is said.
+ *
+ * `file` is present only when audio for the line actually exists — synthesized
+ * now, or already in the committed voice cache. When it is absent the line
+ * still travels, because a composition can put the text in its storyboard as a
+ * voiceover guide and say plainly that the track is missing. A demo that
+ * quietly ships two-thirds narrated is worse than one that admits it is silent.
+ */
+export interface ShotLine {
+  t: number;
+  text: string;
+  /** Relative to the manifest, when the audio exists. */
+  file?: string;
+  /** Seconds, when known. */
+  ms?: number;
+}
+
 export interface ShotManifest {
   /** Schema version, so a composition can refuse a manifest it cannot read. */
   version: 1;
@@ -84,6 +102,8 @@ export interface ShotManifest {
   captions: ShotCaption[];
   /** Every sound the demo made, in demo time. */
   sfx: ShotSfx[];
+  /** What the demo says out loud, in demo time. */
+  narration: ShotLine[];
 }
 
 /** Round to milliseconds — a manifest is read by people as well as by code. */
@@ -109,6 +129,7 @@ export function buildManifest(input: {
   beats: { label: string; t: number }[];
   captions: { t: number; text: string }[];
   sfx: { t: number; kind: string; durationMs?: number }[];
+  narration: { t: number; text: string; file?: string; durationMs?: number }[];
 }): ShotManifest {
   return {
     version: 1,
@@ -130,6 +151,12 @@ export function buildManifest(input: {
       t: seconds(c.t),
       kind: c.kind,
       ...(c.durationMs === undefined ? {} : { ms: seconds(c.durationMs) }),
+    })),
+    narration: input.narration.map((l) => ({
+      t: seconds(l.t),
+      text: l.text,
+      ...(l.file === undefined ? {} : { file: l.file }),
+      ...(l.durationMs === undefined ? {} : { ms: seconds(l.durationMs) }),
     })),
   };
 }

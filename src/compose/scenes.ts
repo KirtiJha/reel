@@ -101,6 +101,14 @@ export interface SceneFrame {
   /** Where to seek for the storyboard's poster — past the entrance. */
   poster: number;
   transitionIn: string;
+  /**
+   * What is said over this frame.
+   *
+   * Their storyboard format's own field, and the reason a line with no audio is
+   * still worth carrying: the words reach the plan even when the voice does
+   * not, so a frame missing its track says so instead of being silently mute.
+   */
+  voiceover?: string;
 }
 
 interface Frame {
@@ -298,6 +306,8 @@ export interface ShotOptions {
   id: string;
   look: Look;
   faces?: string;
+  /** Narration audio for this shot, relative to the scene file. */
+  voice?: { at: number; dur: number; file: string }[];
   accent: string;
   frame: Frame;
   shot: ShotManifest;
@@ -348,6 +358,12 @@ ${groundCss(look, accent, frame)}
                  muted playsinline></video>
         </div>
 ${o.sfx ? `        <audio id="${o.id}-a" src="${o.sfx}" data-start="0" data-duration="${r3(shot.duration)}" data-volume="0.85"></audio>` : ""}
+${(o.voice ?? [])
+    .map(
+      (v, i) =>
+        `        <audio id="${o.id}-v${i}" src="${v.file}" data-start="${r3(v.at)}" data-duration="${r3(v.dur)}" data-volume="1"></audio>`,
+    )
+    .join("\n")}
 ${thirds
     .map(
       (t) => `        <div class="lower" id="lt${t.i}">

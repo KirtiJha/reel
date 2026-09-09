@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { record } from "../driver/run.js";
 import type { LoadedSpec } from "../spec/load.js";
 import { buildManifest, type ShotManifest } from "../shoot/manifest.js";
 import { PRESETS } from "../spec/schema.js";
+import { audioEnabled, missingVoiceLines, planAudio } from "../narrate/audio.js";
 import { log } from "../util/log.js";
 
 /**
@@ -95,6 +96,8 @@ export async function shoot(loaded: LoadedSpec, opts: ShootOptions): Promise<Sho
 
   const footage = join(dir, "footage.mp4");
   const spec = prepared.spec;
+  const narration = await resolveNarration(loaded, res.say, dir);
+
   const shot = buildManifest({
     spec: relative(dir, loaded.path) || basename(loaded.path),
     name: spec.name,
@@ -112,14 +115,67 @@ export async function shoot(loaded: LoadedSpec, opts: ShootOptions): Promise<Sho
     beats: res.timeline,
     captions: res.captions,
     sfx: res.sfx,
+    narration,
   });
 
   const manifest = join(dir, "shots.json");
   await writeFile(manifest, JSON.stringify(shot, null, 2) + "\n");
 
   log.info(`Footage  ${footage}`);
+  const spoken = shot.narration.filter((l) => l.file).length;
   log.info(
-    `Manifest ${manifest} — ${shot.beats.length} beats, ${shot.captions.length} captions, ${shot.sfx.length} sound cues`,
+    `Manifest ${manifest} — ${shot.beats.length} beats, ${shot.captions.length} captions, ` +
+      `${shot.sfx.length} sound cues, ${shot.narration.length} lines (${spoken} with audio)`,
   );
   return { dir, footage, manifest, shot };
+}
+
+/**
+ * The narration, and its audio when that exists.
+ *
+ * The lines always travel; the audio only when the committed voice cache
+ * already holds it or a key is configured to synthesize it. That split is the
+ * point. A line with no audio is not dropped — it reaches the composition as
+ * text, which puts it in the storyboard as a voiceover guide and says plainly
+ * that the track is missing. A demo that quietly ships two-thirds narrated is
+ * worse than one that admits it is silent.
+ */
+async function resolveNarration(
+  loaded: LoadedSpec,
+  cues: { t: number; text: string }[],
+  dir: string,
+): Promise<{ t: number; text: string; file?: string; durationMs?: number }[]> {
+  if (cues.length === 0) return [];
+  const spec = loaded.spec;
+  if (!audioEnabled(spec.audio, spec.output.audio, cues)) {
+    log.info(`${cues.length} spoken lines, and no \`audio.voice\` to say them — the film will carry the text only.`);
+    return cues.map((c) => ({ t: c.t, text: c.text }));
+  }
+
+  // Reported before anything is attempted: reading the cache needs no key, and
+  // knowing the track will be short is worth more before a render than after.
+  const missing = await missingVoiceLines(cues, spec.audio.voice, loaded.dir).catch(() => cues.map((c) => c.text));
+  if (missing.length) {
+    log.warn(`${missing.length} of ${cues.length} spoken lines have no audio in the voice cache.`);
+  }
+
+  try {
+    const plan = await planAudio(cues, spec.audio.voice, loaded.dir);
+    await mkdir(join(dir, "voice"), { recursive: true });
+    const out: { t: number; text: string; file?: string; durationMs?: number }[] = [];
+    for (const [i, line] of plan.lines.entries()) {
+      const rel = `voice/${String(i).padStart(2, "0")}.mp3`;
+      // Copied rather than referenced: the shot directory is the composition's
+      // input, and an input that points back into a cache is one a move breaks.
+      await copyFile(line.file, join(dir, rel)).catch(() => undefined);
+      out.push({ t: line.t, text: line.text, file: rel, durationMs: line.durationMs });
+    }
+    return out;
+  } catch (err) {
+    log.warn(
+      `Narration could not be synthesized (${(err as Error).message.split("\n")[0]}) — ` +
+        `the lines travel as text and the film is silent of voice.`,
+    );
+    return cues.map((c) => ({ t: c.t, text: c.text }));
+  }
 }

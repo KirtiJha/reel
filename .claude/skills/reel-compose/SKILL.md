@@ -159,6 +159,40 @@ Mount a block the way its install message says — a host clip with
 `data-composition-src` — and give the host the same `data-composition-id` as the
 block's own root.
 
+## Audio
+
+Three layers, and each one arrives differently.
+
+**Interaction sound** is synthesized from the manifest's `sfx` cues — a tick per
+click, key texture per typed field. A click landing on the exact frame the
+button went down is not something an editor can place by ear afterwards,
+because only the driver knows when the press happened. Nothing to configure.
+
+**Narration** rides in the manifest as `narration`: text always, audio only when
+the committed voice cache holds the line or `audio.voice` is configured to
+synthesize it. Lines with no audio are *not* dropped — they land in
+`STORYBOARD.md` as `voiceover:` guides and `shoot` says how many are missing.
+A demo that quietly ships two-thirds narrated is worse than one that admits it
+is silent.
+
+**A music bed** is synthesized by default, ducking ~12dB under every spoken
+line:
+
+```bash
+npm run dev -- compose shot/shots.json --out film                 # synthesized bed
+npm run dev -- compose shot/shots.json --out film --music bed.mp3 # your own track
+npm run dev -- compose shot/shots.json --out film --music none    # silence
+```
+
+Synthesized because a recording needs a licence — and a licence that suits this
+repository is not necessarily the one that suits the demo you cut with it — and
+because a render must not fetch. It is a slow four-chord pad, deliberately
+plain: a bed under a product demo exists to stop silence being the loudest thing
+in the room, and anything with an opinion competes with the narration and wins.
+
+The duck spans come from the narration cues, not from analysing the audio: the
+driver knows when each line starts because it scheduled it.
+
 ## The sub-composition contract
 
 This is where the mount-time failures live, and none of them are caught by
