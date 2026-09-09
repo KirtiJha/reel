@@ -102,6 +102,15 @@ export interface SceneFrame {
   poster: number;
   transitionIn: string;
   /**
+   * The time-coded shot sequence — the windows this scene develops across.
+   *
+   * Written into the storyboard below the metadata, which is where their format
+   * puts a frame's narrative and where a scene author reads it from. Absent on
+   * a frame reassembled from a storyboard, because by then the sequence is the
+   * author's own writing and lives in the file rather than in this struct.
+   */
+  sequence?: string;
+  /**
    * What is said over this frame.
    *
    * Their storyboard format's own field, and the reason a line with no audio is

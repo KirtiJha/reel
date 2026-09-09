@@ -103,7 +103,15 @@ have landed leaves the frame dead for the rest of the shot.
  */
 export function storyboardMd(
   frames: SceneFrame[],
-  opts: { name: string; width: number; height: number; duration: number; message: string },
+  opts: {
+    name: string;
+    width: number;
+    height: number;
+    duration: number;
+    message: string;
+    /** Written once at the top; every scene inherits it. */
+    direction?: string;
+  },
 ): string {
   const head = `---
 format: ${opts.width}x${opts.height}
@@ -120,7 +128,15 @@ Assembled by \`reel compose\`. Every frame below is a sub-composition mounted by
 \`index.html\`; the footage frames are real recordings of the running app, and
 their captions and camera moves are timed from the shot manifest the driver
 wrote while filming.
-`;
+
+Each frame carries a **time-coded shot sequence** — the windows the scene
+develops across. The windows are derived: for a footage scene they are the
+driver's own cues, and every beat and sound below is a recorded fact rather than
+an estimate. The **direction inside each window is not written yet**, and that
+is the authoring pass: replace each \`TODO\` with what is on screen, what moves,
+and where it sits.
+
+${opts.direction ?? ""}`;
 
   // Durations to the millisecond, which is finer than a plan layer needs and
   // exactly what the contract needs: `assemble` re-derives every scene's start
@@ -138,7 +154,7 @@ wrote while filming.
 - scene: ${f.scene}
 - poster: ${f.poster.toFixed(2)}${f.voiceover ? `
 - voiceover: ${f.voiceover.replace(/\n/g, " ")}` : ""}
-`,
+${f.sequence ? `\n${f.sequence}\n` : ""}`,
     )
     .join("");
 

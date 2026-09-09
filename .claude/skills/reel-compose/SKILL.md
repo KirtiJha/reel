@@ -56,6 +56,24 @@ generated, because it was.
 
 The pass is: **read one packet, author that one scene, mark it `animated`.**
 
+Each scene's packet carries a **time-coded shot sequence** — the windows the
+scene develops across — and the windows are already right. For footage they are
+the driver's own cues, with every beat and sound that lands inside each one. What
+is missing is the direction:
+
+```
+Scene 1 (0.00–5.93s): cue: "Capture work in a snap" · beat `hero` at 0.95s ·
+  click at 3.15s, type 3.15–4.23s. TODO — what is on screen, what moves, and
+  where it sits.
+```
+
+Replacing those `TODO`s **is** the authoring pass, and doing it in the
+storyboard before dispatching is what stops a worker building a picture instead
+of a shot. Every window is a phase of the scene's timeline; nothing appears
+before the window that introduces it; the last window holds. `reel status`
+counts the ones still unwritten, and flags a scene marked `animated` that still
+has them — a status bullet is a claim, an unwritten window is evidence.
+
 - `reel packets` writes `.hyperframes/frame-packets/<frame_id>.md` per scene
   plus `_role.md` — the contract every author works under.
 - Dispatch **one sub-agent per scene**, in parallel. Each gets `_role.md` and
@@ -133,6 +151,12 @@ gsap.min.js                    vendored, never linked
 `compose` reads it to refuse to clobber work it did not write. Edit a
 `duration:` there and the whole cut moves. That is the file to change, never
 `index.html` — the assembler owns that one.
+
+It also carries a **`## Video direction`** block, written once at the top:
+palette, motion grammar, the reveal model, and the negative list. Scenes are
+authored in parallel by workers who cannot see each other's work, so anything
+true of the whole film has to live somewhere all of them read. Keep it, and
+don't restate it per scene.
 
 Each scene is its own sub-composition: a title card, a footage scene per shoot,
 a chapter card before each shoot after the first, and a close. Lower thirds are

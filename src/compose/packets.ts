@@ -214,6 +214,13 @@ ${p.block ? "```markdown\n" + p.block + "\n```" : "_(the storyboard has no block
 \`scene:\` is design intent and never visible text. \`voiceover:\` is a timing
 reference — sync your reveals to it — and is never rendered as text.
 
+**The Scene lines are your build spec.** Each one is a window of real seconds,
+and each is a phase of your timeline you have to realize. The windows are
+given; the direction inside them is what you write. Replace every \`TODO\` in
+your block with what is on screen, what moves, and where it sits — then build
+exactly that, beat for beat. Nothing appears before the window that introduces
+it, and the last window holds: content resolved, still.
+
 ${p.shot ? shotFacts(p.shot) : cardBrief()}${mediaBrief(p.media)}
 ## The file that is already there
 
@@ -432,9 +439,14 @@ keeps your scene renderable.
   times too slow, and is the single thing that makes a card read as a slide.
 - **Cut on the beats.** They are exact, because the driver caused them. A punch
   on a beat reads as direction; the same punch 200ms late reads as a mistake.
-- **Build the whole scene.** Reveal across the full duration rather than dumping
-  the canvas in the first quarter and holding it. A backdrop that stops moving
-  once the words land leaves the frame dead for the rest of the shot.
+- **Every Scene window is a timeline phase.** Map them one to one. The failure
+  this prevents is the one that reads as PowerPoint: the whole canvas dumped in
+  the first quarter, then nothing. Reveal each piece as its window opens, across
+  the back half as much as the front. A backdrop that stops moving once the
+  words land leaves the frame dead for the rest of the shot.
+- **End on a held read.** Once the content has resolved, let it hold. Prefer
+  stillness to bad motion — no forced drift, no lazy breathing. What is banned
+  is front-loaded *then* frozen, not stillness itself.
 - **One very large element, everything else small.** A card that tries to be
   balanced reads as a slide. Display type at 5–10% of the frame width is roughly
   twice what feels right when guessing.

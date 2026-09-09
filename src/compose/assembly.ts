@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ReelError, log } from "../util/log.js";
 import { indexHtml, type AssemblyLook, type MusicBed } from "./project.js";
+import { countTodo } from "./sequence.js";
 import { HANDOFF, type SceneFrame } from "./scenes.js";
 import {
   parseStoryboard,
@@ -204,9 +205,19 @@ function retime(music: MusicBed, duration: number): MusicBed {
 
 /** What `reel status` reports: where the authoring pass has got to. */
 export interface Status {
-  frames: { index: number; title: string; status: string; src?: string; authored: boolean }[];
+  frames: {
+    index: number;
+    title: string;
+    status: string;
+    src?: string;
+    authored: boolean;
+    /** Direction lines in this frame's shot sequence still unwritten. */
+    todo: number;
+  }[];
   animated: number;
   total: number;
+  /** Unwritten direction lines across the whole film. */
+  todo: number;
   warnings: string[];
 }
 
@@ -228,12 +239,26 @@ export async function status(dirIn: string): Promise<Status> {
     status: f.status,
     ...(f.src ? { src: f.src } : {}),
     authored: f.status === "animated",
+    todo: countTodo(f.narrative),
   }));
+  const warnings = board.warnings.map((w) => (w.line ? `line ${w.line}: ${w.message}` : w.message));
+  // A status bullet is a claim; an unwritten direction line is evidence. When
+  // the two disagree the evidence wins, and saying so is the point — this is
+  // the one check that catches a frame marked animated by a loop that ran
+  // ahead of its author.
+  for (const f of frames) {
+    if (f.authored && f.todo > 0) {
+      warnings.push(
+        `Frame ${f.index} (${f.title || "untitled"}) is marked animated with ${f.todo} direction line(s) still TODO.`,
+      );
+    }
+  }
   return {
     frames,
     animated: frames.filter((f) => f.authored).length,
     total: frames.length,
-    warnings: board.warnings.map((w) => (w.line ? `line ${w.line}: ${w.message}` : w.message)),
+    todo: frames.reduce((n, f) => n + f.todo, 0),
+    warnings,
   };
 }
 
@@ -281,11 +306,12 @@ export async function mark(
 /** Print a status the way the rest of the CLI prints things. */
 export function reportStatus(s: Status): void {
   for (const f of s.frames) {
-    const mark = f.authored ? "✓" : "·";
-    log.info(`  ${mark} ${String(f.index).padStart(2)} ${f.title.padEnd(28)} ${f.status}`);
+    const mark = f.authored ? (f.todo > 0 ? "!" : "✓") : "·";
+    const todo = f.todo > 0 ? `· ${f.todo} TODO` : "";
+    log.info(`  ${mark} ${String(f.index).padStart(2)} ${f.title.padEnd(28)} ${f.status.padEnd(9)} ${todo}`);
   }
-  log.info(`  ${s.animated} of ${s.total} scenes authored`);
-  if (s.animated < s.total) {
-    log.info(`Next        reel packets, then author each scene still marked \`built\``);
+  log.info(`  ${s.animated} of ${s.total} scenes authored · ${s.todo} direction line(s) unwritten`);
+  if (s.animated < s.total || s.todo > 0) {
+    log.info(`Next        reel packets, then write the direction in each scene's shot sequence`);
   }
 }

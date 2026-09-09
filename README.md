@@ -53,10 +53,22 @@ cd film && npx hyperframes check && npx hyperframes render
 
 **`compose` writes a scaffold, not a film**, and says so: every scene lands as
 `status: built`. It is real and renderable and it is the same five scenes for
-every film Reel has ever composed. `reel packets` cuts one bounded brief per
-scene — the storyboard block, the driver's exact beats and captions, the
-contract — and the authoring pass over those briefs is what makes it *this*
-product's film. `reel status film` prints how far it got.
+every film Reel has ever composed.
+
+What makes it *this* product's film is the pass over the shot sequences. Every
+scene gets one — the windows it develops across — and for footage the windows
+are the driver's own cues, so every number in them is recorded rather than
+guessed:
+
+```
+Scene 1 (0.00–5.93s): cue: "Capture work in a snap" · beat `hero` at 0.95s ·
+  click at 3.15s, type 3.15–4.23s. TODO — what is on screen, what moves, and
+  where it sits.
+```
+
+Writing those `TODO`s is the job. `reel packets` cuts one bounded brief per
+scene so authors can work in parallel, and `reel status film` counts the windows
+still unwritten — including on a scene that claims to be finished.
 
 > **Never fake the product.** If you cannot drive it, say so. A demo that was
 > not filmed from the running app can lie, and the reason to shoot footage at

@@ -14,6 +14,7 @@ import { frameMd, hyperframesJson, indexHtml, storyboardMd, type MusicBed } from
 import { writeAssembly } from "./assembly.js";
 import { SHOT_DIR } from "./packets.js";
 import { parseStoryboard } from "./storyboard.js";
+import { cardWindows, renderSequence, shotWindows, videoDirection } from "./sequence.js";
 
 /**
  * `reel compose` — assemble footage into a HyperFrames project.
@@ -193,6 +194,7 @@ export async function compose(
       title: f.title,
       poster: f.poster,
       transitionIn: f.transitionIn,
+      ...(f.sequence ? { sequence: f.sequence } : {}),
       ...(f.voiceover ? { voiceover: f.voiceover } : {}),
     });
   };
@@ -205,6 +207,7 @@ export async function compose(
     scene: "Opening card — the film's thesis, waterfall entry.",
     poster: 1.2,
     transitionIn: "cut",
+    sequence: renderSequence(cardWindows(TITLE), "card"),
     html: cardScene({
       id: SCENE_ID_PREFIX + "00-title",
       look,
@@ -234,6 +237,7 @@ export async function compose(
         scene: `Chapter card introducing ${ch.shot.name}.`,
         poster: 1,
         transitionIn: "flash",
+        sequence: renderSequence(cardWindows(CHAPTER), "card"),
         html: cardScene({
           id,
           look,
@@ -259,6 +263,7 @@ export async function compose(
       scene: `Real footage of ${ch.shot.name}; ${ch.shot.captions.length} lower thirds, ${ch.shot.beats.length} beats.`,
       poster: Math.min(2, ch.shot.duration / 2),
       transitionIn: "crossfade",
+      sequence: renderSequence(shotWindows(ch.shot), "shot"),
       ...(ch.shot.narration.length
         ? { voiceover: ch.shot.narration.map((l) => l.text).join(" ") }
         : {}),
@@ -295,6 +300,7 @@ export async function compose(
     scene: "Closing card.",
     poster: 1,
     transitionIn: "crossfade",
+    sequence: renderSequence(cardWindows(OUTRO), "card"),
     html: cardScene({
       id: outroId,
       look,
@@ -325,6 +331,7 @@ export async function compose(
       ...frame,
       duration,
       message: opts.subtitle ?? `${name} — filmed, not drawn.`,
+      direction: videoDirection(look, accent),
     }),
   );
   await writeFile(join(dir, "hyperframes.json"), hyperframesJson(id));

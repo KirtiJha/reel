@@ -377,7 +377,7 @@ program
       const s = await status(project);
       for (const w of s.warnings) log.warn(`  ${w}`);
       reportStatus(s);
-      emit("status", true, { result: { animated: s.animated, total: s.total, frames: s.frames } });
+      emit("status", true, { result: { animated: s.animated, total: s.total, todo: s.todo, frames: s.frames } });
     });
   });
 

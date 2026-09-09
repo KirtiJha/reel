@@ -1489,17 +1489,85 @@ overwrite it: Title"* — and points at `assemble`. And `reel mark` exists at al
 because the orchestrator's own step had no command, so marking a frame meant
 hand-editing markdown in the middle of a dispatch loop.
 
+# 16. Time-coded shot sequences
+
+The authoring pass had a mechanism but handed authors the wrong unit. A brief
+that says *"Real footage of TaskFlow; 3 lower thirds, 3 beats"* tells you what
+the scene **is** and nothing about how it develops across fifteen seconds. What
+comes back is a picture: everything on screen inside the first quarter, then
+nothing.
+
+HyperFrames names that failure exactly — it is what reads as PowerPoint — and
+their fix is not advice, it is a change of unit. A frame's visual layer is *"a
+sequence of time windows paced to the voiceover, not a bag of effect tags"*.
+Written that way, front-loading becomes impossible, because every window is a
+phase somebody has to fill.
+
+## The split, and why Reel gets the better half for free
+
+In their loop a person writes the whole sequence, because nothing knows where
+the beats are. **Reel does.** The driver caused every moment in the film and
+wrote down when. So the window boundaries are not a creative decision here —
+they are arithmetic over recorded fact:
+
+```
+Scene 1 (0.00-5.93s): cue: "Capture work in a snap" - beat `hero` at 0.95s -
+  click at 3.15s, type 3.15-4.23s, click at 5.48s. TODO — what is on screen,
+  what moves, and where it sits.
+```
+
+Every number in that line was recorded at the instant the driver caused it.
+What goes *in* the window — what is on screen, what moves, where it sits — is
+the creative decision, and stays the author's.
+
+So `compose` writes the skeleton and marks the direction `TODO`. Not a
+placeholder out of laziness: a plausible-sounding line nobody wrote is worse
+than a blank, because it reads as a decision and gets built.
+
+Three judgements in the derivation are worth stating. Narration wins over
+captions where both exist, because their rule is that reveals pace to the
+*voiceover*. A cue landing under 1.5s after the last one is folded into it
+rather than opening a phase of its own — Reel's captions can land a second
+apart, and one window each is a sequence nobody can direct. And a cue with no
+room left before the end does not open a window at all.
+
+Cards have no recorded cues, so their windows come from the shape their rules
+describe: arrive, develop, **end on a held read**. A card too short for three
+gets two, because then the final reveal and the hold are the same window —
+which is their rule as well.
+
+## `## Video direction`, written once
+
+Their block, and their reason for it: *"it is what binds many independent shots
+into one film."* Scenes are authored in parallel by workers who cannot see each
+other's work, so anything true of the whole film has to live where all of them
+read. Reel can write a real one rather than a placeholder, because the look
+already decided the palette and the motion grammar is the composition contract.
+It ends on the negative list, both motion failure modes named: the **slideshow**
+(front-load then freeze) and the **screensaver** (everything drifting
+independently of any cue).
+
+## The unwritten window is a check, not a comment
+
+`reel status` counts the direction lines still `TODO`, and flags a scene marked
+`animated` that still has them:
+
+```
+!  3 Chapter                      animated  - 2 TODO
+   Frame 3 is marked animated with 2 direction line(s) still TODO.
+```
+
+That is the first genuinely *verifiable* signal in the pass. A `status:` bullet
+is a claim somebody made; an unwritten window is evidence. When the two
+disagree, the evidence wins — which is what catches a dispatch loop that ran
+ahead of its authors.
+
 ## Still open
 
 - **Shader transitions between cards.** They are ruled out *between footage*,
   not everywhere. A film that is all cards — a changelog, a feature announcement
   — could run their displacement wipes, if the host learned to flatten a scene
   into a `.scene` element the library recognises.
-- **A storyboard worth authoring against.** `compose` writes a one-line `scene:`
-  per frame. Their workflows write a *time-coded shot sequence* — Scene 1
-  (0.0–2.0s) … Scene 2 … — paced to the voiceover, and that is what makes a
-  frame worker build a shot rather than a picture. Reel's packets carry the
-  beats to pace against but not yet the sequence itself.
 - **Real narration end to end.** The plumbing is exercised only in its degraded
   path here. With a key or a warm cache, `shoot` copies the per-line audio into
   the shot directory and `compose` places it — but nothing in this session has
