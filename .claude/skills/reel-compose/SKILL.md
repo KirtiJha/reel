@@ -21,20 +21,64 @@ Reel does not draw pictures of products, and HyperFrames does not drive apps.
 
 ## The loop
 
+You are the orchestrator. Run the steps in order and pass each gate before
+continuing.
+
 ```bash
-npm run dev -- check   demo.reel.yaml            # does every step still work?
-npm run dev -- shoot   demo.reel.yaml --out shot # footage.mp4 + shots.json
+npm run dev -- check   demo.reel.yaml            # 1. does every step still work?
+npm run dev -- shoot   demo.reel.yaml --out shot # 2. footage.mp4 + shots.json
 npm run dev -- compose shot/shots.json --out film --look aurora --accent "#22d3ee"
 # several shoots become several chapters, in the order given:
-npm run dev -- compose app/shots.json cli/shots.json --out film
+npm run dev -- compose app/shots.json cli/shots.json --out film   # 3. the scaffold
+
+npm run dev -- packets  film                     # 4. one brief per scene
+#    … author each scene from its packet …       # 5. THE PASS — the actual work
+npm run dev -- assemble film                     # 6. rebuild the host
+npm run dev -- status   film                     # is the pass finished?
+
 cd film
-npx hyperframes check                            # lint, layout, motion, contrast
+npx hyperframes check                            # 7. lint, layout, motion, contrast
 npx hyperframes snapshot --at 3,8,15             # seconds — LOOK at these
-npx hyperframes render --fps 30
+npx hyperframes render --fps 30                  # 8. only when it is finished
 ```
 
 **`snapshot` is the iteration loop, not `render`.** A snapshot is seconds; a
 render is minutes. Use `render` when you believe it is finished.
+
+### Step 5 is the job. The rest is plumbing.
+
+`compose` writes a **scaffold**, and says so: every scene lands as
+`status: built`, which in their ladder means *the HTML exists and the layout is
+real, but nothing has been authored*. The scaffold is the same five scenes for
+every film Reel has ever composed — a waterfall headline, a chapter card,
+footage under a bottom band. Shipping it is how you get a film that looks
+generated, because it was.
+
+The pass is: **read one packet, author that one scene, mark it `animated`.**
+
+- `reel packets` writes `.hyperframes/frame-packets/<frame_id>.md` per scene
+  plus `_role.md` — the contract every author works under.
+- Dispatch **one sub-agent per scene**, in parallel. Each gets `_role.md` and
+  exactly one packet, pasted in full or handed as two paths. Nothing else.
+  Workers never open `STORYBOARD.md` — N of them writing that file at once is a
+  lost edit — and never run the CLI.
+- A worker's terminal action is writing `compositions/frames/<frame_id>.html`.
+  **You** mark the frame `animated` in `STORYBOARD.md` as each one returns.
+- Then `reel assemble`, then `hyperframes check`. If a scene fails, re-dispatch
+  that worker with the finding; the packet's own retry rule covers it.
+
+`reel status` is the gate: it prints which scenes are still `built`. A film
+delivered with scenes still marked `built` is a film nobody authored — say so
+rather than shipping it quietly.
+
+### Never re-run `compose` over an authored project
+
+It rewrites every scene file, so it would destroy the pass. It refuses when the
+storyboard holds an `animated` frame, and `--force` means *start this film
+over*. To change timing, edit the `duration:` in `STORYBOARD.md` and run
+`reel assemble` — the running order, the seams and the music ducking all follow.
+Retiming a scene is a change to the plan, so re-author that scene to fill its
+new length rather than leaving it to hold its last frame.
 
 One thing snapshots do *not* show: decoded video frames. A snapshot over the
 footage clip renders the graphics on an empty box. That is expected — judge
@@ -73,13 +117,22 @@ assumes — not an ad-hoc directory that happens to render:
 
 ```
 frame.md                       design spec; tokens in frontmatter, prose below
-STORYBOARD.md                  the plan layer — Studio renders it as a contact sheet
+STORYBOARD.md                  the plan layer, and the contract `assemble` reads
 hyperframes.json               what makes the directory a project
 index.html                     assembly only: scenes as sub-compositions on tracks
 compositions/frames/NN-*.html  one scene per file
 compositions/frames/media/     footage and its synthesized sound
 gsap.min.js                    vendored, never linked
+.hyperframes/reel-assembly.json  ground, bed, fps — what their format has no field for
+.hyperframes/shots/<id>.json     the shot manifest, parked for the packet builder
+.hyperframes/frame-packets/      written by `reel packets`, one brief per scene
 ```
+
+**`STORYBOARD.md` is read, not just written.** It is the running order:
+`assemble` rebuilds `index.html` from it, `packets` cuts each brief from it, and
+`compose` reads it to refuse to clobber work it did not write. Edit a
+`duration:` there and the whole cut moves. That is the file to change, never
+`index.html` — the assembler owns that one.
 
 Each scene is its own sub-composition: a title card, a footage scene per shoot,
 a chapter card before each shoot after the first, and a close. Lower thirds are
@@ -98,10 +151,13 @@ sizes from its grid and a phone viewport is portrait; either one scaled to fill
 ground instead, which reads as a framed window rather than as letterboxing
 somebody forgot about.
 
-**Then you edit the HTML.** That is the point. Add a punch-in on a beat, a stat
-that counts, a chapter card between sections, a callout on the element the
-narration is about. Do not ask `compose` for more options — reach into the
-composition, which is where HyperFrames intends the work to happen.
+**What it does not give you is a film.** Every scene is `status: built`: real,
+renderable, and identical in shape to every other film Reel has composed. The
+authoring pass above is where it becomes this product's film — a punch-in on the
+beat that matters, a stat that counts, an idea rather than a headline centred on
+a background. Do not ask `compose` for more options; that is how the generator
+grew a template layer once already. Reach into the scene, which is where
+HyperFrames intends the work to happen.
 
 ## Picking an identity
 

@@ -24,6 +24,9 @@ import { lookSheet, previewScene } from "./commands/scene.js";
 import { shoot } from "./commands/shoot.js";
 import { compose } from "./compose/compose.js";
 import { deCdnInstalled } from "./compose/catalog.js";
+import { assemble, mark, reportStatus, status } from "./compose/assembly.js";
+import { isStatus } from "./compose/storyboard.js";
+import { PACKET_DIR, writePackets } from "./compose/packets.js";
 import { LOOK_NAMES, lookFor } from "./scene/looks.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
@@ -59,6 +62,7 @@ interface ComposeOpts {
   music?: string;
   size: string;
   fps: string;
+  force?: boolean;
 }
 
 interface LooksOpts {
@@ -304,10 +308,12 @@ program
   .option("--music <file>", "music bed: a path to a track, or `none`. Omit for a synthesized bed.")
   .option("--size <WxH>", "composition frame", "1920x1080")
   .option("--fps <n>", "frame rate", "30")
+  .option("--force", "regenerate scenes even if the project holds authored ones", false)
   .action(async (manifest: string[], opts: ComposeOpts) => {
     await withErrors(async () => {
       const [width, height] = parseSize(opts.size);
       const res = await compose(manifest, {
+        ...(opts.force ? { force: true } : {}),
         out: opts.out,
         ...(opts.look ? { look: opts.look } : {}),
         ...(opts.fonts === false ? { noFonts: true } : {}),
@@ -322,6 +328,87 @@ program
       emit("compose", true, {
         result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames },
       });
+    });
+  });
+
+program
+  .command("packets")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("Cut one bounded brief per scene, for an author to work from. (The authoring pass.)")
+  .option("--all", "include scenes already marked `animated`", false)
+  .action(async (project: string, opts: { all: boolean }) => {
+    await withErrors(async () => {
+      const res = await writePackets(project, { ...(opts.all ? { all: true } : {}) });
+      log.info(`Packets     ${res.packets.length} in ${PACKET_DIR}`);
+      for (const p of res.packets) log.info(`  ${p}`);
+      if (res.skipped > 0) {
+        log.info(`  ${res.skipped} scene(s) already authored — skipped. \`--all\` re-cuts them.`);
+      }
+      log.info(`Role        ${res.role} — every author reads this first`);
+      log.info(`Then        reel assemble && npx hyperframes check`);
+      emit("packets", true, { result: { dir: res.dir, packets: res.packets, role: res.role, skipped: res.skipped } });
+    });
+  });
+
+program
+  .command("assemble")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("Rebuild index.html from STORYBOARD.md. Never touches the scenes.")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const res = await assemble(project);
+      for (const w of res.warnings) log.warn(`  ${w}`);
+      log.info(`Assembled   ${res.frames} scenes · ${res.duration.toFixed(1)}s`);
+      if (res.scaffold > 0) {
+        log.info(`  ${res.scaffold} scene(s) still \`built\` — the authoring pass is unfinished`);
+      }
+      emit("assemble", true, {
+        result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames, scaffold: res.scaffold },
+      });
+    });
+  });
+
+program
+  .command("status")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("How far the authoring pass has got: which scenes are still scaffold.")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const s = await status(project);
+      for (const w of s.warnings) log.warn(`  ${w}`);
+      reportStatus(s);
+      emit("status", true, { result: { animated: s.animated, total: s.total, frames: s.frames } });
+    });
+  });
+
+program
+  .command("mark")
+  .argument("<project>", "a project directory written by `reel compose`")
+  .argument("<frames...>", "frame numbers, as the storyboard headings number them")
+  .description("Mark scenes authored, as each one comes back from its author.")
+  .option("--status <status>", "animated (default), built, or outline", "animated")
+  .action(async (project: string, frames: string[], opts: { status: string }) => {
+    await withErrors(async () => {
+      if (!isStatus(opts.status)) {
+        throw new ReelError(
+          `\`${opts.status}\` is not a status.`,
+          "Their ladder is outline → built → animated.",
+        );
+      }
+      const ns = frames.map(Number);
+      const bad = frames.filter((_, i) => !Number.isInteger(ns[i]) || ns[i]! < 1);
+      if (bad.length > 0) {
+        throw new ReelError(
+          `Not a frame number: ${bad.join(", ")}.`,
+          "Frames are numbered from 1, as the storyboard headings number them.",
+        );
+      }
+      const res = await mark(project, ns, opts.status);
+      if (res.marked.length > 0) {
+        log.info(`Marked      frame ${res.marked.join(", ")} → ${opts.status}`);
+      }
+      for (const n of res.missing) log.warn(`  no frame ${n} in the storyboard`);
+      emit("mark", true, { result: { marked: res.marked, missing: res.missing, status: opts.status } });
     });
   });
 

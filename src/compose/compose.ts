@@ -11,6 +11,9 @@ import type { ShotManifest } from "../shoot/manifest.js";
 import { log, ReelError } from "../util/log.js";
 import { cardScene, shotScene, HANDOFF, type SceneFrame } from "./scenes.js";
 import { frameMd, hyperframesJson, indexHtml, storyboardMd, type MusicBed } from "./project.js";
+import { writeAssembly } from "./assembly.js";
+import { SHOT_DIR } from "./packets.js";
+import { parseStoryboard } from "./storyboard.js";
 
 /**
  * `reel compose` — assemble footage into a HyperFrames project.
@@ -37,11 +40,25 @@ import { frameMd, hyperframesJson, indexHtml, storyboardMd, type MusicBed } from
  *
  * ## What it deliberately is not
  *
- * A finished film. It is the two stages their loop calls Frames and Assembly —
- * real scenes, timed against the shot manifest, verified by their linter. The
- * design work after that belongs in the scene files, where the `reel-compose`
- * skill and HyperFrames' skills do it. Scaffolding further would be building
- * templates again, which is the mistake this whole rescope exists to undo.
+ * A finished film — and it now says so rather than implying otherwise. Every
+ * scene is written as `status: built`, their middle rung: the HTML exists and
+ * the layout is real, but nobody has authored it. What comes out is the same
+ * five scenes for every film Reel has ever composed.
+ *
+ * That is the correct output for a generator. It stops being correct the moment
+ * it is mistaken for the film, which is what `status: animated` on its own
+ * output used to do. The pass that turns a scaffold into this product's film is
+ * `reel packets` → author each scene → `reel assemble`, and `reel status`
+ * reports how far it got.
+ *
+ * Three things follow, and they are why this file no longer owns the whole
+ * pipeline:
+ *
+ *  - **`STORYBOARD.md` is read back.** It is the running order, not a report.
+ *  - **`assemble` rebuilds the host without it.** Compose never has to run
+ *    twice, which matters because it overwrites scenes.
+ *  - **Compose refuses to clobber.** A project holding an authored scene is not
+ *    something to regenerate by accident.
  */
 
 export interface ComposeOptions {
@@ -64,6 +81,16 @@ export interface ComposeOptions {
    * track whenever you have one cleared.
    */
   music?: string;
+  /**
+   * Regenerate every scene even if the project holds authored ones.
+   *
+   * Compose overwrites scene files. That is fine for its own scaffold and
+   * destructive for a scene somebody passed over, so a project with any
+   * `status: animated` frame refuses unless this is set. `reel assemble`
+   * rebuilds the host without touching the scenes, and is almost always what
+   * was wanted instead.
+   */
+  force?: boolean;
 }
 
 /** Seconds. */
@@ -111,7 +138,9 @@ export async function compose(
   const shots = await Promise.all(manifestPaths.map(readManifest));
   const dir = resolve(opts.out);
 
+  await refuseToClobber(dir, opts);
   await mkdir(join(dir, FRAMES, "media"), { recursive: true });
+  await mkdir(join(dir, SHOT_DIR), { recursive: true });
   await vendorGsap(dir);
 
   // --- typography ---------------------------------------------------------
@@ -250,6 +279,10 @@ export async function compose(
         punchGap: PUNCH_GAP,
       }),
     });
+    // The packet builder needs the beats, captions and cues later, when the
+    // directory the manifest came from may be long gone. Parking a copy is what
+    // makes a composed project authorable on its own.
+    await writeFile(join(dir, SHOT_DIR, `${id}.json`), JSON.stringify(ch.shot, null, 2) + "\n");
     at += ch.shot.duration - HANDOFF;
   }
 
@@ -295,12 +328,58 @@ export async function compose(
     }),
   );
   await writeFile(join(dir, "hyperframes.json"), hyperframesJson(id));
+  // The assembly facts their storyboard format has no field for. `assemble`
+  // reads these back to rebuild the host after a scene has been authored, so
+  // only the five scalars the index actually paints travel — a preset this was
+  // composed from need not still be installed by then.
+  await writeAssembly(dir, {
+    version: 1,
+    id,
+    ...frame,
+    fps: opts.fps,
+    look: { ground: look.ground, ink: look.ink, dark: look.dark, display: look.display, label: look.label },
+    lookName: look.name,
+    accent,
+    ...(music ? { music } : {}),
+  });
 
   log.info(`Project     ${dir}`);
   log.info(`  ${frames.length} scenes · ${duration.toFixed(1)}s · frame.md + STORYBOARD.md`);
+  // Said plainly, because the honest version of this line is the whole point of
+  // the authoring pass: what compose emits is a scaffold, and every film it
+  // writes is the same one until somebody passes over it scene by scene.
+  log.info(`  every scene is \`status: built\` — a scaffold, not an authored film`);
+  log.info(`Author it:  reel packets   then author each scene from its packet`);
+  log.info(`Rebuild:    reel assemble  (rebuilds index.html, never the scenes)`);
   log.info(`Verify it:  npx hyperframes check && npx hyperframes snapshot`);
   log.info(`Render it:  npx hyperframes render --fps ${opts.fps}`);
   return { dir, index: join(dir, "index.html"), duration, frames: frames.length };
+}
+
+/**
+ * Refuse to overwrite scenes somebody authored.
+ *
+ * Compose rewrites every scene file, which is correct for its own scaffold and
+ * destructive the moment one of them has been passed over. Before this check
+ * the only safe thing to do with a composed project was to never run compose
+ * again — so a timing change meant either losing the authoring or hand-editing
+ * the host, and in practice it meant the pass never happened.
+ */
+async function refuseToClobber(dir: string, opts: ComposeOptions): Promise<void> {
+  if (opts.force) return;
+  let src: string;
+  try {
+    src = await readFile(join(dir, "STORYBOARD.md"), "utf8");
+  } catch {
+    return; // Nothing there yet, which is the ordinary case.
+  }
+  const authored = parseStoryboard(src).frames.filter((f) => f.status === "animated");
+  if (authored.length === 0) return;
+  throw new ReelError(
+    `${dir} holds ${authored.length} authored scene(s), and compose would overwrite ${authored.length === 1 ? "it" : "them"}: ` +
+      authored.map((f) => f.title || `frame ${f.index}`).join(", "),
+    "`reel assemble` rebuilds index.html from the storyboard without touching the scenes. Use `--force` only to start the film over.",
+  );
 }
 
 /** Where scenes and the media they play live. */

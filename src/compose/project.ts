@@ -80,14 +80,16 @@ have landed leaves the frame dead for the rest of the shot.
 
 - Cut on the beats in \`shots.json\`. They are exact, because the driver caused them.
 - Keep cards to 2.5–3.5s.
-- Let scenes dissolve into each other; the handoff lives inside the outgoing scene.
+- Let scenes dissolve into each other. The handoff is written in \`index.html\`,
+  which is the only layer that can see both sides of a seam.
 
 ## Don't
 
 - Don't crop the footage to fill the frame. A product demo cropped loses the
   thing it is about.
 - Don't lay text over the picture. The app moves; a bottom band does not collide.
-- Don't fade a clip element — fade its \`#root\`, inside the sub-composition.
+- Don't animate a scene's exit. The transition **is** the exit, and a scene that
+  fades itself out before one that fades itself in is a jump cut with a dip.
 `;
 }
 
@@ -120,14 +122,18 @@ their captions and camera moves are timed from the shot manifest the driver
 wrote while filming.
 `;
 
+  // Durations to the millisecond, which is finer than a plan layer needs and
+  // exactly what the contract needs: `assemble` re-derives every scene's start
+  // from these, so a duration rounded to 10ms moves the back half of the film
+  // by a frame and puts the seams a frame off the scenes they belong to.
   const body = frames
     .map(
       (f, i) => `
 ## Frame ${i + 1} — ${f.title}
 
-- status: animated
+- status: built
 - src: ${f.src}
-- duration: ${f.duration.toFixed(2)}s
+- duration: ${f.duration.toFixed(3)}s
 - transition_in: ${f.transitionIn}
 - scene: ${f.scene}
 - poster: ${f.poster.toFixed(2)}${f.voiceover ? `
@@ -149,9 +155,11 @@ wrote while filming.
  * passes lint and then waits 45 seconds per scene at render before capturing
  * static frames.
  *
- * There is no timeline here on purpose. Every scene owns its own motion,
- * including its handoff, so the index stays a running order — which is what
- * makes a scene editable without reading the rest of the cut.
+ * The host's own timeline is deliberately thin: a grade, the seams, and the
+ * music ducking. Everything else belongs to the scene that owns it, which is
+ * what makes a scene editable without reading the rest of the cut. The seams
+ * are the exception, and they have to be — a transition animates two scenes at
+ * once, and this is the only layer that can see both.
  */
 export interface MusicBed {
   /** Path to the track, relative to index.html. */
@@ -162,9 +170,26 @@ export interface MusicBed {
   duckAt: { at: number; dur: number }[];
 }
 
+/**
+ * The slice of a look the host actually paints.
+ *
+ * Narrower than `Look` on purpose: `assemble` rebuilds the index long after
+ * `compose` ran, from a sidecar rather than from a resolved look, and a frame
+ * preset it would have to re-resolve may not even be installed by then. Five
+ * scalars travel; a `Look` satisfies this structurally, so compose passes its
+ * own straight through.
+ */
+export interface AssemblyLook {
+  ground: string;
+  ink: string;
+  dark: boolean;
+  display: string;
+  label: string;
+}
+
 export function indexHtml(
   frames: SceneFrame[],
-  look: Look,
+  look: AssemblyLook,
   opts: { id: string; width: number; height: number; fps: number; duration: number; music?: MusicBed },
 ): string {
   const clips = frames

@@ -39,11 +39,24 @@ HyperFrames’ own `capture` reads a website’s *design* so an agent can rebuil
 it; it has no way to drive a flow. That gap is exactly Reel’s shape.
 
 ```bash
-reel check   demo.reel.yaml            # does every step still work?
-reel shoot   demo.reel.yaml --out shot # footage.mp4 + shots.json
-reel compose shot/shots.json --out film --look coral
+reel check    demo.reel.yaml            # does every step still work?
+reel shoot    demo.reel.yaml --out shot # footage.mp4 + shots.json
+reel compose  shot/shots.json --out film --look coral   # the scaffold
+
+reel packets  film                      # one bounded brief per scene
+#  … author each scene from its packet …           ← this is the film
+reel mark     film 1 2 3 4 5            # as each author returns
+reel assemble film                      # rebuild the host from the storyboard
+
 cd film && npx hyperframes check && npx hyperframes render
 ```
+
+**`compose` writes a scaffold, not a film**, and says so: every scene lands as
+`status: built`. It is real and renderable and it is the same five scenes for
+every film Reel has ever composed. `reel packets` cuts one bounded brief per
+scene — the storyboard block, the driver's exact beats and captions, the
+contract — and the authoring pass over those briefs is what makes it *this*
+product's film. `reel status film` prints how far it got.
 
 > **Never fake the product.** If you cannot drive it, say so. A demo that was
 > not filmed from the running app can lie, and the reason to shoot footage at
@@ -682,7 +695,11 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel capture --url <url>` | **Author by doing** — drive the app in a browser and get a spec back. |
 | `reel capture --save-auth <file>` | Save the signed-in session, so demos behind a login replay without one. |
 | `reel shoot <spec>` | Film the app as footage plus a shot manifest, for a composition to cut. |
-| `reel compose <manifest…>` | Assemble that footage into a HyperFrames project — scenes, storyboard, design spec. |
+| `reel compose <manifest…>` | Assemble that footage into a HyperFrames project — scenes, storyboard, design spec. A scaffold. |
+| `reel packets [project]` | Cut one bounded brief per scene, for an author to work from. **The authoring pass.** |
+| `reel mark <project> <n…>` | Mark scenes authored, as each one comes back from its author. |
+| `reel assemble [project]` | Rebuild `index.html` from `STORYBOARD.md`. Never touches the scenes. |
+| `reel status [project]` | How far the authoring pass has got: which scenes are still scaffold. |
 | `reel blocks <project>` | Rewrite installed catalog blocks so they render offline. |
 | `reel looks` | Every visual identity side by side — Reel's ten and HyperFrames' frame presets. |
 | `reel scene` | Shoot one scene across its seek range into a contact sheet. |

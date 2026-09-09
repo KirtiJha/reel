@@ -1398,12 +1398,108 @@ that does fade lands before the handoff window opens, both halves of every seam
 exist and start together, every departure has its hard kill, the last scene is
 never faded, and the flash contrasts with the ground it sits on.
 
+# 15. The authoring pass
+
+The gap this closes was named at the end of every previous part and never
+fixed: **`compose` generated a whole film, so nothing forced a per-project
+pass.** Every film it wrote was structurally the same film — a waterfall
+headline, a chapter card, footage under a bottom band — and it marked its own
+output `status: animated`, which is a claim that somebody authored it. Nobody
+had.
+
+Three things were wrong underneath that, and they were all the same thing:
+**`compose` was write-only.**
+
+- It generated `STORYBOARD.md` and never read it again, so the plan layer was a
+  report rather than a contract.
+- It built `index.html` from the array of scenes it happened to have in memory,
+  so there was no way to rebuild the host without re-running compose.
+- Re-running compose overwrote every scene file, so anything authored was
+  destroyed by the next command that touched the project.
+
+Which meant the only safe thing to do with a composed project was to not touch
+it. That is why the pass never happened: it was not that people skipped a step,
+it was that the step could not be taken.
+
+## Reading the storyboard back
+
+`src/compose/storyboard.ts` parses it, lenient in the way theirs is — it never
+throws, and records anything surprising as a warning. A file edited by hand
+between every step of the loop cannot have a parser that rejects it over a stray
+bullet. One judgement in there is worth stating: a `- key: value` line **after
+the prose has started is prose**, so an author can write a list in the narrative
+without inventing a field.
+
+With a parser, the storyboard becomes the running order. `assemble` rebuilds
+`index.html` from it, `packets` cuts each brief from it, and `compose` reads it
+to refuse to clobber work it did not write.
+
+Making that round trip lossless found a real bug on the first try: the
+storyboard wrote durations at two decimals, so re-assembling a composed project
+moved the back half of the film by 4ms and put every seam a frame off the scene
+it belonged to. Durations are milliseconds now, and the round trip is
+byte-identical.
+
+## The three steps
+
+- **`reel packets`** writes one bounded brief per scene plus `_role.md`. A scene
+  author reads exactly those two files and `frame.md`, and nothing else — not
+  the storyboard, not its siblings, not the skill catalogue. That bound is the
+  mechanism: it is what lets N scenes be authored at once without the workers
+  colliding, and what stops each one drifting into a different film.
+- **`reel assemble`** rebuilds the host from the storyboard and never touches a
+  scene. Change a `duration:` and the running order, the seams and the music
+  ducking all follow.
+- **`reel mark`** promotes a frame as its author returns. It rewrites the one
+  `status:` bullet rather than regenerating the file, because by then the
+  narrative and the shot sequence are the most valuable things in it.
+
+And **`reel status`** is the gate: it prints which scenes are still `built`. A
+film delivered with scenes still marked `built` is a film nobody authored.
+
+## What a Reel packet carries that a HyperFrames one cannot
+
+The shot facts. A HyperFrames frame worker invents its content; a Reel one is
+cutting against footage of a real app, and the driver wrote down every moment it
+caused — the exact second the button went down, what the demo claimed and when,
+where each narration line starts. Those are the difference between an edit that
+lands on the beat and one that is 200ms late, and there is no way to recover
+them by eye afterwards. So every footage packet carries its scene's beats,
+captions, sound cues and narration in the scene's own time.
+
+It also inlines the `<video>` and `<audio>` tags verbatim, lifted out of the
+scaffold. That is the one mistake in the whole pass that fails silently: a
+re-typed `src` renders a black rectangle and passes lint, and the paths are not
+derivable from the manifest because compose decides them.
+
+## Proving it
+
+The loop was run end to end on the example film: compose the scaffold, cut the
+packets, author the title card from its packet as a dispatched worker would,
+`reel mark 1`, `reel assemble`, `hyperframes check`.
+
+The authored card is a film strip travelling left with the wordmark cut out of
+it in a masked band — the thesis of the film as an image, rather than a headline
+centred on a background. `check` passes clean, and the card develops across its
+full duration instead of holding from 25%.
+
+Two guard rails earned their place while proving it. `compose` over an authored
+project now refuses by name — *"holds 1 authored scene, and compose would
+overwrite it: Title"* — and points at `assemble`. And `reel mark` exists at all
+because the orchestrator's own step had no command, so marking a frame meant
+hand-editing markdown in the middle of a dispatch loop.
+
 ## Still open
 
 - **Shader transitions between cards.** They are ruled out *between footage*,
   not everywhere. A film that is all cards — a changelog, a feature announcement
   — could run their displacement wipes, if the host learned to flatten a scene
   into a `.scene` element the library recognises.
+- **A storyboard worth authoring against.** `compose` writes a one-line `scene:`
+  per frame. Their workflows write a *time-coded shot sequence* — Scene 1
+  (0.0–2.0s) … Scene 2 … — paced to the voiceover, and that is what makes a
+  frame worker build a shot rather than a picture. Reel's packets carry the
+  beats to pace against but not yet the sequence itself.
 - **Real narration end to end.** The plumbing is exercised only in its degraded
   path here. With a key or a warm cache, `shoot` copies the per-line audio into
   the shot directory and `compose` places it — but nothing in this session has
