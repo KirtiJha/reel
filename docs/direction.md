@@ -1338,8 +1338,72 @@ Ducking is timed from the narration cues rather than measured off the waveform:
 the driver knows when each line starts because it scheduled it, and a level
 automation derived from the audio would only ever be an estimate of that.
 
+# 14. Transitions, and the pattern we had been shipping
+
+The task was "do the shader transitions" — HyperFrames publishes
+`@hyperframes/shader-transitions`, a WebGL library of displacement wipes,
+dissolves and glitches. Two things came out of reading it, and the second
+matters much more than the first.
+
+**Shader transitions cannot transition footage.** `init({ scenes, transitions })`
+resolves every scene with `document.getElementById(id)` and requires
+`el.classList.contains("scene")` — the elements must live in the host document,
+and `scenes.length` must equal `transitions.length + 1`, so the library owns the
+whole running order. Then `captureScene()` rasterises each one through
+`drawElementImage` or `html2canvas`, and **neither draws a `<video>` frame**.
+They would work between card scenes on a film with no footage in it. Reel's
+films are mostly footage, and every scene is a sub-composition the host cannot
+reach into, so the API is incompatible twice over. Not adopted, and the reason
+is worth writing down so nobody spends the afternoon again.
+
+**The important finding: we had been shipping the pattern their docs ban.**
+Every scene faded its own `#root` out at the end, and the next scene faded its
+own in. `transitions/overview.md` is unambiguous about this — *"exit animations
+are BANNED except on the final scene; the outgoing scene's content must be fully
+visible when the transition starts. The transition IS the exit."* A fade-out
+followed by a fade-in is, in their words, "a jump cut with a dip". It looks
+like a transition in a still and reads as a stutter in motion, which is exactly
+why it survived so long: every snapshot of it looked fine.
+
+A real transition animates both sides at the same instant, so it has to be
+written by the only layer that can see both — the index. A sub-composition
+cannot reach its neighbour, and a sub-composition timeline cannot touch the
+host. So `transitionTweens()` in `src/compose/project.ts` writes the seams, and
+`cardScene`/`shotScene` write no exits at all.
+
+The vocabulary is one primary and one accent, which is their guidance —
+*"pick ONE primary (60–70% of scene changes) plus one or two accents; never use
+a different transition for every scene"*:
+
+- **Blur crossfade** everywhere, the recipe from `css-dissolve.md`: the outgoing
+  blurs and swells slightly as it leaves, the incoming arrives from under a blur
+  a beat later. Both halves start within 100ms of each other and share the
+  handoff window the scenes already overlap by.
+- **Overexposure flash** into a chapter card only, because that seam is a
+  section break rather than a continuation.
+
+Every departure ends with a zero-duration `set` on the clip boundary. An opacity
+tween that merely *reaches* zero there leaves stale state when the renderer seeks
+out of order, which their linter calls `gsap_exit_missing_hard_kill`.
+
+**The flash has to flash away from the ground.** White at a cut reads as
+overexposure on a dark film. On the cream ground of an `editorial` or a frame
+preset it has no contrast to spend and simply blows the frame out — the first
+render of this was a white rectangle where the seam should have been. A light
+look dips to its own ink instead, which is the same edit read the other way up,
+and the snapshot at the seam shows the outgoing frame still legible under it.
+
+`test/transitions.test.ts` pins all of it: no scene animates `#root`, anything
+that does fade lands before the handoff window opens, both halves of every seam
+exist and start together, every departure has its hard kill, the last scene is
+never faded, and the flash contrasts with the ground it sits on.
+
 ## Still open
 
+- **Shader transitions between cards.** They are ruled out *between footage*,
+  not everywhere. A film that is all cards — a changelog, a feature announcement
+  — could run their displacement wipes, if the host learned to flatten a scene
+  into a `.scene` element the library recognises.
 - **Real narration end to end.** The plumbing is exercised only in its degraded
   path here. With a key or a warm cache, `shoot` copies the per-line audio into
   the shot directory and `compose` places it — but nothing in this session has

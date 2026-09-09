@@ -179,9 +179,7 @@ ${plate}
         letter-spacing: .26em; text-transform: uppercase; color: ${look.muted}; }
       .slate .n { color: ${look.ink}; font-size: ${Math.round(frame.height * 0.023)}px;
         font-weight: 650; margin-top: 4px; }
-      /* The flash that carries a cut. White at the seam reads as an edit rather
-         than as a dissolve, and it is what a hard transition is made of. */
-      .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }`;
+`;
 }
 
 /** The layers behind the type — the look's own, or the accent bloom. */
@@ -232,8 +230,6 @@ export interface CardOptions {
   subtitle?: string;
   slate?: string;
   slateNote?: string;
-  /** Open on a white flash — used where a scene follows a hard cut. */
-  flashIn?: boolean;
 }
 
 /** A title, chapter or closing card. */
@@ -270,7 +266,7 @@ ${o.slate ? `        <div class="slate"><div class="k">${esc(o.slate)}</div>${o.
           <div class="rule"></div>
 ${o.subtitle ? `          <div class="sub">${esc(o.subtitle)}</div>` : ""}
         </div>
-        <div class="flash"></div>`;
+`;
 
   const js = [
     waterfall("#root .headline", 0.1),
@@ -288,13 +284,12 @@ ${o.subtitle ? `          <div class="sub">${esc(o.subtitle)}</div>` : ""}
         `          tl.fromTo("#root .b2", { scale: 1.18 }, { scale: .94, duration: ${r3(o.duration)}, ease: "none" }, 0);`
       : `          tl.fromTo("#root .rule-top", { scaleX: 0 }, { scaleX: 1, duration: .7, ease: "power4.out" }, 0.05);\n` +
         `          tl.fromTo("#root .rule-bottom", { scaleX: 0 }, { scaleX: 1, duration: .7, ease: "power4.out" }, 0.12);`,
-    o.flashIn
-      ? `          tl.fromTo("#root .flash", { opacity: .85 }, { opacity: 0, duration: .32, ease: "power2.out" }, 0);`
-      : "",
-    // The scene dissolves itself out. #root is not a clip — the host slot is —
-    // so fading it here is legal, and it keeps the handoff inside the scene
-    // that owns it rather than in the assembly layer.
-    `          tl.to("#root", { opacity: 0, duration: ${HANDOFF}, ease: "power2.inOut" }, ${r3(o.duration - HANDOFF)});`,
+    // No exit animation. Their rule, and it is not a style preference: "the
+    // transition IS the exit — outgoing scene content must be fully visible
+    // when the transition starts". A scene that fades itself out and is then
+    // followed by a scene fading itself in is a jump cut with a dip, which is
+    // what this used to be. The handoff belongs to the index, which is the only
+    // layer that can see both scenes at once.
   ]
     .filter(Boolean)
     .join("\n");
@@ -329,7 +324,10 @@ export function shotScene(o: ShotOptions): string {
 
   const style = `${o.faces || fontFaces(look.display, look.label)}
 ${groundCss(look, accent, frame)}
-      /* The ground shows through wherever the footage does not reach. */
+      /* The ground shows through wherever the footage does not reach. The slow
+         push-in eventually scales this past the frame, which is the point of a
+         push-in; data-layout-allow-overflow says so rather than leaving the
+         layout check to report it as three surprises per render. */
       .shot { position: absolute; inset: 0; }
       /* contain, never cover: cropping a product demo can cut off the thing the
          demo is about, and nobody notices until it has shipped. */
@@ -353,7 +351,7 @@ ${groundCss(look, accent, frame)}
   });
 
   const markup = `${groundMarkup(look, accent)}
-        <div class="shot" id="shot">
+        <div class="shot" id="shot" data-layout-allow-overflow>
           <video id="${o.id}-v" src="${o.footage}" data-start="0" data-duration="${r3(shot.duration)}"
                  muted playsinline></video>
         </div>
@@ -371,7 +369,7 @@ ${thirds
         </div>`,
     )
     .join("\n")}
-        <div class="flash"></div>`;
+`;
 
   // Beats worth an emphasis push. Every beat would be a twitch; the first is
   // skipped because the scene has only just arrived.
@@ -403,8 +401,9 @@ ${thirds
       ? `          tl.fromTo("#root .b1", { scale: .95 }, { scale: 1.12, duration: ${r3(shot.duration)}, ease: "none" }, 0);\n` +
         `          tl.fromTo("#root .b2", { scale: 1.1 }, { scale: .97, duration: ${r3(shot.duration)}, ease: "none" }, 0);`
       : "",
-    `          tl.fromTo("#root .flash", { opacity: .7 }, { opacity: 0, duration: .3, ease: "power2.out" }, 0);`,
-    `          tl.to("#root", { opacity: 0, duration: ${HANDOFF}, ease: "power2.inOut" }, ${r3(shot.duration - HANDOFF)});`,
+    // No exit animation here either — see `cardScene`. The lower thirds do fade
+    // out, but they are furniture *inside* the scene and land well before its
+    // last frame; the scene itself hands over at full opacity.
   ].join("\n");
 
   return subComposition(o.id, frame, style, markup, js);

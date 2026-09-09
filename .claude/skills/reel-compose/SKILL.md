@@ -262,8 +262,21 @@ Read `/hyperframes-core` for the full thing. The parts that bite:
   timed to a beat, held, then released, is the single highest-value edit.
 - **Per-word titles.** A headline that arrives a word at a time reads as
   deliberate; the same headline fading in as a block reads as a slideshow.
-- **Overlap the cuts.** Dissolve the title into the footage rather than
-  splicing — the scaffold overlaps them by 0.5s.
+- **Never write an exit.** Exit animations are banned except on the final
+  scene: the outgoing scene must be *fully visible* when the transition starts,
+  because **the transition is the exit**. A scene that fades itself out followed
+  by one that fades itself in is a jump cut with a dip — it looks correct in
+  every snapshot and stutters in motion. A real handoff animates both sides at
+  the same instant, so it belongs in `index.html`, the only layer that can see
+  both scenes; sub-compositions cannot reach each other. `transitionTweens()` in
+  `src/compose/project.ts` writes them, and the scenes write none.
+- **One primary transition plus one accent, for the whole film.** Never a
+  different transition per scene. The scaffold's primary is a blur crossfade
+  over the 0.5s the scenes already overlap by; the accent is an overexposure
+  flash, and only into a chapter card.
+- **Flash away from the ground.** White at a cut reads as overexposure on a dark
+  film. On a cream ground it has no contrast to spend and blows the frame out,
+  so a light look dips to its own ink instead.
 - **Lower thirds go in a band at the bottom edge**, not floated over the
   picture. The footage is full-bleed and its content moves, so anything placed
   on it collides with the app eventually — and you find out per demo, after

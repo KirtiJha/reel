@@ -214,7 +214,6 @@ export async function compose(
           faces,
           headline: ch.shot.name,
           slate: `${pad(ch.i + 1)} · Chapter`,
-          flashIn: true,
         }),
       });
       at += CHAPTER - HANDOFF;

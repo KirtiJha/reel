@@ -1,6 +1,6 @@
 import type { Look } from "../scene/looks.js";
 import type { SceneFrame } from "./scenes.js";
-import { fontFaces } from "./scenes.js";
+import { fontFaces, HANDOFF } from "./scenes.js";
 
 /**
  * The project files around the compositions.
@@ -195,6 +195,14 @@ ${fontFaces(look.display, look.label)}
          breathes, and the one thing the index itself animates. Untimed, so it
          needs its own layout: the runtime only positions elements carrying
          data-start. */
+      /* The seam flash. Above every scene, below the grade — an edit happens to
+         the picture, not to the grade laid over it.
+         It flashes *away* from the ground: white on a dark film reads as
+         overexposure, but white on a cream one has no contrast to spend and
+         only blows the frame out. On a light look it dips to the ink instead,
+         which is the same edit read the other way up. */
+      #flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; z-index: 40;
+        background: ${look.dark ? "#ffffff" : look.ink}; }
       #grade { position: absolute; inset: 0; pointer-events: none; z-index: 50;
         background: radial-gradient(ellipse at 50% 48%, transparent 52%,
           ${look.dark ? "rgba(0,0,0,.55)" : "rgba(20,16,12,.28)"} 100%); }
@@ -207,6 +215,7 @@ ${fontFaces(look.display, look.label)}
 
 ${clips}
 
+      <div id="flash"></div>
 ${opts.music ? `      <audio id="bed" src="${opts.music.file}" data-start="0"\n           data-duration="${opts.duration.toFixed(3)}" data-volume="${opts.music.level}"></audio>\n` : ""}
       <div id="grade"></div>
     </div>
@@ -218,12 +227,73 @@ ${opts.music ? `      <audio id="bed" src="${opts.music.file}" data-start="0"\n 
       // grade gives this one something real to drive.
       var tl = gsap.timeline({ paused: true });
       tl.fromTo("#grade", { opacity: .55 }, { opacity: .95, duration: ${opts.duration.toFixed(3)}, ease: "none" }, 0);
+${transitionTweens(frames, HANDOFF, look.dark ? 0.62 : 0.42)}
 ${duckTweens(opts.music)}
       window.__timelines["${opts.id}"] = tl;
     </script>
   </body>
 </html>
 `;
+}
+
+/**
+ * The seams between scenes.
+ *
+ * ## Why this lives in the index and not in the scenes
+ *
+ * Their rule, and it is not a style preference: *exit animations are banned —
+ * the transition IS the exit, and the outgoing scene must be fully visible when
+ * it starts.* A scene that fades itself out, followed by a scene that fades
+ * itself in, is a jump cut with a dip. This code used to do exactly that.
+ *
+ * A real transition animates both sides at the same instant, so it has to be
+ * written by the only layer that can see both: the index. Scene sub-compositions
+ * cannot reach each other, and a sub-composition timeline cannot touch the host.
+ *
+ * ## The vocabulary
+ *
+ * One primary and one accent, which is their guidance — *"pick ONE primary
+ * (60–70% of scene changes) + 1–2 accents; never use a different transition for
+ * every scene"*. A product demo is medium energy, so:
+ *
+ *  - **blur crossfade** everywhere, the recipe from `css-dissolve.md`: the
+ *    outgoing blurs and swells slightly as it goes, the incoming arrives from
+ *    under a blur a beat later.
+ *  - **overexposure flash** into a chapter card, because that seam is a section
+ *    break rather than a continuation, and white at the cut reads as an edit.
+ *
+ * Every tween ends with a zero-duration `set` on the clip boundary. An opacity
+ * tween that merely *reaches* zero there leaves stale state when the renderer
+ * seeks out of order — their linter calls it `gsap_exit_missing_hard_kill`.
+ */
+function transitionTweens(frames: SceneFrame[], handoff: number, peak: number): string {
+  const out: string[] = [];
+  for (let i = 1; i < frames.length; i++) {
+    const prev = frames[i - 1]!;
+    const next = frames[i]!;
+    const T = Number(next.at.toFixed(3));
+    const prevEnd = Number((prev.at + prev.duration).toFixed(3));
+    const from = `"#scene-${prev.id}"`;
+    const to = `"#scene-${next.id}"`;
+    const flash = next.transitionIn === "flash";
+
+    out.push(`      // ${prev.title} → ${next.title} (${next.transitionIn})`);
+    out.push(
+      `      tl.to(${from}, { filter: "blur(10px)", scale: 1.03, opacity: 0, duration: ${handoff}, ease: "power2.inOut" }, ${T});`,
+      // The hard kill: a seek landing past the fade gets the resolved state
+      // rather than whatever the tween last wrote.
+      `      tl.set(${from}, { opacity: 0 }, ${prevEnd});`,
+      `      tl.fromTo(${to}, { filter: "blur(10px)", scale: .97, opacity: 0 },` +
+        ` { filter: "blur(0px)", scale: 1, opacity: 1, duration: ${handoff}, ease: "power2.inOut" }, ${Number((T + 0.1).toFixed(3))});`,
+    );
+    if (flash) {
+      out.push(
+        `      tl.to("#flash", { opacity: ${peak}, duration: .14, ease: "power2.out" }, ${Number((T + 0.06).toFixed(3))});`,
+        `      tl.to("#flash", { opacity: 0, duration: .34, ease: "power2.in" }, ${Number((T + 0.2).toFixed(3))});`,
+      );
+    }
+  }
+  return out.join("\n");
 }
 
 /**
