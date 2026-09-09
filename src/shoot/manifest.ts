@@ -35,6 +35,22 @@ export interface ShotCaption {
   text: string;
 }
 
+/**
+ * A sound the demo made, and when.
+ *
+ * `click` on a press, `type` for a run of keystrokes (with how long the run
+ * lasted, so the texture can be spread across it), `card` for a full-frame
+ * moment. A composition can place a real UI click on the exact frame the button
+ * went down — which no editor can do by ear afterwards, because only the driver
+ * knows when the press happened.
+ */
+export interface ShotSfx {
+  t: number;
+  kind: string;
+  /** For `type`, how long the typing ran. */
+  ms?: number;
+}
+
 export interface ShotManifest {
   /** Schema version, so a composition can refuse a manifest it cannot read. */
   version: 1;
@@ -66,6 +82,8 @@ export interface ShotManifest {
    * the layer that should own all four. Reel shoots them as data instead.
    */
   captions: ShotCaption[];
+  /** Every sound the demo made, in demo time. */
+  sfx: ShotSfx[];
 }
 
 /** Round to milliseconds — a manifest is read by people as well as by code. */
@@ -90,6 +108,7 @@ export function buildManifest(input: {
   durationMs: number;
   beats: { label: string; t: number }[];
   captions: { t: number; text: string }[];
+  sfx: { t: number; kind: string; durationMs?: number }[];
 }): ShotManifest {
   return {
     version: 1,
@@ -107,5 +126,10 @@ export function buildManifest(input: {
     captions: input.captions
       .filter((c) => c.text.trim().length > 0)
       .map((c) => ({ t: seconds(c.t), text: c.text })),
+    sfx: input.sfx.map((c) => ({
+      t: seconds(c.t),
+      kind: c.kind,
+      ...(c.durationMs === undefined ? {} : { ms: seconds(c.durationMs) }),
+    })),
   };
 }

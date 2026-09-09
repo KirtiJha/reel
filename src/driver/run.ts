@@ -73,6 +73,16 @@ export interface RunResult {
    * that recomputes it is right for web demos and wrong for the rest.
    */
   size?: { width: number; height: number };
+  /**
+   * What the demo *sounded* like: a tick per click, a run of key texture per
+   * typed field, a sweep per card.
+   *
+   * Reel has always collected these to build its own audio track. Handed to a
+   * composition instead, they are worth more: a click sound landing on the
+   * exact frame the button was pressed is not something an editor can place by
+   * ear afterwards, because only the driver knows when the press happened.
+   */
+  sfx: { t: number; kind: string; durationMs?: number }[];
 }
 
 /**
@@ -390,7 +400,7 @@ export async function record(
         }
       }
       log.ok(`Drift check passed — all ${spec.steps.length} steps completed.`);
-      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats, captions };
+      return { frames: 0, beats: beats.length, durationMs, outputs: [], timeline: beats, captions, sfx };
     }
 
     // Narration.
@@ -956,6 +966,7 @@ export async function record(
       outputs,
       timeline: beats,
       captions,
+      sfx,
       ...(encodedSize ? { size: encodedSize } : {}),
     };
   } finally {

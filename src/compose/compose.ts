@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { DEFAULT_LOOK, lookFor, type Look, type LookName } from "../scene/looks.js";
 import { esc, escapeCss } from "../scene/templates.js";
+import { renderSfx, toWav, type SfxCue, type SfxKind } from "../encode/sfx.js";
 import type { ShotManifest } from "../shoot/manifest.js";
 import { log, ReelError } from "../util/log.js";
 
@@ -66,6 +67,22 @@ const PUNCH_HOLD = 1.5;
 /** Beats closer than this do not each get a push — that reads as a twitch. */
 const PUNCH_GAP = 3.5;
 
+/**
+ * Waterfall entry, from the HyperFrames animation skill's rule of the same
+ * name. Two things in it are counter-intuitive and both matter:
+ *
+ *  - **Opacity is binary.** A word is revealed with a zero-duration `set`, not
+ *    faded. "Never fade an arrival" — a fade reads as a slideshow, which is
+ *    exactly what the first version of these cards did.
+ *  - **It is fast.** 0.13-0.20s per word, not the 0.7s that felt right when
+ *    guessing. The cascade *overlaps*: the next word starts before the previous
+ *    settles, and the gaps shrink as it goes.
+ */
+const WORD_TRAVEL = 56;
+const WORD_DUR = 0.16;
+/** One frame at 60fps, the unit the rule's overlaps are expressed in. */
+const F = 1 / 60;
+
 /** One chapter of the film: a manifest, placed on the timeline. */
 interface Chapter {
   shot: ShotManifest;
@@ -78,6 +95,8 @@ interface Chapter {
   /** Scale the footage sits at, before any drift. */
   fit: number;
   file: string;
+  /** The synthesized sound bed, when the shoot made any noise at all. */
+  sfxFile?: string;
 }
 
 export async function compose(
@@ -127,6 +146,11 @@ export async function compose(
   const duration = Number((outroAt + OUTRO).toFixed(3));
 
   await vendorGsap(dir);
+  // Sound, synthesized from what the driver heard itself do. Reel has always
+  // built this track for its own videos; handed to a composition it is worth
+  // more, because a click landing on the exact frame the button went down is
+  // not something an editor can place by ear afterwards.
+  for (const ch of chapters) await writeChapterSfx(dir, ch);
   const index = join(dir, "index.html");
   await writeFile(index, buildComposition(chapters, duration, outroAt, opts));
   await writeFile(
@@ -137,6 +161,35 @@ export async function compose(
   log.info(`Composition ${index} — ${duration.toFixed(1)}s, ${chapters.length} chapter(s)`);
   log.info(`Render it:   npx hyperframes render --fps ${opts.fps}`);
   return { dir, index, duration, chapters: chapters.length };
+}
+
+
+/**
+ * Render one chapter's sound bed to a WAV beside its footage.
+ *
+ * Synthesized rather than sampled: no licence to honour, no binary to vendor,
+ * and the click is a tone rather than someone's recording of a mouse. Reel
+ * already owns the synthesis — this only re-points it at a composition.
+ *
+ * Returns false when the shoot was silent, so the composition does not carry an
+ * `<audio>` element with nothing in it.
+ */
+async function writeChapterSfx(dir: string, ch: Chapter): Promise<boolean> {
+  const cues: SfxCue[] = ch.shot.sfx
+    .filter((c): c is typeof c & { kind: SfxKind } =>
+      c.kind === "click" || c.kind === "type" || c.kind === "card")
+    .map((c) => ({
+      t: c.t * 1000,
+      kind: c.kind,
+      ...(c.ms === undefined ? {} : { durationMs: c.ms * 1000 }),
+    }));
+  if (cues.length === 0) return false;
+
+  const name = `sfx-${ch.i}.wav`;
+  const track = renderSfx(cues, ch.shot.duration * 1000, "subtle");
+  await writeFile(join(dir, name), toWav(track));
+  ch.sfxFile = name;
+  return true;
 }
 
 /**
@@ -286,19 +339,25 @@ function cardMarkup(
     </div>`;
 }
 
-/** Tweens shared by every card: words ripple in, rule draws, backdrop never stops. */
+/** Tweens shared by every card: words whip in, rule draws, backdrop never stops. */
 function cardTweens(id: string, at: number, dur: number, hasSub: boolean, hasSlate: boolean): string {
   return [
+    // Waterfall entry: binary reveal, short whip, overlapping cascade. The
+    // start of each word is computed from the previous one's finish minus an
+    // overlap, so the wave accelerates and the last word snaps.
+    `  var t_${id} = ${r3(at + 0.1)};`,
     `  gsap.utils.toArray("#${id} .w").forEach(function (w, i) {`,
-    `    tl.fromTo(w, { opacity: 0, yPercent: 45, filter: "blur(12px)" },`,
-    `      { opacity: 1, yPercent: 0, filter: "blur(0px)", duration: .7, ease: "power3.out" }, ${r3(at)} + i * 0.075);`,
+    `    var d = ${WORD_DUR} - Math.min(i, 3) * 0.008;`,
+    `    tl.set(w, { opacity: 1, y: ${WORD_TRAVEL} - Math.min(i, 3) * 5 }, t_${id});`,
+    `    tl.to(w, { y: 0, duration: d, ease: "power4.out" }, t_${id});`,
+    `    t_${id} += d - ${r3(F)};`,
     `  });`,
-    `  tl.fromTo("#${id} .rule", { scaleX: 0 }, { scaleX: 1, duration: .6, ease: "power3.out" }, ${r3(at + 0.3)});`,
+    `  tl.fromTo("#${id} .rule", { scaleX: 0 }, { scaleX: 1, duration: .5, ease: "power4.out" }, ${r3(at + 0.34)});`,
     hasSlate
       ? `  tl.fromTo("#${id} .slate", { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: .5, ease: "power3.out" }, ${r3(at + 0.1)});`
       : "",
     hasSub
-      ? `  tl.fromTo("#${id} .sub", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .6, ease: "power3.out" }, ${r3(at + 0.45)});`
+      ? `  tl.fromTo("#${id} .sub", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .5, ease: "power4.out" }, ${r3(at + 0.5)});`
       : "",
     // The backdrop moves for the card's whole life. One that stops after the
     // entrance is what makes a card read as a slide.
@@ -347,6 +406,16 @@ function buildComposition(
         `<video id="${fid}" class="footage" data-start="${r3(ch.at)}" data-duration="${r3(ch.shot.duration)}"` +
         ` src="./${ch.file}" muted playsinline></video></div>`,
     );
+    // The footage is muted — the app made no sound worth keeping — and the
+    // synthesized bed carries the interaction instead. An <audio> without an id
+    // is never picked up by the mixer, so the render would be silent and say
+    // nothing about why.
+    if (ch.sfxFile) {
+      footage.push(
+        `    <audio id="a${ch.i}" data-start="${r3(ch.at)}" data-duration="${r3(ch.shot.duration)}"` +
+          ` data-volume="0.85" src="./${ch.sfxFile}"></audio>`,
+      );
+    }
 
     // A slow drift across the chapter. Costs nothing — the frames are already
     // on disk — and it is the difference between footage and a held still.
@@ -437,7 +506,9 @@ ${fontFaces(look.display, look.label)}
     font-size: ${Math.round(H * 0.09)}px; font-weight: ${look.displayWeight};
     letter-spacing: ${look.tracking}; line-height: 1.04; text-transform: ${look.transform};
   }
-  .headline .w { display: inline-block; }
+  /* Hidden until the timeline reveals them — a waterfall entry sets opacity
+     to 1 instantly rather than fading, so the resting state must be 0. */
+  .headline .w { display: inline-block; opacity: 0; }
   .rule { position: relative; width: ${Math.round(W * 0.075)}px; height: 4px; border-radius: 3px; background: ${accent}; margin: ${Math.round(H * 0.03)}px 0; }
   .sub { position: relative; color: ${look.muted}; font-size: ${Math.round(H * 0.027)}px; max-width: 46ch; line-height: 1.45; }
   .slate { position: absolute; top: 6%; left: 5%; text-align: left; padding-left: 14px; border-left: 3px solid ${accent}; }

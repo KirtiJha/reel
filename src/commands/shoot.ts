@@ -111,12 +111,15 @@ export async function shoot(loaded: LoadedSpec, opts: ShootOptions): Promise<Sho
     durationMs: res.durationMs,
     beats: res.timeline,
     captions: res.captions,
+    sfx: res.sfx,
   });
 
   const manifest = join(dir, "shots.json");
   await writeFile(manifest, JSON.stringify(shot, null, 2) + "\n");
 
   log.info(`Footage  ${footage}`);
-  log.info(`Manifest ${manifest} — ${shot.beats.length} beats, ${shot.captions.length} captions`);
+  log.info(
+    `Manifest ${manifest} — ${shot.beats.length} beats, ${shot.captions.length} captions, ${shot.sfx.length} sound cues`,
+  );
   return { dir, footage, manifest, shot };
 }
