@@ -96,19 +96,6 @@ across as many steps as you like.
 `highlight` shapes: `box`, `circle`, `underline`. Styles: `drawn`, `clean`.
 `arrow` and `pointer` are not implemented and the schema refuses them.
 
-### Branching
-
-```yaml
-- branch:
-    prompt: "What do you want to see?"
-    paths:
-      - { label: "The fast path", default: true, steps: [ ... ] }
-      - { label: "The thorough path", steps: [ ... ] }
-```
-
-The video follows the default path; the interactive build carries the whole
-tree. Alternate paths are re-recorded from the start, so app state is real.
-
 ## `polish`
 
 | Key | Default | What it does |
@@ -159,7 +146,6 @@ output:
   mp4: out/demo.mp4
   gif: out/demo.gif
   webm: out/demo.webm
-  html: out/demo.html          # interactive click-through
   storyboard: out/storyboard   # one PNG per beat
   audio: true
   audioTrack: out/demo.m4a

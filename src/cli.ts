@@ -14,17 +14,20 @@ import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
-import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
-import { SAME_FORMAT_THRESHOLD, sameFormat } from "./diff/compare.js";
-import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
-import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
 import { recordOne } from "./commands/record.js";
-import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
 import { say } from "./commands/say.js";
 import { draftNarration, printScript, readScript } from "./commands/narrate.js";
 import { runDirect } from "./commands/direct.js";
+import { lookSheet, previewScene } from "./commands/scene.js";
+import { shoot } from "./commands/shoot.js";
+import { compose } from "./compose/compose.js";
+import { deCdnInstalled } from "./compose/catalog.js";
+import { assemble, mark, reportStatus, status } from "./compose/assembly.js";
+import { isStatus } from "./compose/storyboard.js";
+import { PACKET_DIR, writePackets } from "./compose/packets.js";
+import { LOOK_NAMES, lookFor } from "./scene/looks.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
@@ -32,6 +35,56 @@ import { StepFailure } from "./driver/run.js";
 import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 import { VERSION } from "./version.js";
+
+interface SceneOpts {
+  template?: string;
+  look?: string;
+  accent: string;
+  title?: string;
+  subtitle?: string;
+  eyebrow?: string;
+  slate?: string;
+  note?: string;
+  item: string[];
+  frames: string;
+  size: string;
+  out: string;
+}
+
+interface ComposeOpts {
+  out: string;
+  look?: string;
+  /** commander sets this false for --no-fonts. */
+  fonts?: boolean;
+  accent: string;
+  title?: string;
+  subtitle?: string;
+  music?: string;
+  size: string;
+  fps: string;
+  force?: boolean;
+}
+
+interface LooksOpts {
+  accent: string;
+  title: string;
+  size: string;
+  at: string;
+  out: string;
+  list: boolean;
+}
+
+/** commander's repeatable-option accumulator. */
+function collect(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+/** `1280x720` → `[1280, 720]`. */
+function parseSize(s: string): [number, number] {
+  const m = /^(\d+)x(\d+)$/.exec(s.trim());
+  if (!m) throw new ReelError(`\`--size ${s}\` is not a size.`, "Write it as WIDTHxHEIGHT, like 1280x720.");
+  return [Number(m[1]), Number(m[2])];
+}
 
 
 const program = new Command();
@@ -65,15 +118,6 @@ program
   .command("record")
   .argument("<spec>", "path to a .reel.yaml spec")
   .option(
-    "--if-changed",
-    "skip the render when the spec, its inputs and its outputs are all unchanged",
-    false,
-  )
-  .option(
-    "--app-revision <id>",
-    "identifier for the app being demoed (a commit SHA), so a changed app forces a re-render",
-  )
-  .option(
     "--draft",
     "quick preview: small, low frame rate, video only, and only narration already in the cache",
     false,
@@ -85,22 +129,17 @@ program
   .description("Drive your app from a spec and render the demo (GIF/MP4/WebM).")
   .action(async (
     specPath: string,
-    opts: { ifChanged: boolean; appRevision?: string; draft: boolean; only?: string },
+    opts: { draft: boolean; only?: string },
   ) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
       const res = await recordOne(loaded, { ...opts, version: VERSION });
-      if (!res.skipped) {
-        log.phase("Done");
-        for (const o of res.outputs) log.info(o);
-      }
+      log.phase("Done");
+      for (const o of res.outputs) log.info(o);
       emit("record", true, {
         result: {
           spec: loaded.path,
           name: loaded.spec.name,
-          skipped: Boolean(res.skipped),
-          ...(res.skipped ? { reason: res.skipped } : {}),
-          fingerprint: res.fingerprint,
           variants: res.variants,
           outputs: res.outputs,
         },
@@ -214,166 +253,6 @@ program
   });
 
 program
-  .command("diff")
-  .argument("<before>", "the earlier render (gif, mp4 or webm)")
-  .argument("<after>", "the newer render")
-  .description("Compare two renders and report which parts of the demo changed.")
-  .option("--fps <n>", "samples per second to compare at", String(DIFF_DEFAULTS.fps))
-  .option(
-    "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed " +
-      `(default: ${SAME_FORMAT_THRESHOLD * 100} comparing one format with itself, ` +
-      `${DIFF_DEFAULTS.threshold * 100} across formats)`,
-  )
-  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
-  .option("--no-out", "skip the comparison images")
-  .option("--exit-code", "exit 1 when the renders differ, like git diff --exit-code", false)
-  .action(
-    async (
-      before: string,
-      after: string,
-      opts: { fps: string; threshold?: string; out: string | false; exitCode: boolean },
-    ) => {
-      await withErrors(async () => {
-        // Two renders in the same format have a floor of literally zero — the
-        // output is deterministic — so holding them to a threshold sized for
-        // GIF palette quantisation throws away real detections. An explicit
-        // --threshold always wins.
-        const threshold =
-          opts.threshold !== undefined
-            ? Number(opts.threshold) / 100
-            : sameFormat(before, after)
-              ? SAME_FORMAT_THRESHOLD
-              : DIFF_DEFAULTS.threshold;
-        const report = await diff(before, after, {
-          fps: Number(opts.fps),
-          threshold,
-          out: opts.out,
-        });
-        printDiff(report);
-        emit("diff", true, { result: report });
-        // Opt-in, because two renders differing is the expected outcome of
-        // changing the app — it is a result, not a failure.
-        if (opts.exitCode && !report.identical) process.exitCode = 1;
-      }, "diff");
-    },
-  );
-
-program
-  .command("ci")
-  .argument("[specs...]", "spec paths or globs (default: **/*.reel.yaml)")
-  .description("Run every demo in the repository and report one result — what the Action calls.")
-  .option("--mode <mode>", "check (drift only) or record (regenerate media)", CI_DEFAULTS.mode)
-  .option("--review", "compare each re-render against the media it replaced", false)
-  .option(
-    "--fail-on <verdict>",
-    "exit 1 at this review verdict or worse: cosmetic, content, stale-caption, never",
-    CI_DEFAULTS.failOn,
-  )
-  .option("--if-changed", "skip a render when its spec, inputs and outputs are unchanged", false)
-  .option("--app-revision <id>", "identifier for the app being demoed (a commit SHA)")
-  .option("-C, --dir <dir>", "directory to resolve specs from", ".")
-  .option("--comment <file>", "write a pull-request comment for the whole run")
-  .action(
-    async (
-      specs: string[],
-      opts: {
-        mode: string;
-        review: boolean;
-        failOn: string;
-        ifChanged: boolean;
-        appRevision?: string;
-        dir: string;
-        comment?: string;
-      },
-    ) => {
-      await withErrors(async () => {
-        if (opts.mode !== "check" && opts.mode !== "record") {
-          throw new ReelError(`Unknown --mode: ${opts.mode}`, "One of: check, record.");
-        }
-        const failOn = opts.failOn as Verdict | "never";
-        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
-          throw new ReelError(
-            `Unknown --fail-on value: ${opts.failOn}`,
-            "One of: cosmetic, content, stale-caption, never.",
-          );
-        }
-        if (opts.review && opts.mode !== "record") {
-          throw new ReelError(
-            "--review needs --mode record.",
-            "A drift check renders nothing, so there is no new media to compare.",
-          );
-        }
-        const report = await ci(opts.dir, specs, {
-          mode: opts.mode,
-          review: opts.review,
-          failOn,
-          ifChanged: opts.ifChanged,
-          appRevision: opts.appRevision,
-          version: VERSION,
-          comment: opts.comment,
-        });
-        printCi(report);
-        await writeGithubOutputs(report);
-        emit("ci", !report.failed, { result: report });
-        if (report.failed) process.exitCode = 1;
-      }, "ci");
-    },
-  );
-
-program
-  .command("review")
-  .argument("<before>", "the earlier render (gif, mp4 or webm)")
-  .argument("<after>", "the newer render")
-  .description("Say what changed between two renders, and whether the demo is still true.")
-  .option("--fps <n>", "samples per second to compare at", String(REVIEW_DEFAULTS.fps))
-  .option(
-    "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed",
-    String(REVIEW_DEFAULTS.threshold * 100),
-  )
-  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
-  .option(
-    "--fail-on <verdict>",
-    "exit 1 at this verdict or worse: cosmetic, content, stale-caption, never",
-    REVIEW_DEFAULTS.failOn,
-  )
-  .option("--model <name>", "model to review with (defaults to the configured one)")
-  .action(
-    async (
-      before: string,
-      after: string,
-      opts: {
-        fps: string;
-        threshold: string;
-        out: string | false;
-        failOn: string;
-        model?: string;
-      },
-    ) => {
-      await withErrors(async () => {
-        const failOn = opts.failOn as Verdict | "never";
-        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
-          throw new ReelError(
-            `Unknown --fail-on value: ${opts.failOn}`,
-            "One of: cosmetic, content, stale-caption, never.",
-          );
-        }
-        const outcome = await runReview(before, after, {
-          fps: Number(opts.fps),
-          threshold: Number(opts.threshold) / 100,
-          out: opts.out,
-          failOn,
-          model: opts.model,
-        });
-        printReview(outcome);
-        emit("review", !outcome.failed, { result: outcome });
-        if (outcome.failed) process.exitCode = 1;
-      }, "review");
-    },
-  );
-
-program
   .command("themes")
   .description("List the colour schemes available to terminal demos.")
   .action(() => {
@@ -391,6 +270,234 @@ program
         .join("");
       process.stdout.write(`  ${base} ${swatch}  ${name}\n`);
     }
+  });
+
+program
+  .command("shoot")
+  .argument("<spec>", "path to a .reel.yaml spec")
+  .description("Film the app as raw footage plus a shot manifest, for a composition to cut.")
+  .option("-o, --out <dir>", "where the footage and manifest go", "shot")
+  .option("--flat", "no camera moves at all — the composition does its own framing", false)
+  .action(async (specPath: string, opts: { out: string; flat: boolean }) => {
+    await withErrors(async () => {
+      const loaded = await loadSpec(specPath);
+      const res = await shoot(loaded, { out: opts.out, flat: opts.flat, version: VERSION });
+      emit("shoot", true, {
+        result: {
+          dir: res.dir,
+          footage: res.footage,
+          manifest: res.manifest,
+          duration: res.shot.duration,
+          beats: res.shot.beats.length,
+          captions: res.shot.captions.length,
+        },
+      });
+    });
+  });
+
+program
+  .command("compose")
+  .argument("<manifest...>", "one or more shots.json files — each becomes a chapter, in order")
+  .description("Assemble that footage into a HyperFrames project — scenes, storyboard, design spec.")
+  .option("-o, --out <dir>", "where the project goes", "film")
+  .option("--look <name>", `a Reel look (${LOOK_NAMES.join(", ")}) or an installed HyperFrames frame preset`)
+  .option("--no-fonts", "skip fetching a preset's webfonts; declare them local() instead")
+  .option("--accent <color>", "brand accent the cards are built from", "#6d8bff")
+  .option("--title <text>", "opening card headline (defaults to the spec's name)")
+  .option("--subtitle <text>", "opening card subtitle")
+  .option("--music <file>", "music bed: a path to a track, or `none`. Omit for a synthesized bed.")
+  .option("--size <WxH>", "composition frame", "1920x1080")
+  .option("--fps <n>", "frame rate", "30")
+  .option("--force", "regenerate scenes even if the project holds authored ones", false)
+  .action(async (manifest: string[], opts: ComposeOpts) => {
+    await withErrors(async () => {
+      const [width, height] = parseSize(opts.size);
+      const res = await compose(manifest, {
+        ...(opts.force ? { force: true } : {}),
+        out: opts.out,
+        ...(opts.look ? { look: opts.look } : {}),
+        ...(opts.fonts === false ? { noFonts: true } : {}),
+        accent: opts.accent,
+        width,
+        height,
+        fps: Math.max(1, Number(opts.fps) || 30),
+        ...(opts.title === undefined ? {} : { title: opts.title }),
+        ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
+        ...(opts.music === undefined ? {} : { music: opts.music }),
+      });
+      emit("compose", true, {
+        result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames },
+      });
+    });
+  });
+
+program
+  .command("packets")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("Cut one bounded brief per scene, for an author to work from. (The authoring pass.)")
+  .option("--all", "include scenes already marked `animated`", false)
+  .action(async (project: string, opts: { all: boolean }) => {
+    await withErrors(async () => {
+      const res = await writePackets(project, { ...(opts.all ? { all: true } : {}) });
+      log.info(`Packets     ${res.packets.length} in ${PACKET_DIR}`);
+      for (const p of res.packets) log.info(`  ${p}`);
+      if (res.skipped > 0) {
+        log.info(`  ${res.skipped} scene(s) already authored — skipped. \`--all\` re-cuts them.`);
+      }
+      log.info(`Role        ${res.role} — every author reads this first`);
+      log.info(`Then        reel assemble && npx hyperframes check`);
+      emit("packets", true, { result: { dir: res.dir, packets: res.packets, role: res.role, skipped: res.skipped } });
+    });
+  });
+
+program
+  .command("assemble")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("Rebuild index.html from STORYBOARD.md. Never touches the scenes.")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const res = await assemble(project);
+      for (const w of res.warnings) log.warn(`  ${w}`);
+      log.info(`Assembled   ${res.frames} scenes · ${res.duration.toFixed(1)}s`);
+      if (res.scaffold > 0) {
+        log.info(`  ${res.scaffold} scene(s) still \`built\` — the authoring pass is unfinished`);
+      }
+      emit("assemble", true, {
+        result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames, scaffold: res.scaffold },
+      });
+    });
+  });
+
+program
+  .command("status")
+  .argument("[project]", "a project directory written by `reel compose`", "film")
+  .description("How far the authoring pass has got: which scenes are still scaffold.")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const s = await status(project);
+      for (const w of s.warnings) log.warn(`  ${w}`);
+      reportStatus(s);
+      emit("status", true, { result: { animated: s.animated, total: s.total, todo: s.todo, frames: s.frames } });
+    });
+  });
+
+program
+  .command("mark")
+  .argument("<project>", "a project directory written by `reel compose`")
+  .argument("<frames...>", "frame numbers, as the storyboard headings number them")
+  .description("Mark scenes authored, as each one comes back from its author.")
+  .option("--status <status>", "animated (default), built, or outline", "animated")
+  .action(async (project: string, frames: string[], opts: { status: string }) => {
+    await withErrors(async () => {
+      if (!isStatus(opts.status)) {
+        throw new ReelError(
+          `\`${opts.status}\` is not a status.`,
+          "Their ladder is outline → built → animated.",
+        );
+      }
+      const ns = frames.map(Number);
+      const bad = frames.filter((_, i) => !Number.isInteger(ns[i]) || ns[i]! < 1);
+      if (bad.length > 0) {
+        throw new ReelError(
+          `Not a frame number: ${bad.join(", ")}.`,
+          "Frames are numbered from 1, as the storyboard headings number them.",
+        );
+      }
+      const res = await mark(project, ns, opts.status);
+      if (res.marked.length > 0) {
+        log.info(`Marked      frame ${res.marked.join(", ")} → ${opts.status}`);
+      }
+      for (const n of res.missing) log.warn(`  no frame ${n} in the storyboard`);
+      emit("mark", true, { result: { marked: res.marked, missing: res.missing, status: opts.status } });
+    });
+  });
+
+program
+  .command("blocks")
+  .argument("<project>", "a project directory written by `reel compose`")
+  .description("Make installed catalog blocks renderable offline (rewrite their CDN references).")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const touched = await deCdnInstalled(project);
+      if (touched.length === 0) log.info("Nothing to rewrite — no installed block links a CDN.");
+      emit("blocks", true, { result: { project, rewritten: touched } });
+    });
+  });
+
+program
+  .command("scene")
+  .argument("[file]", "a composition of your own (.html), relative to the cwd")
+  .description("Shoot a scene across its seek range into one contact sheet.")
+  .option("--template <name>", "draw a built-in template instead: title, chapter, statement, bullets")
+  .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
+  .option("--accent <color>", "brand accent the look is built from", "#6d8bff")
+  .option("--title <text>", "template field")
+  .option("--subtitle <text>", "template field")
+  .option("--eyebrow <text>", "template field")
+  .option("--slate <text>", "corner slate, top line")
+  .option("--note <text>", "corner slate, second line")
+  .option("--item <text>", "a `bullets` line; repeat for more", collect, [])
+  .option("--frames <n>", "how many positions to shoot", "6")
+  .option("--size <WxH>", "frame size", "1280x720")
+  .option("-o, --out <path>", "where to write the sheet", ".reel/scene.png")
+  .action(async (file: string | undefined, opts: SceneOpts) => {
+    await withErrors(async () => {
+      const [width, height] = parseSize(opts.size);
+      const res = await previewScene(
+        {
+          ...(file ? { file } : {}),
+          ...(opts.template ? { template: opts.template } : {}),
+          ...(opts.look ? { look: opts.look } : {}),
+          accent: opts.accent,
+          fields: {
+            ...(opts.title === undefined ? {} : { title: opts.title }),
+            ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
+            ...(opts.eyebrow === undefined ? {} : { eyebrow: opts.eyebrow }),
+            ...(opts.slate === undefined ? {} : { slate: opts.slate }),
+            ...(opts.note === undefined ? {} : { slateNote: opts.note }),
+            ...(opts.item.length ? { items: opts.item } : {}),
+          },
+          width,
+          height,
+          frames: Math.max(1, Number(opts.frames) || 6),
+          out: opts.out,
+        },
+        process.cwd(),
+      );
+      log.info(`Wrote ${res.out}`);
+      emit("scene", true, { result: { out: res.out, points: res.points } });
+    });
+  });
+
+program
+  .command("looks")
+  .description("Show every visual identity a scene can be drawn in, side by side.")
+  .option("--accent <color>", "brand accent the looks are built from", "#6d8bff")
+  .option("--title <text>", "what to set in each tile", "The same words")
+  .option("--size <WxH>", "frame size", "960x540")
+  .option("--at <p>", "where in the scene to shoot, 0-1", "0.5")
+  .option("-o, --out <path>", "where to write the sheet", ".reel/looks.png")
+  .option("--list", "print the catalogue as text instead of rendering it", false)
+  .action(async (opts: LooksOpts) => {
+    await withErrors(async () => {
+      if (opts.list) {
+        for (const name of LOOK_NAMES) {
+          process.stdout.write(`  ${pc.bold(name.padEnd(11))} ${pc.dim(lookFor(name).mood)}\n`);
+        }
+        return;
+      }
+      const [width, height] = parseSize(opts.size);
+      const res = await lookSheet({
+        accent: opts.accent,
+        title: opts.title,
+        width,
+        height,
+        frames: 1,
+        at: Math.min(1, Math.max(0, Number(opts.at) || 0.5)),
+        out: opts.out,
+      });
+      emit("looks", true, { result: { out: res.out, looks: res.looks } });
+    });
   });
 
 program

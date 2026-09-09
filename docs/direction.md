@@ -843,3 +843,739 @@ Both were caught by driving the generated page in Playwright and looking at it.
 - **Copyable terminal text.** In a terminal demo the text was real text before
   it was pixels; the document could carry it, and a reader could copy the
   command. This is the most obviously valuable thing left.
+
+---
+
+# Part 9 — Looks: making every demo not look like every other demo
+
+## The mistake this corrects
+
+Part 7 shipped four scene templates. Part 8's first pass at making them
+*good* hard-coded one backdrop into `templates.ts` — concentric saturated
+rings, borrowed from a HyperFrames showcase poster. It looked expensive, and it
+was exactly wrong: every demo Reel ever rendered would have opened on the same
+picture. A tool that produces one look does not produce a look. It produces a
+watermark.
+
+The redirect came from a fair question — *"the goal is not the ring; it can't be
+the same for every demo. How does the other tool generate these?"* — so the
+right move was to go and read, rather than tune CSS harder.
+
+## What HyperFrames actually does
+
+It ships **no templates at all.** There is no design in its framework code. Its
+engine's entire contract is four data attributes and one global:
+
+```html
+<div id="stage" data-composition-id="launch" data-width="1920" data-height="1080">
+  <h1 class="clip" data-start="1" data-duration="4">Launch day</h1>
+</div>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  window.__timelines.launch = tl;   // paused, seekable
+</script>
+```
+
+The renderer seeks that paused timeline once per frame in headless Chrome and
+encodes with FFmpeg. Every pixel of design is **LLM-written HTML, bespoke per
+project**. The framer rings were not a feature; an agent wrote them for one
+video.
+
+What makes the output good lives one layer up, in ~20 Claude Code skills:
+`hyperframes-creative` alone carries 15 reference documents (`visual-styles.md`,
+`typography.md`, `motion-principles.md`, `beat-direction.md`), nine palettes, and
+13 `frame-presets` — each a complete `FRAME.md` design language. `visual-styles.md`
+names identities grounded in real traditions ("Swiss Pulse — Josef
+Müller-Brockmann, clinical, precise, for SaaS and dev tools") as copy-paste token
+blocks.
+
+**The design intelligence is in the prompt layer. The framework only guarantees
+determinism.** That is the inversion worth copying.
+
+## What Reel already had
+
+More than expected. `window.__reelScene = { seek(p) }` plus `--p`/`--in`/`--out`
+*is* the `window.__timelines` contract, and arguably stronger: suppressing CSS
+`animation` and `transition` in every document means there is no clock to
+freeze, rather than a clock that must be paused correctly. `scene: { file: … }`
+already took a bespoke composition. Reel already shipped a Claude Code plugin.
+
+Missing were the design layer and the authoring loop.
+
+## The look layer
+
+`src/scene/looks.ts` — ten named visual identities, as **data**:
+
+| Look | For |
+| ---- | --- |
+| `aurora` | The default. Calm, premium, safe with any accent. |
+| `neon` | Launch films and hero titles. Loud on purpose. |
+| `swiss` | Dev tools, data, APIs. Clinical and gridded. |
+| `editorial` | Claims and quotes. Serif, cream, unhurried. |
+| `brutal` | One big announcement, or a single number. |
+| `terminal` | CLI demos and anything about code. |
+| `blueprint` | Architecture, specs, systems diagrams. |
+| `poster` | Chapter openers and section breaks. |
+| `mono` | When the app itself is the colour. |
+| `dawn` | Consumer apps and onboarding. |
+
+A look owns the ground, the ink, the backdrop, the type and how words arrive.
+Templates became **layout only**. So `look: swiss` and `look: neon` are the same
+four templates wearing different films, and adding an eleventh look needs no
+change to `templates.ts`.
+
+```yaml
+polish:
+  look: neon
+  accent: "#22d3ee"
+steps:
+  - scene: { template: chapter, title: Branching paths, look: poster }
+```
+
+**A look never owns the accent.** Every backdrop is built out of
+`polish.accent` — hue-rotated, tinted, repeated — which is why `neon` on a cyan
+product is not the picture in these docs. `scene.look` overrides `polish.look`
+for one scene; an `editorial` statement between two `neon` chapters lands harder
+than either alone.
+
+The one thing a look must not skip is reading `--p`. `--in` is spent by 28% of
+the scene, so a backdrop driven only by `--in` arrives and then sits still —
+which is precisely what makes a scene read as a slide. A test asserts every look
+in the catalogue reads `--p`; `brutal` failed it on the first run and got a
+register mark that steps across the top.
+
+## The authoring loop
+
+Motion cannot be judged from source, and an agent cannot scrub an MP4. Two
+commands close that:
+
+```bash
+reel looks --accent "#22d3ee" --title "The demo's title"   # .reel/looks.png
+reel scene --template chapter --look poster --title "…"    # .reel/scene.png
+reel scene scenes/opening.html                             # your own composition
+```
+
+`looks` renders the whole catalogue side by side — the same argument as `reel
+themes` printing swatches instead of names. `scene` seeks one composition at six
+positions and tiles them into a contact sheet, weighted toward the entrance
+because that is where everything happens. Both are shot with the same seek
+runtime and the same deterministic launch flags as a real render, so a sheet
+that looks right is not a different picture from the film.
+
+The `reel-scene` skill teaches the rest: the three variables, the five rules,
+the `__reelScene.seek(p)` escape hatch for motion CSS cannot express, and a
+skeleton that obeys all of it.
+
+## Determinism
+
+Verified two-run byte-identical on six looks including the ones that worried me
+— `neon` uses `mix-blend-mode: screen` across three layers, `aurora` blurs at
+90px. All identical. Then an end-to-end draft render with two scenes at
+different looks inside one film, which is what actually exercises the driver.
+
+## Not built
+
+- **Custom looks in a spec.** The catalogue is code. A `looks:` block letting a
+  repo define its own — HyperFrames' `frame.md` — is the obvious next step, and
+  the shape is already right for it: a look is data.
+- **Looks beyond scenes.** Captions, the browser frame and the callout spotlight
+  still read `polish.accent` directly rather than the look's palette. A look
+  ought to dress the whole film.
+- **Per-look motion timing.** `IN_FRACTION` and `OUT_FRACTION` are global. A
+  `brutal` scene probably wants to arrive faster than an `editorial` one.
+- **Type scale as data.** Sizes are still `clamp()` literals in `templates.ts`.
+  They belong in the look.
+
+---
+
+# Part 10 — The rescope: Reel shoots, HyperFrames cuts
+
+## The decision
+
+Reel was a whole pipeline: drive the app, film it, composite captions and
+chrome, encode, diff, and fail CI when the app drifted. Part 9 added scene
+looks to that pipeline. Then the scope changed on purpose — the goal is
+HyperFrames-quality product and CLI demo films, and the byte-identical/CI half
+is not what makes those.
+
+So Reel keeps the half nobody else has, and stops doing the half that is
+already solved better elsewhere.
+
+| | Does it |
+| --- | --- |
+| **Reel** | Drives the real app or a real terminal through a scripted, asserted flow and films what happened |
+| **HyperFrames** | Renders HTML to video — seek-per-frame, GSAP, FFmpeg, audio mix, transitions |
+
+HyperFrames' own `capture` reads a *website's design* — screenshots, tokens,
+fonts — so an agent can rebuild it. It has no way to drive an app through a
+flow. That gap is exactly Reel's shape, and it is why this is a combination
+rather than a clone.
+
+## The core is a dependency, not a reimplementation
+
+`hyperframes` and `@hyperframes/core` are Apache-2.0 on npm, so "the same core"
+is literally the same core, and it stays the same as they ship. Reimplementing
+the parser, seven runtime adapters, the audio mixer, shader transitions,
+chunked parallel encode and the lint suite would take months and trail forever.
+Nothing in `src/compose` reimplements any of it; it writes HTML that honours
+the contract and hands off.
+
+## The seam: a shot manifest
+
+A bare mp4 is a poor handoff, because a composition needs to *time* things
+against the footage and an author is otherwise left scrubbing and guessing.
+The driver already knows every one of those moments — it caused them.
+
+`reel shoot` therefore writes `footage.mp4` **and** `shots.json`:
+
+```json
+{ "version": 1, "name": "TaskFlow", "duration": 15.34,
+  "beats":    [{ "label": "hero", "t": 0.95 }, { "label": "added", "t": 10.44 }],
+  "captions": [{ "t": 0, "text": "Capture work in a snap" }] }
+```
+
+`shoot` also strips the picture back to footage: no browser chrome, no
+burned-in captions, no cards, no fades. Each of those is now the composition's
+to decide, and a decision baked into a frame cannot be unmade. Zoom is the one
+thing kept, because a push-in was chosen while the app was being driven with
+the element's real box in hand, and it cannot be recovered from a flat
+recording afterwards. `--flat` turns it off.
+
+`reel compose` scaffolds the project around that manifest — footage on the
+timeline, a title card in a look, lower thirds already timed to the captions, a
+closing card, GSAP vendored, `hyperframes.json`. Then an agent edits the HTML,
+which is the whole HyperFrames bet. Scaffolding further would be building
+templates again.
+
+## Three things the first attempt got wrong
+
+1. **The CDN.** The scaffold linked GSAP from jsdelivr and the render failed
+   outright behind an egress proxy — `sub_timeline_script_failure`. It is now
+   copied from `node_modules`. A render that fetches depends on someone else's
+   uptime, which Reel already believed and the composition had quietly stopped
+   honouring.
+2. **Fonts.** `hyperframes check` rejects a family it cannot resolve, and it is
+   right to: a silently substituted font is not the typography anyone approved.
+   The composer now emits `@font-face { src: local("…") }` for every named
+   family in a look.
+3. **Lower thirds floated over the picture.** They collided with the app card.
+   The fix is not more padding — the footage is full-bleed and its content
+   moves, so *anything* placed on it collides eventually, and you only find out
+   per demo after a three-minute render. They are a band at the bottom edge now,
+   which is correct at every frame of every demo.
+
+## Proven end to end
+
+`check` clean across lint, runtime, layout, motion and contrast (10/10 WCAG AA),
+then a 20.8s 1920×1080 render: title card → real TaskFlow footage with lower
+thirds on the manifest's timings → closing card.
+
+`hyperframes snapshot --at <seconds>` is the iteration loop — seconds, against
+three and a half minutes for a render. It does not inject decoded video frames,
+so it judges graphics and cards but not the footage itself.
+
+## Still to do
+
+- **Delete the old half.** `check`, `diff`, `ci`, the fingerprint/stamp
+  machinery, `src/encode`, the interactive player and the burn-in compositors
+  come out in one reviewable commit now that the new path renders. Nothing has
+  been removed yet, deliberately: the old surface stays until the new one is
+  finished.
+- **Terminal footage.** `src/terminal` is the other thing HyperFrames cannot do
+  and it already works; it needs a `shoot` path and a manifest of its own
+  (commands, their output regions, exit codes).
+- **Narration onto the composition timeline.** Reel's voice cache should land
+  as `<audio>` clips with the caption timings, rather than being mixed by Reel.
+- **Looks as composition CSS.** `src/scene/looks.ts` currently only dresses
+  Reel's own scenes; the composer reimplements a subset. One source.
+- **Beat-driven camera.** The manifest has the beats; `compose` should be able
+  to emit a punch-in on each one rather than leaving every camera move manual.
+
+---
+
+# Part 11 — Doing it the way HyperFrames actually does it
+
+## The honest starting point
+
+Part 10 wired HyperFrames in as a renderer and stopped there. Asked whether
+everything had been incorporated, the answer was no, and the inventory was
+embarrassing: 155 registry blocks unused, 220 components unused, shader
+transitions unused, 20 skills unused (a bespoke one written instead), 13 frame
+presets unused, the audio mixer unused, the film silent. Worse, `compose` was
+emitting **one fixed template from code** — the exact mistake Part 9 diagnosed
+and swore off.
+
+The film looked much like Reel's old output because the design was still
+hand-rolled and identical every run. HyperFrames' output looks good because an
+*agent authors each composition* against those skills and that catalog. The
+mechanism had been bypassed entirely.
+
+## What their project actually looks like
+
+Read from `references/production-loop.md`, `sub-compositions.md`,
+`storyboard-format.md` and `design-spec.md` rather than guessed:
+
+```
+frame.md                       design spec — YAML frontmatter is normative, prose is context
+STORYBOARD.md                  the plan layer; Studio renders it as a contact sheet
+hyperframes.json               what makes the directory a project
+index.html                     assembly only — scenes as sub-compositions on tracks
+compositions/frames/NN-*.html  one scene per file
+```
+
+`reel compose` now emits exactly that. The monolithic `index.html` is gone.
+
+**Why one file per scene.** A monolithic composition renders perfectly well and
+is still wrong: a scene you cannot open, snapshot and rewrite on its own is a
+scene nobody edits. It is also the structure every one of their skills expects.
+
+## Five mount-contract failures their linter caught
+
+None would have been found by reading the files, and all seven errors came from
+one `hyperframes check`:
+
+1. **`missing_timeline_registry`.** The index had no timeline — deliberately, on
+   the theory that scenes own their motion. A composition with no
+   `window.__timelines` entry is an error regardless. It now drives a global
+   grade layer, a vignette that breathes across the whole film, which is a real
+   finishing element rather than a stub tween.
+2. **`id_requires_css_escape`.** Scene ids began `00-`, so `#00-title-v` throws
+   a SyntaxError in `querySelector` — inside the scene's own timeline script.
+   Ids are prefixed with a letter now.
+3. **`media_missing_data_start`.** Video and audio inside a sub-composition still
+   need their own timing; HyperFrames cannot own playback for untimed media.
+4. **`invalid_parent_traversal_in_asset_path`.** Media referenced as
+   `../../media/…` works at render — which rewrites `../` against the
+   sub-composition's own path — and 404s in Studio, which resolves from the
+   project root. Media moved beside the scenes that play it.
+5. **`studio_missing_editable_id`.** Host clips need ids or Studio has no stable
+   edit target.
+
+Then: 0 errors, 0 warnings, 11/11 WCAG AA, and a contact sheet confirming all
+five scenes mount.
+
+## The catalog, made usable
+
+`npx hyperframes add` works, and every block it installs links GSAP from
+jsdelivr and its fonts from Google Fonts. Fine with open egress, fatal without —
+and the font case is the dangerous one, because a blocked script *fails* the
+render while a blocked font silently substitutes a typeface, so the block ships
+looking wrong rather than not at all.
+
+`reel blocks <project>` rewrites them: GSAP re-pointed at the vendored copy,
+remote font imports and links dropped, and every family they were fetching
+re-declared as a `local()` face so `check` can still resolve it. Everything else
+is left exactly as the catalog wrote it — a block edited beyond recognition is
+no longer the block you installed. Verified on `cinematic-zoom`: one script, four
+families, zero remaining remote references.
+
+## What the skills corrected
+
+`waterfall-entry`, from `hyperframes-animation`, says two things that are
+counter-intuitive and both wrong in the earlier version:
+
+- **Opacity is binary.** A word is revealed with a zero-duration `set`, never
+  faded. "Never fade an arrival."
+- **It is fast.** 0.13–0.20s per word, against the 0.7s that felt right when
+  guessing — four times too slow — and the cascade *overlaps*, each word
+  starting before the previous settles.
+
+A title now composes by ~0.8s instead of ~2s. That single rule is most of the
+difference between a title card and a slide.
+
+## Sound
+
+Reel has always collected sfx cues to build its own audio track. Handed to a
+composition they are worth more: a click landing on the exact frame the button
+went down is not something an editor can place by ear afterwards, because only
+the driver knows when the press happened. `RunResult` and the shot manifest
+carry them; `compose` synthesizes a WAV per shot and places it as a timed
+`<audio>`. Synthesized, not sampled — no licence to honour, no binary vendored,
+and Reel already owned the synthesis.
+
+## Still not incorporated
+
+- **BGM.** HyperFrames bundles SFX but no music, and the local generators
+  (Kokoro, MusicGen) are not installed here.
+- **Frame presets and visual styles.** Thirteen complete design languages plus
+  eight named visual styles; Reel still uses its own `looks.ts`. These should
+  merge — a look and a frame preset are the same idea in two vocabularies.
+- **Shader transitions.** Installed and de-CDN'd blocks can now be mounted, but
+  no scene handoff uses one yet; the handoffs are crossfades and a flash.
+- **The creation workflows.** `/product-launch-video`, `/motion-graphics` and
+  the rest plan a film from a brief. Reel's spec is a different front door and
+  the two have not been reconciled.
+- **Captions track, LUTs, `media-use` sourcing.**
+- **The deeper one:** `compose` is still a generator. It emits a better
+  structure now, and an agent can edit any single scene — but nothing forces the
+  per-project authoring pass that makes their showcase output what it is.
+
+---
+
+# Part 12 — The deletion pass
+
+## What went, and why it had to
+
+The rescope added a second pipeline without removing the first, and a repository
+that tells two stories about what it is teaches neither. This removes the half
+the rescope replaced.
+
+| Removed | Why |
+| --- | --- |
+| `reel ci` + the GitHub Action (`action.yml`) | The whole thing was a drift gate: run every spec, regenerate committed media, fail the build when it moved. That is not what Reel is for now. |
+| `reel diff`, `src/diff/` | Pixel comparison of two renders. Only ever a review aid for committed media. |
+| `reel review`, `src/review/` | Model-judged verdicts on a changed render. Same. |
+| Fingerprints, stamps, `--if-changed` | Skipping a render when nothing changed paid for itself only in CI. |
+| `src/encode/html.ts`, `player.ts`, `document.ts` | The interactive click-through and the document build. A HyperFrames composition supersedes both. |
+| The `branch` step, `src/driver/branches.ts` | Went with the click-through — see below. |
+| `scripts/{player,branch}-selftest.ts`, `npm run test:{player,branch}` | Nothing left to test. |
+
+Roughly 1,500 lines of source, plus their tests and two examples.
+
+## The one that was not merely dead
+
+`branch:` still *ran*. With no click-through to carry the alternate paths it
+would have recorded its default and silently dropped the rest — a spec that
+declares three paths, gets one, and is told nothing. That is worse than not
+offering the feature, which is why it went with the build that gave it meaning
+rather than being left as a stub.
+
+## What was kept, and the judgement in each
+
+- **`reel record`.** It shares 95% of its machinery with `shoot` and produces a
+  finished GIF/MP4 with no composition involved, which is genuinely the right
+  tool for a quick artefact. Deleting it would also have meant deleting the
+  burn-in compositors — captions, device frame, fades, highlights — and with
+  them a large part of the spec grammar that existing specs use. Removing a
+  working feature to make a narrative tidier is not a good trade. It is demoted
+  in the README, not removed.
+- **`reel check`.** It *was* the drift gate, but it is also a cheap smoke test:
+  run every step headlessly, exit 1 if one cannot complete. Before a shoot that
+  takes minutes, that is worth thirty seconds. Reframed rather than deleted.
+- **`imageFiles` / `signInStates`**, rescued into `src/spec/inputs.ts`. They
+  were part of the fingerprint and answer a question that outlives it — *what
+  does this spec read from disk?* — and one is security-adjacent: a storage
+  state is a bearer credential, and knowing which files a spec will open is how
+  you notice one is committed.
+- **The Studio's beat strip**, repointed from the render stamp to the shot
+  manifest. The manifest is the better source anyway: it is written by the drive
+  that caused the beats rather than derived from the media afterwards.
+
+## What it cost to do
+
+The linter and the type checker did the work. The removals cascaded through
+`isBranch` in eight files, `output.html` through the matrix expander and the
+Studio summary, and `Scene`/`snap()` through every step handler — none of which
+would have been findable by grep alone, and all of which the compiler named.
+
+One real mistake on the way: the first cut at the schema deleted the region
+between "every step except `branch`" and the privacy section, which contained
+the step union itself, not only the branch grammar. Caught immediately by
+`tsc`, restored from git, redone precisely.
+
+763 tests pass. `reel shoot`, `reel compose` and `hyperframes check` were all
+re-run end to end afterwards — 0 errors, 0 warnings, 11/11 WCAG AA — because a
+deletion pass that leaves the pipeline broken is not a deletion pass.
+
+## What CI does now
+
+Typecheck and unit tests on Linux and Windows — Windows because that is where
+Reel's process handling is thinnest, since app and terminal teardown both signal
+a process group and Windows has none — plus the capture self-test on Linux,
+which needs a browser. No media is regenerated, committed or policed.
+
+---
+
+# Part 13 — Audio
+
+The films were near-silent: clicks and keystrokes, nothing else. Three layers
+now, and each arrives differently on purpose.
+
+## Interaction sound
+
+Already there from Part 10, and worth restating because it is the one thing in
+the mix nobody else can produce. Reel's driver caused every click and keystroke,
+so it knows when each happened to the millisecond. A click landing on the exact
+frame the button went down cannot be placed by ear afterwards.
+
+## Narration, and admitting when there is none
+
+`RunResult` and the shot manifest carry the spoken lines as **text always,
+audio only when it exists** — synthesized now, or already in the committed voice
+cache. The split is the point. A line with no audio is not dropped: it reaches
+the composition as text, lands in `STORYBOARD.md` as a `voiceover:` guide —
+their storyboard format has a field for exactly this — and `shoot` reports how
+many lines are missing a track.
+
+This sandbox has no voice cache and no API key, so the path was built and
+exercised in its degraded mode: *"3 spoken lines, and no `audio.voice` to say
+them — the film will carry the text only."* That is the honest outcome. A demo
+that quietly ships two-thirds narrated is worse than one that says it is silent.
+
+## A music bed, synthesized
+
+`src/compose/music.ts` renders a slow four-chord pad sized to the film, ducked
+about 12dB under every spoken line. `--music <file>` takes a real track instead;
+`--music none` is silence.
+
+Synthesized rather than shipped, and the argument is stronger than it was for
+the sound effects: a recording needs a licence, and a licence that is right for
+Reel's repository is not necessarily right for the demo someone cuts with it.
+"Royalty-free" covers a dozen incompatible things and the person who discovers
+theirs was not covered discovers it from a takedown. None of this is a
+recording, so there is nothing to clear — and it is deterministic and offline,
+which the render already has to be.
+
+**The first version was a rumble.** Voiced -7 to +12 semitones around a 110Hz
+root, every partial that mattered fell under 200Hz; a spectrogram of it is one
+band along the bottom of the image. Inaudible on a laptop speaker, gone entirely
+on a phone. Re-voiced upward from a 220Hz root with stronger second and third
+partials, the energy above 300Hz now sits 2.4dB below the full-band level rather
+than being absent. A test pins it, because "is there anything above the bass"
+is not a question a listener of the code can answer.
+
+Ducking is timed from the narration cues rather than measured off the waveform:
+the driver knows when each line starts because it scheduled it, and a level
+automation derived from the audio would only ever be an estimate of that.
+
+# 14. Transitions, and the pattern we had been shipping
+
+The task was "do the shader transitions" — HyperFrames publishes
+`@hyperframes/shader-transitions`, a WebGL library of displacement wipes,
+dissolves and glitches. Two things came out of reading it, and the second
+matters much more than the first.
+
+**Shader transitions cannot transition footage.** `init({ scenes, transitions })`
+resolves every scene with `document.getElementById(id)` and requires
+`el.classList.contains("scene")` — the elements must live in the host document,
+and `scenes.length` must equal `transitions.length + 1`, so the library owns the
+whole running order. Then `captureScene()` rasterises each one through
+`drawElementImage` or `html2canvas`, and **neither draws a `<video>` frame**.
+They would work between card scenes on a film with no footage in it. Reel's
+films are mostly footage, and every scene is a sub-composition the host cannot
+reach into, so the API is incompatible twice over. Not adopted, and the reason
+is worth writing down so nobody spends the afternoon again.
+
+**The important finding: we had been shipping the pattern their docs ban.**
+Every scene faded its own `#root` out at the end, and the next scene faded its
+own in. `transitions/overview.md` is unambiguous about this — *"exit animations
+are BANNED except on the final scene; the outgoing scene's content must be fully
+visible when the transition starts. The transition IS the exit."* A fade-out
+followed by a fade-in is, in their words, "a jump cut with a dip". It looks
+like a transition in a still and reads as a stutter in motion, which is exactly
+why it survived so long: every snapshot of it looked fine.
+
+A real transition animates both sides at the same instant, so it has to be
+written by the only layer that can see both — the index. A sub-composition
+cannot reach its neighbour, and a sub-composition timeline cannot touch the
+host. So `transitionTweens()` in `src/compose/project.ts` writes the seams, and
+`cardScene`/`shotScene` write no exits at all.
+
+The vocabulary is one primary and one accent, which is their guidance —
+*"pick ONE primary (60–70% of scene changes) plus one or two accents; never use
+a different transition for every scene"*:
+
+- **Blur crossfade** everywhere, the recipe from `css-dissolve.md`: the outgoing
+  blurs and swells slightly as it leaves, the incoming arrives from under a blur
+  a beat later. Both halves start within 100ms of each other and share the
+  handoff window the scenes already overlap by.
+- **Overexposure flash** into a chapter card only, because that seam is a
+  section break rather than a continuation.
+
+Every departure ends with a zero-duration `set` on the clip boundary. An opacity
+tween that merely *reaches* zero there leaves stale state when the renderer seeks
+out of order, which their linter calls `gsap_exit_missing_hard_kill`.
+
+**The flash has to flash away from the ground.** White at a cut reads as
+overexposure on a dark film. On the cream ground of an `editorial` or a frame
+preset it has no contrast to spend and simply blows the frame out — the first
+render of this was a white rectangle where the seam should have been. A light
+look dips to its own ink instead, which is the same edit read the other way up,
+and the snapshot at the seam shows the outgoing frame still legible under it.
+
+`test/transitions.test.ts` pins all of it: no scene animates `#root`, anything
+that does fade lands before the handoff window opens, both halves of every seam
+exist and start together, every departure has its hard kill, the last scene is
+never faded, and the flash contrasts with the ground it sits on.
+
+# 15. The authoring pass
+
+The gap this closes was named at the end of every previous part and never
+fixed: **`compose` generated a whole film, so nothing forced a per-project
+pass.** Every film it wrote was structurally the same film — a waterfall
+headline, a chapter card, footage under a bottom band — and it marked its own
+output `status: animated`, which is a claim that somebody authored it. Nobody
+had.
+
+Three things were wrong underneath that, and they were all the same thing:
+**`compose` was write-only.**
+
+- It generated `STORYBOARD.md` and never read it again, so the plan layer was a
+  report rather than a contract.
+- It built `index.html` from the array of scenes it happened to have in memory,
+  so there was no way to rebuild the host without re-running compose.
+- Re-running compose overwrote every scene file, so anything authored was
+  destroyed by the next command that touched the project.
+
+Which meant the only safe thing to do with a composed project was to not touch
+it. That is why the pass never happened: it was not that people skipped a step,
+it was that the step could not be taken.
+
+## Reading the storyboard back
+
+`src/compose/storyboard.ts` parses it, lenient in the way theirs is — it never
+throws, and records anything surprising as a warning. A file edited by hand
+between every step of the loop cannot have a parser that rejects it over a stray
+bullet. One judgement in there is worth stating: a `- key: value` line **after
+the prose has started is prose**, so an author can write a list in the narrative
+without inventing a field.
+
+With a parser, the storyboard becomes the running order. `assemble` rebuilds
+`index.html` from it, `packets` cuts each brief from it, and `compose` reads it
+to refuse to clobber work it did not write.
+
+Making that round trip lossless found a real bug on the first try: the
+storyboard wrote durations at two decimals, so re-assembling a composed project
+moved the back half of the film by 4ms and put every seam a frame off the scene
+it belonged to. Durations are milliseconds now, and the round trip is
+byte-identical.
+
+## The three steps
+
+- **`reel packets`** writes one bounded brief per scene plus `_role.md`. A scene
+  author reads exactly those two files and `frame.md`, and nothing else — not
+  the storyboard, not its siblings, not the skill catalogue. That bound is the
+  mechanism: it is what lets N scenes be authored at once without the workers
+  colliding, and what stops each one drifting into a different film.
+- **`reel assemble`** rebuilds the host from the storyboard and never touches a
+  scene. Change a `duration:` and the running order, the seams and the music
+  ducking all follow.
+- **`reel mark`** promotes a frame as its author returns. It rewrites the one
+  `status:` bullet rather than regenerating the file, because by then the
+  narrative and the shot sequence are the most valuable things in it.
+
+And **`reel status`** is the gate: it prints which scenes are still `built`. A
+film delivered with scenes still marked `built` is a film nobody authored.
+
+## What a Reel packet carries that a HyperFrames one cannot
+
+The shot facts. A HyperFrames frame worker invents its content; a Reel one is
+cutting against footage of a real app, and the driver wrote down every moment it
+caused — the exact second the button went down, what the demo claimed and when,
+where each narration line starts. Those are the difference between an edit that
+lands on the beat and one that is 200ms late, and there is no way to recover
+them by eye afterwards. So every footage packet carries its scene's beats,
+captions, sound cues and narration in the scene's own time.
+
+It also inlines the `<video>` and `<audio>` tags verbatim, lifted out of the
+scaffold. That is the one mistake in the whole pass that fails silently: a
+re-typed `src` renders a black rectangle and passes lint, and the paths are not
+derivable from the manifest because compose decides them.
+
+## Proving it
+
+The loop was run end to end on the example film: compose the scaffold, cut the
+packets, author the title card from its packet as a dispatched worker would,
+`reel mark 1`, `reel assemble`, `hyperframes check`.
+
+The authored card is a film strip travelling left with the wordmark cut out of
+it in a masked band — the thesis of the film as an image, rather than a headline
+centred on a background. `check` passes clean, and the card develops across its
+full duration instead of holding from 25%.
+
+Two guard rails earned their place while proving it. `compose` over an authored
+project now refuses by name — *"holds 1 authored scene, and compose would
+overwrite it: Title"* — and points at `assemble`. And `reel mark` exists at all
+because the orchestrator's own step had no command, so marking a frame meant
+hand-editing markdown in the middle of a dispatch loop.
+
+# 16. Time-coded shot sequences
+
+The authoring pass had a mechanism but handed authors the wrong unit. A brief
+that says *"Real footage of TaskFlow; 3 lower thirds, 3 beats"* tells you what
+the scene **is** and nothing about how it develops across fifteen seconds. What
+comes back is a picture: everything on screen inside the first quarter, then
+nothing.
+
+HyperFrames names that failure exactly — it is what reads as PowerPoint — and
+their fix is not advice, it is a change of unit. A frame's visual layer is *"a
+sequence of time windows paced to the voiceover, not a bag of effect tags"*.
+Written that way, front-loading becomes impossible, because every window is a
+phase somebody has to fill.
+
+## The split, and why Reel gets the better half for free
+
+In their loop a person writes the whole sequence, because nothing knows where
+the beats are. **Reel does.** The driver caused every moment in the film and
+wrote down when. So the window boundaries are not a creative decision here —
+they are arithmetic over recorded fact:
+
+```
+Scene 1 (0.00-5.93s): cue: "Capture work in a snap" - beat `hero` at 0.95s -
+  click at 3.15s, type 3.15-4.23s, click at 5.48s. TODO — what is on screen,
+  what moves, and where it sits.
+```
+
+Every number in that line was recorded at the instant the driver caused it.
+What goes *in* the window — what is on screen, what moves, where it sits — is
+the creative decision, and stays the author's.
+
+So `compose` writes the skeleton and marks the direction `TODO`. Not a
+placeholder out of laziness: a plausible-sounding line nobody wrote is worse
+than a blank, because it reads as a decision and gets built.
+
+Three judgements in the derivation are worth stating. Narration wins over
+captions where both exist, because their rule is that reveals pace to the
+*voiceover*. A cue landing under 1.5s after the last one is folded into it
+rather than opening a phase of its own — Reel's captions can land a second
+apart, and one window each is a sequence nobody can direct. And a cue with no
+room left before the end does not open a window at all.
+
+Cards have no recorded cues, so their windows come from the shape their rules
+describe: arrive, develop, **end on a held read**. A card too short for three
+gets two, because then the final reveal and the hold are the same window —
+which is their rule as well.
+
+## `## Video direction`, written once
+
+Their block, and their reason for it: *"it is what binds many independent shots
+into one film."* Scenes are authored in parallel by workers who cannot see each
+other's work, so anything true of the whole film has to live where all of them
+read. Reel can write a real one rather than a placeholder, because the look
+already decided the palette and the motion grammar is the composition contract.
+It ends on the negative list, both motion failure modes named: the **slideshow**
+(front-load then freeze) and the **screensaver** (everything drifting
+independently of any cue).
+
+## The unwritten window is a check, not a comment
+
+`reel status` counts the direction lines still `TODO`, and flags a scene marked
+`animated` that still has them:
+
+```
+!  3 Chapter                      animated  - 2 TODO
+   Frame 3 is marked animated with 2 direction line(s) still TODO.
+```
+
+That is the first genuinely *verifiable* signal in the pass. A `status:` bullet
+is a claim somebody made; an unwritten window is evidence. When the two
+disagree, the evidence wins — which is what catches a dispatch loop that ran
+ahead of its authors.
+
+## Still open
+
+- **Shader transitions between cards.** They are ruled out *between footage*,
+  not everywhere. A film that is all cards — a changelog, a feature announcement
+  — could run their displacement wipes, if the host learned to flatten a scene
+  into a `.scene` element the library recognises.
+- **Real narration end to end.** The plumbing is exercised only in its degraded
+  path here. With a key or a warm cache, `shoot` copies the per-line audio into
+  the shot directory and `compose` places it — but nothing in this session has
+  heard it.
+- **The `hyperframes-audio` chain.** Their EQ, compressor and voiceover *carve*
+  — ducking only the bands the voice occupies, rather than the whole bed — is a
+  better ducker than a volume tween, and `<hf-audio-group>` would let the bed
+  and the effects share one fader.
+- **Music that fits the look.** The bed is the same pad for every film. A
+  `brutal` cut and an `editorial` one want different beds, and the look already
+  knows which it is.

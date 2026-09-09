@@ -89,7 +89,6 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
       fades: [],
       say: [],
       sfx: [],
-      scenes: [],
       // Healing replays the flow without filming it, so nothing cosmetic runs.
       rec: new Recorder(page, null, timeline, {
         fps: spec.output.fps ?? 30,

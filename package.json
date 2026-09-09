@@ -38,8 +38,6 @@
     "test": "tsx scripts/run-tests.mts",
     "example": "tsx src/cli.ts record examples/taskflow/demo.reel.yaml",
     "test:author": "tsx scripts/author-selftest.ts",
-    "test:player": "tsx scripts/player-selftest.ts",
-    "test:branch": "tsx scripts/branch-selftest.ts",
     "ui": "tsx src/cli.ts ui",
     "studio:install": "npm --prefix studio install",
     "schema": "tsx scripts/gen-schema.ts",
@@ -71,8 +69,11 @@
     "typescript"
   ],
   "dependencies": {
+    "@hyperframes/core": "^0.8.31",
     "commander": "^12.1.0",
     "ffmpeg-static": "^5.2.0",
+    "gsap": "^3.15.0",
+    "hyperframes": "^0.8.31",
     "picocolors": "^1.1.1",
     "playwright-core": "^1.48.0",
     "sharp": "^0.33.5",
@@ -83,9 +84,9 @@
   "devDependencies": {
     "@types/node": "^22.9.0",
     "ajv": "^8.20.0",
+    "mermaid": "^11.17.2",
     "playwright": "^1.48.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "mermaid": "^11.17.2"
+    "typescript": "^5.6.3"
   }
 }

@@ -70,4 +70,3 @@ output:
   gifColors: 128
   gifFps: 16
   storyboard: out/showcase-storyboard
-  html: out/showcase.html # self-contained interactive click-through

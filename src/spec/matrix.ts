@@ -18,7 +18,7 @@ function fill(path: string, viewport: string, theme: string): string {
 /** Every output path a spec can write to, so templating covers all of them. */
 function outputPaths(spec: Spec): string[] {
   const o = spec.output;
-  const paths = [o.gif, o.mp4, o.webm, o.storyboard, o.html];
+  const paths = [o.gif, o.mp4, o.webm, o.storyboard];
   if (typeof o.subtitles === "string") paths.push(o.subtitles);
   return paths.filter((p): p is string => typeof p === "string");
 }
@@ -65,7 +65,6 @@ export function expandMatrix(loaded: LoadedSpec): Variant[] {
               mp4: o.mp4 && fill(o.mp4, name, theme),
               webm: o.webm && fill(o.webm, name, theme),
               storyboard: o.storyboard && fill(o.storyboard, name, theme),
-              html: o.html && fill(o.html, name, theme),
               subtitles:
                 typeof o.subtitles === "string" ? fill(o.subtitles, name, theme) : o.subtitles,
             },

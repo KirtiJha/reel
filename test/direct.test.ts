@@ -15,7 +15,7 @@ import { spokenTextOf } from "../src/narrate/spoken.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
 
 const steps = (s: unknown[]) =>
-  specSchema.parse({ steps: s, output: { html: "out/d.html" } }).steps as Step[];
+  specSchema.parse({ steps: s, output: { mp4: "o/d.mp4" } }).steps as Step[];
 
 describe("nameIn", () => {
   test("reads the words out of a selector", () => {
@@ -132,7 +132,7 @@ describe("direct", () => {
     );
     assert.ok(out.length > 0);
     assert.doesNotThrow(() =>
-      specSchema.parse({ steps: out.map((d) => d.step), output: { html: "o/d.html" } }),
+      specSchema.parse({ steps: out.map((d) => d.step), output: { mp4: "o/d.mp4" } }),
     );
   });
 });

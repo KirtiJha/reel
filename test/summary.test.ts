@@ -72,30 +72,7 @@ output: { gif: g.gif }
     assert.equal(s.url, "about:blank");
   });
 
-  test("expands a branch into its paths", () => {
-    const s = summarize(`
-name: B
-steps:
-  - goto: /
-  - branch:
-      prompt: Pick one
-      paths:
-        - label: First
-          steps: [{ click: "#a" }]
-        - label: Second
-          default: true
-          steps: [{ click: "#b" }, { caption: hi }]
-output: { html: d.html }
-`);
-    assert.equal(s.branchCount, 1);
-    const b = s.outline[1]!.branch!;
-    assert.equal(b.prompt, "Pick one");
-    assert.equal(b.paths.length, 2);
-    assert.equal(b.paths[1]!.isDefault, true, "the marked path is the default");
-    assert.equal(b.paths[1]!.steps.length, 2);
-    assert.equal(b.paths[0]!.steps[0]!.kind, "click");
-  });
-
+  
   test("counts matrix variants", () => {
     const s = summarize(`
 name: M

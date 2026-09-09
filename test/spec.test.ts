@@ -28,7 +28,7 @@ describe("specSchema", () => {
   });
 
   test("accepts any output target on its own", () => {
-    for (const key of ["gif", "mp4", "webm", "storyboard", "html"]) {
+    for (const key of ["gif", "mp4", "webm", "storyboard"]) {
       const r = outputSchema.safeParse({ [key]: "out/x" });
       assert.equal(r.success, true, `${key} should be a valid sole target`);
     }

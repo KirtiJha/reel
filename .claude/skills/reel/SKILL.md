@@ -1,6 +1,6 @@
 ---
 name: reel
-description: Build, render and verify a demo video of a web or terminal app with Reel — demos-as-code from a .reel.yaml spec. Use when asked to make, record, script or fix a product demo, screen recording, GIF or walkthrough video of an app; to write or edit a .reel.yaml; or when a `reel` command fails. Covers the spec grammar, the author→check→draft→record loop, narration, and the determinism rules.
+description: Build, render and verify a demo video of a web or terminal app with Reel — demos-as-code from a .reel.yaml spec. Use when asked to make, record, script or fix a product demo, screen recording, GIF or walkthrough video of an app; to write or edit a .reel.yaml; or when a `reel` command fails. Covers the spec grammar, the author→check→shoot loop, narration, and the determinism rules.
 allowed-tools: Bash(npm run dev -- *) Bash(npx reel *) Bash(reel *) Read Write Edit Glob Grep
 ---
 
@@ -23,13 +23,19 @@ npm run dev -- init                      # scaffold a spec (or write one by hand
 npm run dev -- check   <spec>            # headless: does every step still work?
 npm run dev -- narrate <spec>            # read the script; how long does it talk?
 npm run dev -- direct  <spec>            # propose camera + annotations
-npm run dev -- record  <spec> --draft    # quick preview: small, fast, video only
-npm run dev -- record  <spec>            # the real thing
+npm run dev -- shoot   <spec> --out shot # footage.mp4 + shots.json for a film
+npm run dev -- record  <spec> --draft    # standalone preview: small, fast, video only
+npm run dev -- record  <spec>            # a standalone film, no composition
 ```
 
 `npm run dev --` is the in-repo form. Installed, every command is `reel <verb>`.
 
-**Always `check` before `record`.** A check runs the same steps headlessly with
+**Two ways out.** `shoot` produces footage for a HyperFrames composition — that
+is the path for a real demo film, and `reel-compose` covers it. `record`
+produces a finished GIF/MP4 on its own, which is right when you want a quick
+artefact and no film.
+
+**Always `check` before either.** A check runs the same steps headlessly with
 no rendering — it finds a broken selector in seconds instead of five minutes
 into a recording.
 
@@ -86,6 +92,12 @@ Two grammar facts worth knowing without opening either file:
   wait costs no demo time and a fixed sleep is a race you will lose in CI.
 - **A caption speaks its own text** when narration is on. `say:` overrides it
   for the ear; `say: false` keeps one caption silent.
+
+For the title cards, chapter openers and claims — the parts that are *not*
+footage — use `scene:` and pick a `look:`, and read the **`reel-scene`** skill
+before designing one. It covers the ten looks, the seek contract a bespoke
+composition obeys, and `reel scene` / `reel looks`, which shoot a contact sheet
+so you can actually see the motion instead of guessing at it.
 
 ## Selectors
 

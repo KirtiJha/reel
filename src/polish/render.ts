@@ -66,7 +66,16 @@ export async function renderWithZoom(
   opts: EncodeOptions,
   zoom: ZoomRenderInput,
   beats: { label: string; t: number }[],
-): Promise<void> {
+  /**
+   * The encoded frame size.
+   *
+   * Reported rather than derived by callers: the output is the *canvas* when a
+   * device frame is on, the content box when it is not, and a terminal demo
+   * sizes from its grid rather than from `viewport`. A caller that recomputed
+   * this from the spec would be right for web demos and quietly wrong for the
+   * rest — which is exactly the bug the shot manifest shipped with.
+   */
+): Promise<{ width: number; height: number }> {
   const sharp = await loadSharp();
 
   // 1) Constant-fps expansion from the real timeline (holds included).
@@ -285,6 +294,8 @@ export async function renderWithZoom(
     }
     log.ok(`storyboard → ${targets.storyboard} (${n} frames)`);
   }
+
+  return { width: seqW, height: seqH };
 }
 
 /**

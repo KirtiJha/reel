@@ -210,6 +210,23 @@
           "default": "#6d8bff",
           "description": "Brand accent — used by the click ripple, the callout spotlight ring, and\nthe title-card rule. One knob so a repo's demos look like one product."
         },
+        "look": {
+          "type": "string",
+          "enum": [
+            "aurora",
+            "neon",
+            "swiss",
+            "editorial",
+            "brutal",
+            "terminal",
+            "blueprint",
+            "poster",
+            "mono",
+            "dawn"
+          ],
+          "default": "aurora",
+          "description": "The visual identity every `scene:` in this spec is drawn in — its ground,\nits ink, its type and its backdrop. One word, and the whole film changes\nregister.\n\nA look deliberately owns the scene's ground in preference to `background`\nabove, which is the *film's* ground (what sits behind a padded frame)\nrather than a scene's. What a look never owns is `accent`: every backdrop\nin the catalogue is built out of it, so the same look on two products does\nnot produce the same picture.\n\nWhen no look in the catalogue is the one you want, stop reaching for\ntemplates: `scene: { file: … }` renders a composition written for that one\ndemo, and the `reel-scene` skill teaches an agent how to write one."
+        },
         "speed": {
           "type": "number",
           "exclusiveMinimum": 0,
@@ -606,740 +623,566 @@
       "items": {
         "anyOf": [
           {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "goto": {
+            "type": "object",
+            "properties": {
+              "goto": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "goto"
+            ],
+            "additionalProperties": false,
+            "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "signIn": {
+                "anyOf": [
+                  {
                     "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "state": {
+                        "type": "string",
+                        "description": "Path to a Playwright storage state, relative to the spec."
+                      },
+                      "goto": {
+                        "type": "string",
+                        "description": "Where to land afterwards. Omit to reload wherever the demo is."
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "goto"
-                ],
-                "additionalProperties": false,
-                "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
-              },
-              {
+                ]
+              }
+            },
+            "required": [
+              "signIn"
+            ],
+            "additionalProperties": false,
+            "description": "Become signed in, mid-demo, without filming the sign-in.\n\n`storageState` authenticates a whole run, which is the right answer when\nthe demo starts inside the product. It is the wrong answer when the demo\nopens on a marketing page, a logged-out home screen or a paywall — the\nstory needs to begin signed *out* and cross over.\n\nThis applies a session saved by `reel capture --save-auth` to the running\nbrowser and reloads, so one continuous demo can show the logged-out page,\ncover the transition with a card, and carry on inside the product. No\njump cut between two renders, one camera path, one caption timeline.\n\nDeliberately a saved session rather than a scripted login: filming a real\nsign-in means a password in the spec, and there is no way to put one there\nfor exactly that reason."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "click": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "click"
+            ],
+            "additionalProperties": false,
+            "description": "Click an element. The cursor glides to it first, and the click ripples."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "dblclick": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "dblclick"
+            ],
+            "additionalProperties": false,
+            "description": "Double-click an element."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "drag": {
                 "type": "object",
                 "properties": {
-                  "signIn": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "type": "string",
+                        "minLength": 1
                       },
                       {
                         "type": "object",
                         "properties": {
-                          "state": {
-                            "type": "string",
-                            "description": "Path to a Playwright storage state, relative to the spec."
+                          "x": {
+                            "type": "number"
                           },
-                          "goto": {
-                            "type": "string",
-                            "description": "Where to land afterwards. Omit to reload wherever the demo is."
+                          "y": {
+                            "type": "number"
                           }
                         },
                         "required": [
-                          "state"
+                          "x",
+                          "y"
                         ],
                         "additionalProperties": false
                       }
-                    ]
+                    ],
+                    "description": "The element to drop onto, or a viewport point."
+                  },
+                  "ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 900,
+                    "description": "How long the travel takes on camera."
                   }
                 },
                 "required": [
-                  "signIn"
+                  "from",
+                  "to"
                 ],
-                "additionalProperties": false,
-                "description": "Become signed in, mid-demo, without filming the sign-in.\n\n`storageState` authenticates a whole run, which is the right answer when\nthe demo starts inside the product. It is the wrong answer when the demo\nopens on a marketing page, a logged-out home screen or a paywall — the\nstory needs to begin signed *out* and cross over.\n\nThis applies a session saved by `reel capture --save-auth` to the running\nbrowser and reloads, so one continuous demo can show the logged-out page,\ncover the transition with a card, and carry on inside the product. No\njump cut between two renders, one camera path, one caption timeline.\n\nDeliberately a saved session rather than a scripted login: filming a real\nsign-in means a password in the spec, and there is no way to put one there\nfor exactly that reason."
-              },
-              {
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "drag"
+            ],
+            "additionalProperties": false,
+            "description": "Drag one element onto another — a card between columns, a node onto a\ncanvas, a handle along a slider.\n\nThe gesture a click grammar cannot express, and the reason kanban boards,\nflow builders and range inputs could not be filmed at all. `to` is another\nelement, or a point when the destination is empty canvas with nothing to\nname."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "hover": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "hover"
+            ],
+            "additionalProperties": false,
+            "description": "Move the cursor onto an element without clicking — for menus and tooltips."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
                 "type": "object",
                 "properties": {
-                  "click": {
+                  "selector": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "delay": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 60,
+                    "description": "Per-character delay (ms) so typing reads naturally on camera."
                   }
                 },
                 "required": [
-                  "click"
+                  "selector",
+                  "text"
                 ],
-                "additionalProperties": false,
-                "description": "Click an element. The cursor glides to it first, and the click ripples."
-              },
-              {
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false,
+            "description": "Type into a field, character by character, so the typing reads on camera."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "press": {
                 "type": "object",
                 "properties": {
-                  "dblclick": {
+                  "selector": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "key": {
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "dblclick"
+                  "key"
                 ],
-                "additionalProperties": false,
-                "description": "Double-click an element."
-              },
-              {
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "press"
+            ],
+            "additionalProperties": false,
+            "description": "Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "fill": {
                 "type": "object",
                 "properties": {
-                  "drag": {
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "selector",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "fill"
+            ],
+            "additionalProperties": false,
+            "description": "Set a field's value in one go. Use `type` when the typing is the point."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "scrollTo": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "scrollTo"
+            ],
+            "additionalProperties": false,
+            "description": "Scroll an element into view. Use `scroll` for a filmed, cinematic pan."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "waitFor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
                     "type": "object",
                     "properties": {
-                      "from": {
+                      "selector": {
                         "type": "string",
                         "minLength": 1
                       },
-                      "to": {
+                      "timeout": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "selector",
+                      "timeout"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "waitFor"
+            ],
+            "additionalProperties": false,
+            "description": "State-based wait — the reliability moat. Never a raw sleep by default.\n\nThe object form exists for the rare wait that is legitimately long: a build\nrunning inside the page, a job whose progress the UI streams. The default\nis deliberately short so that a *broken* selector fails fast instead of\nstalling the recording, and raising it globally would trade that away for\nevery step. Naming the one step that needs longer keeps the rest honest."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "waitForUrl": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "waitForUrl"
+            ],
+            "additionalProperties": false,
+            "description": "Wait until the address bar matches — a substring, or a glob with `*`."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "waitForNetworkIdle": {
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "additionalProperties": false,
+            "description": "Wait for in-flight requests to settle. A last resort — prefer `waitFor`."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "caption": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "How long to hold this caption (ms). Omit to run until the next one."
+                      },
+                      "position": {
+                        "type": "string",
+                        "enum": [
+                          "bottom",
+                          "top"
+                        ],
+                        "default": "bottom"
+                      },
+                      "say": {
                         "anyOf": [
                           {
                             "type": "string",
                             "minLength": 1
                           },
                           {
-                            "type": "object",
-                            "properties": {
-                              "x": {
-                                "type": "number"
-                              },
-                              "y": {
-                                "type": "number"
-                              }
-                            },
-                            "required": [
-                              "x",
-                              "y"
-                            ],
-                            "additionalProperties": false
+                            "type": "boolean",
+                            "const": false
                           }
                         ],
-                        "description": "The element to drop onto, or a viewport point."
+                        "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
                       },
-                      "ms": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "default": 900,
-                        "description": "How long the travel takes on camera."
-                      }
-                    },
-                    "required": [
-                      "from",
-                      "to"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "drag"
-                ],
-                "additionalProperties": false,
-                "description": "Drag one element onto another — a card between columns, a node onto a\ncanvas, a handle along a slider.\n\nThe gesture a click grammar cannot express, and the reason kanban boards,\nflow builders and range inputs could not be filmed at all. `to` is another\nelement, or a point when the destination is empty canvas with nothing to\nname."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "hover": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "hover"
-                ],
-                "additionalProperties": false,
-                "description": "Move the cursor onto an element without clicking — for menus and tooltips."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "type": {
-                    "type": "object",
-                    "properties": {
-                      "selector": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "text": {
-                        "type": "string"
-                      },
-                      "delay": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "default": 60,
-                        "description": "Per-character delay (ms) so typing reads naturally on camera."
-                      }
-                    },
-                    "required": [
-                      "selector",
-                      "text"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "type"
-                ],
-                "additionalProperties": false,
-                "description": "Type into a field, character by character, so the typing reads on camera."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "press": {
-                    "type": "object",
-                    "properties": {
-                      "selector": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "key": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "key"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "press"
-                ],
-                "additionalProperties": false,
-                "description": "Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "fill": {
-                    "type": "object",
-                    "properties": {
-                      "selector": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "text": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "selector",
-                      "text"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "fill"
-                ],
-                "additionalProperties": false,
-                "description": "Set a field's value in one go. Use `type` when the typing is the point."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "scrollTo": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "scrollTo"
-                ],
-                "additionalProperties": false,
-                "description": "Scroll an element into view. Use `scroll` for a filmed, cinematic pan."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "waitFor": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      {
+                      "sayIn": {
                         "type": "object",
-                        "properties": {
-                          "selector": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "timeout": {
-                            "type": "integer",
-                            "exclusiveMinimum": 0
-                          }
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1
                         },
-                        "required": [
-                          "selector",
-                          "timeout"
-                        ],
-                        "additionalProperties": false
+                        "description": "The same line in other languages, for `output.languages`."
                       }
-                    ]
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "waitFor"
-                ],
-                "additionalProperties": false,
-                "description": "State-based wait — the reliability moat. Never a raw sleep by default.\n\nThe object form exists for the rare wait that is legitimately long: a build\nrunning inside the page, a job whose progress the UI streams. The default\nis deliberately short so that a *broken* selector fails fast instead of\nstalling the recording, and raising it globally would trade that away for\nevery step. Naming the one step that needs longer keeps the rest honest."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "waitForUrl": {
+                ]
+              }
+            },
+            "required": [
+              "caption"
+            ],
+            "additionalProperties": false,
+            "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "say": {
+                "anyOf": [
+                  {
                     "type": "string"
-                  }
-                },
-                "required": [
-                  "waitForUrl"
-                ],
-                "additionalProperties": false,
-                "description": "Wait until the address bar matches — a substring, or a glob with `*`."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "waitForNetworkIdle": {
-                    "type": "boolean",
-                    "default": true
-                  }
-                },
-                "additionalProperties": false,
-                "description": "Wait for in-flight requests to settle. A last resort — prefer `waitFor`."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "caption": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "How long to hold this caption (ms). Omit to run until the next one."
-                          },
-                          "position": {
-                            "type": "string",
-                            "enum": [
-                              "bottom",
-                              "top"
-                            ],
-                            "default": "bottom"
-                          },
-                          "say": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              {
-                                "type": "boolean",
-                                "const": false
-                              }
-                            ],
-                            "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
-                          },
-                          "sayIn": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "description": "The same line in other languages, for `output.languages`."
-                          }
-                        },
-                        "required": [
-                          "text"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "caption"
-                ],
-                "additionalProperties": false,
-                "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "say": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "text": {
-                            "type": "string"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Hold at least this long. The spoken line extends it when it needs to."
-                          },
-                          "sayIn": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "description": "The same line in other languages, for `output.languages`."
-                          }
-                        },
-                        "required": [
-                          "text"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "say"
-                ],
-                "additionalProperties": false,
-                "description": "Narration with nothing on screen — a line that carries the demo between two\nthings the viewer can see. Holds like a caption does, and draws nothing."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "beat": {
-                    "type": [
-                      "string",
-                      "boolean"
-                    ]
-                  }
-                },
-                "required": [
-                  "beat"
-                ],
-                "additionalProperties": false,
-                "description": "Hero frame: hold longer here. Optional label for the storyboard."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "card": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string"
-                          },
-                          "subtitle": {
-                            "type": "string"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "default": 1800
-                          },
-                          "say": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              {
-                                "type": "boolean",
-                                "const": false
-                              }
-                            ],
-                            "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
-                          },
-                          "sayIn": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "description": "The same line in other languages, for `output.languages`."
-                          }
-                        },
-                        "required": [
-                          "title"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "card"
-                ],
-                "additionalProperties": false,
-                "description": "A full-screen title card — the scene grammar a continuous screen recording\nlacks. Use it to open, to separate chapters, and to close."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "callout": {
+                  },
+                  {
                     "type": "object",
                     "properties": {
-                      "selector": {
-                        "type": "string",
-                        "minLength": 1
-                      },
                       "text": {
                         "type": "string"
                       },
                       "ms": {
                         "type": "integer",
                         "minimum": 0,
-                        "default": 1500
+                        "description": "Hold at least this long. The spoken line extends it when it needs to."
+                      },
+                      "sayIn": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "The same line in other languages, for `output.languages`."
                       }
                     },
                     "required": [
-                      "selector"
+                      "text"
                     ],
                     "additionalProperties": false
                   }
-                },
-                "required": [
-                  "callout"
-                ],
-                "additionalProperties": false,
-                "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "image": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Shorthand: just the path."
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "file": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "Path to the image, relative to the spec."
-                          },
-                          "as": {
-                            "type": "string",
-                            "enum": [
-                              "full",
-                              "inset",
-                              "split"
-                            ],
-                            "default": "full",
-                            "description": "`full` fills the frame, `inset` sits in a corner with the app still\nvisible behind it, `split` takes one half of the screen."
-                          },
-                          "corner": {
-                            "type": "string",
-                            "enum": [
-                              "tl",
-                              "tr",
-                              "bl",
-                              "br"
-                            ],
-                            "default": "br",
-                            "description": "Which corner an `inset` sits in."
-                          },
-                          "alt": {
-                            "type": "string",
-                            "description": "Alt text, for the interactive build. Describe what it shows."
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "default": 2600
-                          },
-                          "say": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              {
-                                "type": "boolean",
-                                "const": false
-                              }
-                            ],
-                            "description": "What the narrator says over it."
-                          },
-                          "sayIn": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "description": "The same line in other languages, for `output.languages`."
-                          }
-                        },
-                        "required": [
-                          "file"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "image"
-                ],
-                "additionalProperties": false,
-                "description": "Bring in something the app cannot show: a logo, an architecture diagram, a\nchart, a before-and-after.\n\nThe file is always local and always read from disk — a render never\nfetches. A network request would make the output depend on a server being\nup and on what it served that day, which breaks the byte-identical promise,\nand it would quietly pull someone else's artwork into a video you publish.\nStudio may download an asset while you are *editing*, into the spec's own\ndirectory, committed like any other input.\n\n`diagram:` is the same step with the picture written as text instead."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "diagram": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Shorthand: just the Mermaid source."
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "mermaid": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "The Mermaid source."
-                          },
-                          "as": {
-                            "type": "string",
-                            "enum": [
-                              "full",
-                              "inset",
-                              "split"
-                            ],
-                            "default": "full"
-                          },
-                          "corner": {
-                            "type": "string",
-                            "enum": [
-                              "tl",
-                              "tr",
-                              "bl",
-                              "br"
-                            ],
-                            "default": "br"
-                          },
-                          "theme": {
-                            "type": "string",
-                            "enum": [
-                              "dark",
-                              "light"
-                            ],
-                            "description": "Light or dark styling. Defaults to the spec's own theme."
-                          },
-                          "alt": {
-                            "type": "string"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "default": 3000
-                          },
-                          "say": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              {
-                                "type": "boolean",
-                                "const": false
-                              }
-                            ],
-                            "description": "Narration for one step: what to say, or `false` to keep it silent."
-                          },
-                          "sayIn": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "description": "The same line in other languages, keyed by code — `{ es: \"…\", ja: \"…\" }`.\n\nWritten by a person, because this is the copy a customer hears. Machine\ntranslation fills the gaps when a model is configured, but a demo is\nmarketing, and marketing copy nobody has read is not something to ship by\ndefault."
-                          }
-                        },
-                        "required": [
-                          "mermaid"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "diagram"
-                ],
-                "additionalProperties": false,
-                "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "scene": {
+                ]
+              }
+            },
+            "required": [
+              "say"
+            ],
+            "additionalProperties": false,
+            "description": "Narration with nothing on screen — a line that carries the demo between two\nthings the viewer can see. Holds like a caption does, and draws nothing."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "beat": {
+                "type": [
+                  "string",
+                  "boolean"
+                ]
+              }
+            },
+            "required": [
+              "beat"
+            ],
+            "additionalProperties": false,
+            "description": "Hero frame: hold longer here. Optional label for the storyboard."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
                     "type": "object",
                     "properties": {
-                      "template": {
-                        "type": "string",
-                        "enum": [
-                          "title",
-                          "chapter",
-                          "statement",
-                          "bullets"
-                        ],
-                        "description": "One of Reel's built-in compositions."
-                      },
-                      "file": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "…or your own HTML, relative to the spec."
-                      },
                       "title": {
                         "type": "string"
                       },
                       "subtitle": {
                         "type": "string"
                       },
-                      "eyebrow": {
-                        "type": "string",
-                        "description": "`chapter`: the small line above the title."
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 1800
                       },
-                      "items": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
+                      "say": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "boolean",
+                            "const": false
+                          }
+                        ],
+                        "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
+                      },
+                      "sayIn": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1
                         },
-                        "description": "`bullets`: the lines, revealed in sequence."
-                      },
-                      "attribution": {
+                        "description": "The same line in other languages, for `output.languages`."
+                      }
+                    },
+                    "required": [
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "card"
+            ],
+            "additionalProperties": false,
+            "description": "A full-screen title card — the scene grammar a continuous screen recording\nlacks. Use it to open, to separate chapters, and to close."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "callout": {
+                "type": "object",
+                "properties": {
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 1500
+                  }
+                },
+                "required": [
+                  "selector"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "callout"
+            ],
+            "additionalProperties": false,
+            "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "image": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Shorthand: just the path."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "file": {
                         "type": "string",
-                        "description": "`statement`: who said it."
+                        "minLength": 1,
+                        "description": "Path to the image, relative to the spec."
+                      },
+                      "as": {
+                        "type": "string",
+                        "enum": [
+                          "full",
+                          "inset",
+                          "split"
+                        ],
+                        "default": "full",
+                        "description": "`full` fills the frame, `inset` sits in a corner with the app still\nvisible behind it, `split` takes one half of the screen."
+                      },
+                      "corner": {
+                        "type": "string",
+                        "enum": [
+                          "tl",
+                          "tr",
+                          "bl",
+                          "br"
+                        ],
+                        "default": "br",
+                        "description": "Which corner an `inset` sits in."
+                      },
+                      "alt": {
+                        "type": "string",
+                        "description": "Alt text, for the interactive build. Describe what it shows."
                       },
                       "ms": {
                         "type": "integer",
                         "minimum": 0,
-                        "default": 3000
+                        "default": 2600
                       },
                       "say": {
                         "anyOf": [
@@ -1363,1486 +1206,535 @@
                         "description": "The same line in other languages, for `output.languages`."
                       }
                     },
+                    "required": [
+                      "file"
+                    ],
                     "additionalProperties": false
                   }
-                },
-                "required": [
-                  "scene"
-                ],
-                "additionalProperties": false,
-                "description": "A scene: an HTML composition, seeked frame by frame.\n\nFor the parts of a demo that were never footage — the title, a chapter\nopener, a claim between two sections. A `card` is the two-line version of\nthis; a scene is the version where the browser does the layout, so it can\nbe typeset, staggered and themed.\n\nMotion is a pure function of the seek position rather than a clock: Reel\nwrites `--in` and `--out` and the composition reads them. There is nothing\nto freeze, which is a stronger guarantee than freezing something.\n\n`file:` points at a composition of your own — HTML, CSS, and optionally a\n`window.__reelScene = { seek(p) {…} }` for motion the variables cannot\nexpress. Local files only: a render never fetches, and a composition is\ncode that runs in the page."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "transition": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Shorthand: how long the dip takes."
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "const": "fade",
-                            "default": "fade"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "default": 500
-                          },
-                          "color": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "What it dips to. Defaults to the spec's own background."
-                          }
-                        },
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "transition"
-                ],
-                "additionalProperties": false,
-                "description": "Dip the picture to a colour and back — a soft cut.\n\n`fade` is the one kind implemented, and the only one a single recording can\nexpress: a wipe or a push needs two shots to move between, and a demo is\none continuous stream. Joining two *finished* films that way is a different\njob, and one that would re-encode both."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "highlight": {
+                ]
+              }
+            },
+            "required": [
+              "image"
+            ],
+            "additionalProperties": false,
+            "description": "Bring in something the app cannot show: a logo, an architecture diagram, a\nchart, a before-and-after.\n\nThe file is always local and always read from disk — a render never\nfetches. A network request would make the output depend on a server being\nup and on what it served that day, which breaks the byte-identical promise,\nand it would quietly pull someone else's artwork into a video you publish.\nStudio may download an asset while you are *editing*, into the spec's own\ndirectory, committed like any other input.\n\n`diagram:` is the same step with the picture written as text instead."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "diagram": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Shorthand: just the Mermaid source."
+                  },
+                  {
                     "type": "object",
                     "properties": {
-                      "selector": {
+                      "mermaid": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The Mermaid source."
                       },
-                      "shape": {
+                      "as": {
                         "type": "string",
                         "enum": [
-                          "box",
-                          "circle",
-                          "underline"
+                          "full",
+                          "inset",
+                          "split"
                         ],
-                        "default": "box",
-                        "description": "`box` frames it, `circle` rings it, `underline` sits beneath it."
+                        "default": "full"
                       },
-                      "style": {
+                      "corner": {
                         "type": "string",
                         "enum": [
-                          "drawn",
-                          "clean"
+                          "tl",
+                          "tr",
+                          "bl",
+                          "br"
                         ],
-                        "default": "drawn",
-                        "description": "`drawn` looks sketched by hand; `clean` is a precise stroke."
+                        "default": "br"
                       },
-                      "label": {
+                      "theme": {
                         "type": "string",
-                        "description": "A few words beside the mark. Long text wants a `callout` instead."
+                        "enum": [
+                          "dark",
+                          "light"
+                        ],
+                        "description": "Light or dark styling. Defaults to the spec's own theme."
+                      },
+                      "alt": {
+                        "type": "string"
                       },
                       "ms": {
                         "type": "integer",
                         "minimum": 0,
-                        "default": 2600,
-                        "description": "How long it stays up. Ignored when `until` names a beat."
+                        "default": 3000
                       },
-                      "until": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "Keep it up until this beat, however many steps away that is — the\nreason a highlight is a span and not a hold. A beat that never happens\nleaves the mark up until the demo ends."
-                      }
-                    },
-                    "required": [
-                      "selector"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "highlight"
-                ],
-                "additionalProperties": false,
-                "description": "Mark an element without interrupting: the rest of the screen is untouched,\nthe camera does not move, and the demo keeps running underneath.\n\nThe counterpart to `callout`, not a replacement for it. A callout says\n*stop and look at this* — it dims the page and holds the film. A highlight\nsays *and notice this, as we go*, which is what a demo narrated over a\nworking app needs. Use both; they are different sentences.\n\nSeveral may be on screen at once, and one can outlive the step that drew it\n— see `until`."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "scroll": {
-                    "type": "object",
-                    "properties": {
-                      "to": {
+                      "say": {
                         "anyOf": [
                           {
                             "type": "string",
                             "minLength": 1
                           },
                           {
-                            "type": "number"
-                          }
-                        ]
-                      },
-                      "ms": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "default": 900
-                      }
-                    },
-                    "required": [
-                      "to"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "scroll"
-                ],
-                "additionalProperties": false,
-                "description": "Cinematic eased scroll — to an element, or to an absolute Y offset."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "zoom": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "const": "out"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "to": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "const": "output"
-                              },
-                              {
-                                "type": "string",
-                                "const": "cursor"
-                              },
-                              {
-                                "type": "string",
-                                "minLength": 1
-                              }
-                            ],
-                            "description": "A selector, or — in a terminal demo — `output` for the rows the last\ncommand wrote, `cursor` for the live prompt line, or `text=…` to\nframe whatever rows contain that text."
-                          },
-                          "level": {
-                            "type": "number",
-                            "minimum": 1,
-                            "maximum": 4,
-                            "description": "Magnification: 1 = whole viewport, 2 = half of it, …"
-                          },
-                          "ms": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Camera move duration (ms)."
-                          }
-                        },
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "zoom"
-                ],
-                "additionalProperties": false,
-                "description": "Explicit camera control, for when auto-zoom's choice isn't the story you're\ntelling. \"out\" is a wide establishing shot."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "expect": {
-                    "type": "object",
-                    "properties": {
-                      "selector": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "text": {
-                        "type": "string",
-                        "description": "The element's text must contain this."
-                      },
-                      "count": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Exactly this many elements must match."
-                      },
-                      "visible": {
-                        "type": "boolean",
-                        "default": true,
-                        "description": "Whether the element must be visible (default true)."
-                      }
-                    },
-                    "required": [
-                      "selector"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "required": [
-                  "expect"
-                ],
-                "additionalProperties": false,
-                "description": "An assertion. Unlike `waitFor` (which only proves an element appears), this\nchecks what the app actually rendered — so `reel check` is a real smoke\ntest, not just a selector-existence probe."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "hold": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                },
-                "required": [
-                  "hold"
-                ],
-                "additionalProperties": false,
-                "description": "Explicit pause — discouraged, but sometimes you want a deliberate hold."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "run": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "cmd": {
-                            "type": "string"
-                          },
-                          "input": {
-                            "type": "string",
-                            "description": "Text piped to stdin, for commands that prompt."
-                          },
-                          "expectCode": {
-                            "type": "integer",
-                            "description": "Fail the run unless the command exits with this code."
-                          },
-                          "replayMs": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Override the replay budget for this command (ms)."
-                          },
-                          "hidden": {
                             "type": "boolean",
-                            "default": false,
-                            "description": "Run the command off camera.\n\nFor the setup a demo needs but nobody wants to watch — seeding a\nfixture, creating a scratch directory, installing something. The\ncommand still runs and `expectCode` still applies, so it stays part of\nwhat `reel check` verifies; it simply never reaches the screen.\n\nNote that each command runs in its own shell, so `cd` in a hidden step\ndoes not carry into later ones. Set `terminal.cwd` for that."
+                            "const": false
                           }
-                        },
-                        "required": [
-                          "cmd"
                         ],
-                        "additionalProperties": false
+                        "description": "Narration for one step: what to say, or `false` to keep it silent."
+                      },
+                      "sayIn": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "description": "The same line in other languages, keyed by code — `{ es: \"…\", ja: \"…\" }`.\n\nWritten by a person, because this is the copy a customer hears. Machine\ntranslation fills the gaps when a model is configured, but a demo is\nmarketing, and marketing copy nobody has read is not something to ship by\ndefault."
                       }
-                    ]
+                    },
+                    "required": [
+                      "mermaid"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "run"
-                ],
-                "additionalProperties": false,
-                "description": "Type a command at the prompt, run it, and replay its output. The command\nreally runs — so like `expect`, this makes `reel check` a genuine smoke\ntest of the CLI, not a scripted illusion of one."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "expectOutput": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "expectOutput"
-                ],
-                "additionalProperties": false,
-                "description": "Assert the terminal screen contains this text."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "clear": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "clear"
-                ],
-                "additionalProperties": false,
-                "description": "Clear the terminal screen."
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "show": {
-                    "type": "string",
-                    "enum": [
-                      "terminal",
-                      "app"
-                    ]
-                  }
-                },
-                "required": [
-                  "show"
-                ],
-                "additionalProperties": false,
-                "description": "Switch between the terminal and the app underneath it."
+                ]
               }
-            ]
+            },
+            "required": [
+              "diagram"
+            ],
+            "additionalProperties": false,
+            "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
           },
           {
             "type": "object",
             "properties": {
-              "branch": {
+              "scene": {
                 "type": "object",
                 "properties": {
-                  "prompt": {
+                  "template": {
                     "type": "string",
-                    "default": "Choose a path",
-                    "description": "The question put to the viewer, e.g. \"What do you want to see?\""
+                    "enum": [
+                      "title",
+                      "chapter",
+                      "statement",
+                      "bullets"
+                    ],
+                    "description": "One of Reel's built-in compositions."
                   },
-                  "paths": {
+                  "file": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "…or your own HTML, relative to the spec."
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "type": "string"
+                  },
+                  "eyebrow": {
+                    "type": "string",
+                    "description": "`chapter`: the small line above the title."
+                  },
+                  "items": {
                     "type": "array",
                     "items": {
-                      "type": "object",
-                      "properties": {
-                        "label": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "default": {
-                          "type": "boolean",
-                          "default": false,
-                          "description": "The path the video follows, and the one pre-selected in the click-through.\nDefaults to the first path when none is marked."
-                        },
-                        "steps": {
-                          "type": "array",
-                          "items": {
-                            "anyOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "goto": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "goto"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Navigate. A path is resolved against `url`; a full URL is used as given."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "signIn": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "state": {
-                                            "type": "string",
-                                            "description": "Path to a Playwright storage state, relative to the spec."
-                                          },
-                                          "goto": {
-                                            "type": "string",
-                                            "description": "Where to land afterwards. Omit to reload wherever the demo is."
-                                          }
-                                        },
-                                        "required": [
-                                          "state"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "signIn"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Become signed in, mid-demo, without filming the sign-in.\n\n`storageState` authenticates a whole run, which is the right answer when\nthe demo starts inside the product. It is the wrong answer when the demo\nopens on a marketing page, a logged-out home screen or a paywall — the\nstory needs to begin signed *out* and cross over.\n\nThis applies a session saved by `reel capture --save-auth` to the running\nbrowser and reloads, so one continuous demo can show the logged-out page,\ncover the transition with a card, and carry on inside the product. No\njump cut between two renders, one camera path, one caption timeline.\n\nDeliberately a saved session rather than a scripted login: filming a real\nsign-in means a password in the spec, and there is no way to put one there\nfor exactly that reason."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "click": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
-                                },
-                                "required": [
-                                  "click"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Click an element. The cursor glides to it first, and the click ripples."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "dblclick": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
-                                },
-                                "required": [
-                                  "dblclick"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Double-click an element."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "drag": {
-                                    "type": "object",
-                                    "properties": {
-                                      "from": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "to": {
-                                        "anyOf": [
-                                          {
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          {
-                                            "type": "object",
-                                            "properties": {
-                                              "x": {
-                                                "type": "number"
-                                              },
-                                              "y": {
-                                                "type": "number"
-                                              }
-                                            },
-                                            "required": [
-                                              "x",
-                                              "y"
-                                            ],
-                                            "additionalProperties": false
-                                          }
-                                        ],
-                                        "description": "The element to drop onto, or a viewport point."
-                                      },
-                                      "ms": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 900,
-                                        "description": "How long the travel takes on camera."
-                                      }
-                                    },
-                                    "required": [
-                                      "from",
-                                      "to"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "drag"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Drag one element onto another — a card between columns, a node onto a\ncanvas, a handle along a slider.\n\nThe gesture a click grammar cannot express, and the reason kanban boards,\nflow builders and range inputs could not be filmed at all. `to` is another\nelement, or a point when the destination is empty canvas with nothing to\nname."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "hover": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
-                                },
-                                "required": [
-                                  "hover"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Move the cursor onto an element without clicking — for menus and tooltips."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "type": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "text": {
-                                        "type": "string"
-                                      },
-                                      "delay": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 60,
-                                        "description": "Per-character delay (ms) so typing reads naturally on camera."
-                                      }
-                                    },
-                                    "required": [
-                                      "selector",
-                                      "text"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "type"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Type into a field, character by character, so the typing reads on camera."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "press": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "key": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "key"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "press"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "fill": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "text": {
-                                        "type": "string"
-                                      }
-                                    },
-                                    "required": [
-                                      "selector",
-                                      "text"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "fill"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Set a field's value in one go. Use `type` when the typing is the point."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "scrollTo": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
-                                },
-                                "required": [
-                                  "scrollTo"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Scroll an element into view. Use `scroll` for a filmed, cinematic pan."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "waitFor": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "selector": {
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          "timeout": {
-                                            "type": "integer",
-                                            "exclusiveMinimum": 0
-                                          }
-                                        },
-                                        "required": [
-                                          "selector",
-                                          "timeout"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "waitFor"
-                                ],
-                                "additionalProperties": false,
-                                "description": "State-based wait — the reliability moat. Never a raw sleep by default.\n\nThe object form exists for the rare wait that is legitimately long: a build\nrunning inside the page, a job whose progress the UI streams. The default\nis deliberately short so that a *broken* selector fails fast instead of\nstalling the recording, and raising it globally would trade that away for\nevery step. Naming the one step that needs longer keeps the rest honest."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "waitForUrl": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "waitForUrl"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Wait until the address bar matches — a substring, or a glob with `*`."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "waitForNetworkIdle": {
-                                    "type": "boolean",
-                                    "default": true
-                                  }
-                                },
-                                "additionalProperties": false,
-                                "description": "Wait for in-flight requests to settle. A last resort — prefer `waitFor`."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "caption": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "text": {
-                                            "type": "string"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "How long to hold this caption (ms). Omit to run until the next one."
-                                          },
-                                          "position": {
-                                            "type": "string",
-                                            "enum": [
-                                              "bottom",
-                                              "top"
-                                            ],
-                                            "default": "bottom"
-                                          },
-                                          "say": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string",
-                                                "minLength": 1
-                                              },
-                                              {
-                                                "type": "boolean",
-                                                "const": false
-                                              }
-                                            ],
-                                            "description": "What the narrator says here, written for the ear rather than the eye.\nOmit and the caption's own text is spoken; `false` keeps this caption\nsilent, which is right for a label that reads better than it speaks."
-                                          },
-                                          "sayIn": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                              "type": "string",
-                                              "minLength": 1
-                                            },
-                                            "description": "The same line in other languages, for `output.languages`."
-                                          }
-                                        },
-                                        "required": [
-                                          "text"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "caption"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Caption overlay. A bare string shows until the next caption; the object\nform can set an explicit duration and screen position."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "say": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "text": {
-                                            "type": "string"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "Hold at least this long. The spoken line extends it when it needs to."
-                                          },
-                                          "sayIn": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                              "type": "string",
-                                              "minLength": 1
-                                            },
-                                            "description": "The same line in other languages, for `output.languages`."
-                                          }
-                                        },
-                                        "required": [
-                                          "text"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "say"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Narration with nothing on screen — a line that carries the demo between two\nthings the viewer can see. Holds like a caption does, and draws nothing."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "beat": {
-                                    "type": [
-                                      "string",
-                                      "boolean"
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "beat"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Hero frame: hold longer here. Optional label for the storyboard."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "card": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "title": {
-                                            "type": "string"
-                                          },
-                                          "subtitle": {
-                                            "type": "string"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "default": 1800
-                                          },
-                                          "say": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string",
-                                                "minLength": 1
-                                              },
-                                              {
-                                                "type": "boolean",
-                                                "const": false
-                                              }
-                                            ],
-                                            "description": "What the narrator says over the card. Unlike a caption there is no\nsensible fallback — a title read aloud sounds like a title — so a\ncard is silent unless this says otherwise."
-                                          },
-                                          "sayIn": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                              "type": "string",
-                                              "minLength": 1
-                                            },
-                                            "description": "The same line in other languages, for `output.languages`."
-                                          }
-                                        },
-                                        "required": [
-                                          "title"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "card"
-                                ],
-                                "additionalProperties": false,
-                                "description": "A full-screen title card — the scene grammar a continuous screen recording\nlacks. Use it to open, to separate chapters, and to close."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "callout": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "text": {
-                                        "type": "string"
-                                      },
-                                      "ms": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 1500
-                                      }
-                                    },
-                                    "required": [
-                                      "selector"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "callout"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Spotlight an element: everything else dims, an accent ring draws around it,\nand an optional label explains it. The camera eases toward it too."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "image": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Shorthand: just the path."
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "file": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "description": "Path to the image, relative to the spec."
-                                          },
-                                          "as": {
-                                            "type": "string",
-                                            "enum": [
-                                              "full",
-                                              "inset",
-                                              "split"
-                                            ],
-                                            "default": "full",
-                                            "description": "`full` fills the frame, `inset` sits in a corner with the app still\nvisible behind it, `split` takes one half of the screen."
-                                          },
-                                          "corner": {
-                                            "type": "string",
-                                            "enum": [
-                                              "tl",
-                                              "tr",
-                                              "bl",
-                                              "br"
-                                            ],
-                                            "default": "br",
-                                            "description": "Which corner an `inset` sits in."
-                                          },
-                                          "alt": {
-                                            "type": "string",
-                                            "description": "Alt text, for the interactive build. Describe what it shows."
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "default": 2600
-                                          },
-                                          "say": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string",
-                                                "minLength": 1
-                                              },
-                                              {
-                                                "type": "boolean",
-                                                "const": false
-                                              }
-                                            ],
-                                            "description": "What the narrator says over it."
-                                          },
-                                          "sayIn": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                              "type": "string",
-                                              "minLength": 1
-                                            },
-                                            "description": "The same line in other languages, for `output.languages`."
-                                          }
-                                        },
-                                        "required": [
-                                          "file"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "image"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Bring in something the app cannot show: a logo, an architecture diagram, a\nchart, a before-and-after.\n\nThe file is always local and always read from disk — a render never\nfetches. A network request would make the output depend on a server being\nup and on what it served that day, which breaks the byte-identical promise,\nand it would quietly pull someone else's artwork into a video you publish.\nStudio may download an asset while you are *editing*, into the spec's own\ndirectory, committed like any other input.\n\n`diagram:` is the same step with the picture written as text instead."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "diagram": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Shorthand: just the Mermaid source."
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "mermaid": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "description": "The Mermaid source."
-                                          },
-                                          "as": {
-                                            "type": "string",
-                                            "enum": [
-                                              "full",
-                                              "inset",
-                                              "split"
-                                            ],
-                                            "default": "full"
-                                          },
-                                          "corner": {
-                                            "type": "string",
-                                            "enum": [
-                                              "tl",
-                                              "tr",
-                                              "bl",
-                                              "br"
-                                            ],
-                                            "default": "br"
-                                          },
-                                          "theme": {
-                                            "type": "string",
-                                            "enum": [
-                                              "dark",
-                                              "light"
-                                            ],
-                                            "description": "Light or dark styling. Defaults to the spec's own theme."
-                                          },
-                                          "alt": {
-                                            "type": "string"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "default": 3000
-                                          },
-                                          "say": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string",
-                                                "minLength": 1
-                                              },
-                                              {
-                                                "type": "boolean",
-                                                "const": false
-                                              }
-                                            ],
-                                            "description": "Narration for one step: what to say, or `false` to keep it silent."
-                                          },
-                                          "sayIn": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                              "type": "string",
-                                              "minLength": 1
-                                            },
-                                            "description": "The same line in other languages, keyed by code — `{ es: \"…\", ja: \"…\" }`.\n\nWritten by a person, because this is the copy a customer hears. Machine\ntranslation fills the gaps when a model is configured, but a demo is\nmarketing, and marketing copy nobody has read is not something to ship by\ndefault."
-                                          }
-                                        },
-                                        "required": [
-                                          "mermaid"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "diagram"
-                                ],
-                                "additionalProperties": false,
-                                "description": "A diagram written as text: a Mermaid definition, rendered to an image and\ncached by content hash.\n\nThe point of writing it here rather than committing a PNG is that it diffs.\nA flowchart that changes in a pull request shows up as changed *words*, and\nthe picture is a build product like any other. The render is cached in\n`.reel-cache/diagram` and committed, so a checkout — or CI — draws the\ndiagram without a browser or a network."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "scene": {
-                                    "type": "object",
-                                    "properties": {
-                                      "template": {
-                                        "type": "string",
-                                        "enum": [
-                                          "title",
-                                          "chapter",
-                                          "statement",
-                                          "bullets"
-                                        ],
-                                        "description": "One of Reel's built-in compositions."
-                                      },
-                                      "file": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "…or your own HTML, relative to the spec."
-                                      },
-                                      "title": {
-                                        "type": "string"
-                                      },
-                                      "subtitle": {
-                                        "type": "string"
-                                      },
-                                      "eyebrow": {
-                                        "type": "string",
-                                        "description": "`chapter`: the small line above the title."
-                                      },
-                                      "items": {
-                                        "type": "array",
-                                        "items": {
-                                          "type": "string"
-                                        },
-                                        "description": "`bullets`: the lines, revealed in sequence."
-                                      },
-                                      "attribution": {
-                                        "type": "string",
-                                        "description": "`statement`: who said it."
-                                      },
-                                      "ms": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 3000
-                                      },
-                                      "say": {
-                                        "anyOf": [
-                                          {
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          {
-                                            "type": "boolean",
-                                            "const": false
-                                          }
-                                        ],
-                                        "description": "What the narrator says over it."
-                                      },
-                                      "sayIn": {
-                                        "type": "object",
-                                        "additionalProperties": {
-                                          "type": "string",
-                                          "minLength": 1
-                                        },
-                                        "description": "The same line in other languages, for `output.languages`."
-                                      }
-                                    },
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "scene"
-                                ],
-                                "additionalProperties": false,
-                                "description": "A scene: an HTML composition, seeked frame by frame.\n\nFor the parts of a demo that were never footage — the title, a chapter\nopener, a claim between two sections. A `card` is the two-line version of\nthis; a scene is the version where the browser does the layout, so it can\nbe typeset, staggered and themed.\n\nMotion is a pure function of the seek position rather than a clock: Reel\nwrites `--in` and `--out` and the composition reads them. There is nothing\nto freeze, which is a stronger guarantee than freezing something.\n\n`file:` points at a composition of your own — HTML, CSS, and optionally a\n`window.__reelScene = { seek(p) {…} }` for motion the variables cannot\nexpress. Local files only: a render never fetches, and a composition is\ncode that runs in the page."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "transition": {
-                                    "anyOf": [
-                                      {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "description": "Shorthand: how long the dip takes."
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "kind": {
-                                            "type": "string",
-                                            "const": "fade",
-                                            "default": "fade"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "default": 500
-                                          },
-                                          "color": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "description": "What it dips to. Defaults to the spec's own background."
-                                          }
-                                        },
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "transition"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Dip the picture to a colour and back — a soft cut.\n\n`fade` is the one kind implemented, and the only one a single recording can\nexpress: a wipe or a push needs two shots to move between, and a demo is\none continuous stream. Joining two *finished* films that way is a different\njob, and one that would re-encode both."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "highlight": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "shape": {
-                                        "type": "string",
-                                        "enum": [
-                                          "box",
-                                          "circle",
-                                          "underline"
-                                        ],
-                                        "default": "box",
-                                        "description": "`box` frames it, `circle` rings it, `underline` sits beneath it."
-                                      },
-                                      "style": {
-                                        "type": "string",
-                                        "enum": [
-                                          "drawn",
-                                          "clean"
-                                        ],
-                                        "default": "drawn",
-                                        "description": "`drawn` looks sketched by hand; `clean` is a precise stroke."
-                                      },
-                                      "label": {
-                                        "type": "string",
-                                        "description": "A few words beside the mark. Long text wants a `callout` instead."
-                                      },
-                                      "ms": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 2600,
-                                        "description": "How long it stays up. Ignored when `until` names a beat."
-                                      },
-                                      "until": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Keep it up until this beat, however many steps away that is — the\nreason a highlight is a span and not a hold. A beat that never happens\nleaves the mark up until the demo ends."
-                                      }
-                                    },
-                                    "required": [
-                                      "selector"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "highlight"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Mark an element without interrupting: the rest of the screen is untouched,\nthe camera does not move, and the demo keeps running underneath.\n\nThe counterpart to `callout`, not a replacement for it. A callout says\n*stop and look at this* — it dims the page and holds the film. A highlight\nsays *and notice this, as we go*, which is what a demo narrated over a\nworking app needs. Use both; they are different sentences.\n\nSeveral may be on screen at once, and one can outlive the step that drew it\n— see `until`."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "scroll": {
-                                    "type": "object",
-                                    "properties": {
-                                      "to": {
-                                        "anyOf": [
-                                          {
-                                            "type": "string",
-                                            "minLength": 1
-                                          },
-                                          {
-                                            "type": "number"
-                                          }
-                                        ]
-                                      },
-                                      "ms": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "default": 900
-                                      }
-                                    },
-                                    "required": [
-                                      "to"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "scroll"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Cinematic eased scroll — to an element, or to an absolute Y offset."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "zoom": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string",
-                                        "const": "out"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "to": {
-                                            "anyOf": [
-                                              {
-                                                "type": "string",
-                                                "const": "output"
-                                              },
-                                              {
-                                                "type": "string",
-                                                "const": "cursor"
-                                              },
-                                              {
-                                                "type": "string",
-                                                "minLength": 1
-                                              }
-                                            ],
-                                            "description": "A selector, or — in a terminal demo — `output` for the rows the last\ncommand wrote, `cursor` for the live prompt line, or `text=…` to\nframe whatever rows contain that text."
-                                          },
-                                          "level": {
-                                            "type": "number",
-                                            "minimum": 1,
-                                            "maximum": 4,
-                                            "description": "Magnification: 1 = whole viewport, 2 = half of it, …"
-                                          },
-                                          "ms": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "Camera move duration (ms)."
-                                          }
-                                        },
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "zoom"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Explicit camera control, for when auto-zoom's choice isn't the story you're\ntelling. \"out\" is a wide establishing shot."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "expect": {
-                                    "type": "object",
-                                    "properties": {
-                                      "selector": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "text": {
-                                        "type": "string",
-                                        "description": "The element's text must contain this."
-                                      },
-                                      "count": {
-                                        "type": "integer",
-                                        "minimum": 0,
-                                        "description": "Exactly this many elements must match."
-                                      },
-                                      "visible": {
-                                        "type": "boolean",
-                                        "default": true,
-                                        "description": "Whether the element must be visible (default true)."
-                                      }
-                                    },
-                                    "required": [
-                                      "selector"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "expect"
-                                ],
-                                "additionalProperties": false,
-                                "description": "An assertion. Unlike `waitFor` (which only proves an element appears), this\nchecks what the app actually rendered — so `reel check` is a real smoke\ntest, not just a selector-existence probe."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "hold": {
-                                    "type": "integer",
-                                    "minimum": 0
-                                  }
-                                },
-                                "required": [
-                                  "hold"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Explicit pause — discouraged, but sometimes you want a deliberate hold."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "run": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "object",
-                                        "properties": {
-                                          "cmd": {
-                                            "type": "string"
-                                          },
-                                          "input": {
-                                            "type": "string",
-                                            "description": "Text piped to stdin, for commands that prompt."
-                                          },
-                                          "expectCode": {
-                                            "type": "integer",
-                                            "description": "Fail the run unless the command exits with this code."
-                                          },
-                                          "replayMs": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "description": "Override the replay budget for this command (ms)."
-                                          },
-                                          "hidden": {
-                                            "type": "boolean",
-                                            "default": false,
-                                            "description": "Run the command off camera.\n\nFor the setup a demo needs but nobody wants to watch — seeding a\nfixture, creating a scratch directory, installing something. The\ncommand still runs and `expectCode` still applies, so it stays part of\nwhat `reel check` verifies; it simply never reaches the screen.\n\nNote that each command runs in its own shell, so `cd` in a hidden step\ndoes not carry into later ones. Set `terminal.cwd` for that."
-                                          }
-                                        },
-                                        "required": [
-                                          "cmd"
-                                        ],
-                                        "additionalProperties": false
-                                      }
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "run"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Type a command at the prompt, run it, and replay its output. The command\nreally runs — so like `expect`, this makes `reel check` a genuine smoke\ntest of the CLI, not a scripted illusion of one."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "expectOutput": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "expectOutput"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Assert the terminal screen contains this text."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "clear": {
-                                    "type": "boolean"
-                                  }
-                                },
-                                "required": [
-                                  "clear"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Clear the terminal screen."
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "show": {
-                                    "type": "string",
-                                    "enum": [
-                                      "terminal",
-                                      "app"
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "show"
-                                ],
-                                "additionalProperties": false,
-                                "description": "Switch between the terminal and the app underneath it."
-                              }
-                            ]
-                          },
-                          "minItems": 1
-                        }
-                      },
-                      "required": [
-                        "label",
-                        "steps"
-                      ],
-                      "additionalProperties": false
+                      "type": "string"
                     },
-                    "minItems": 2
+                    "description": "`bullets`: the lines, revealed in sequence."
+                  },
+                  "attribution": {
+                    "type": "string",
+                    "description": "`statement`: who said it."
+                  },
+                  "slate": {
+                    "type": "string",
+                    "description": "The corner slate — a short label in letter-spaced caps, held for the\nwhole scene. A film convention, and most of why a frame reads as\nproduced rather than presented. Something like `03 · Chapter`."
+                  },
+                  "slateNote": {
+                    "type": "string",
+                    "description": "The slate's second line — the product, a URL, a date."
+                  },
+                  "look": {
+                    "type": "string",
+                    "enum": [
+                      "aurora",
+                      "neon",
+                      "swiss",
+                      "editorial",
+                      "brutal",
+                      "terminal",
+                      "blueprint",
+                      "poster",
+                      "mono",
+                      "dawn"
+                    ],
+                    "description": "Which visual identity to draw this one scene in, overriding\n`polish.look`. Use it to let a chapter opener depart from the rest of\nthe film — a `statement` in `editorial` between two `neon` chapters\nlands harder than either would alone."
+                  },
+                  "ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 3000
+                  },
+                  "say": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "boolean",
+                        "const": false
+                      }
+                    ],
+                    "description": "What the narrator says over it."
+                  },
+                  "sayIn": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "The same line in other languages, for `output.languages`."
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "scene"
+            ],
+            "additionalProperties": false,
+            "description": "A scene: an HTML composition, seeked frame by frame.\n\nFor the parts of a demo that were never footage — the title, a chapter\nopener, a claim between two sections. A `card` is the two-line version of\nthis; a scene is the version where the browser does the layout, so it can\nbe typeset, staggered and themed.\n\nMotion is a pure function of the seek position rather than a clock: Reel\nwrites `--in` and `--out` and the composition reads them. There is nothing\nto freeze, which is a stronger guarantee than freezing something.\n\n`file:` points at a composition of your own — HTML, CSS, and optionally a\n`window.__reelScene = { seek(p) {…} }` for motion the variables cannot\nexpress. Local files only: a render never fetches, and a composition is\ncode that runs in the page."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "transition": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Shorthand: how long the dip takes."
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "fade",
+                        "default": "fade"
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 500
+                      },
+                      "color": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "What it dips to. Defaults to the spec's own background."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "transition"
+            ],
+            "additionalProperties": false,
+            "description": "Dip the picture to a colour and back — a soft cut.\n\n`fade` is the one kind implemented, and the only one a single recording can\nexpress: a wipe or a push needs two shots to move between, and a demo is\none continuous stream. Joining two *finished* films that way is a different\njob, and one that would re-encode both."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "highlight": {
+                "type": "object",
+                "properties": {
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "shape": {
+                    "type": "string",
+                    "enum": [
+                      "box",
+                      "circle",
+                      "underline"
+                    ],
+                    "default": "box",
+                    "description": "`box` frames it, `circle` rings it, `underline` sits beneath it."
+                  },
+                  "style": {
+                    "type": "string",
+                    "enum": [
+                      "drawn",
+                      "clean"
+                    ],
+                    "default": "drawn",
+                    "description": "`drawn` looks sketched by hand; `clean` is a precise stroke."
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "A few words beside the mark. Long text wants a `callout` instead."
+                  },
+                  "ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 2600,
+                    "description": "How long it stays up. Ignored when `until` names a beat."
+                  },
+                  "until": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Keep it up until this beat, however many steps away that is — the\nreason a highlight is a span and not a hold. A beat that never happens\nleaves the mark up until the demo ends."
                   }
                 },
                 "required": [
-                  "paths"
+                  "selector"
                 ],
                 "additionalProperties": false
               }
             },
             "required": [
-              "branch"
+              "highlight"
             ],
             "additionalProperties": false,
-            "description": "A fork the viewer chooses between, in the interactive build."
+            "description": "Mark an element without interrupting: the rest of the screen is untouched,\nthe camera does not move, and the demo keeps running underneath.\n\nThe counterpart to `callout`, not a replacement for it. A callout says\n*stop and look at this* — it dims the page and holds the film. A highlight\nsays *and notice this, as we go*, which is what a demo narrated over a\nworking app needs. Use both; they are different sentences.\n\nSeveral may be on screen at once, and one can outlive the step that drew it\n— see `until`."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "scroll": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 900
+                  }
+                },
+                "required": [
+                  "to"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "scroll"
+            ],
+            "additionalProperties": false,
+            "description": "Cinematic eased scroll — to an element, or to an absolute Y offset."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "zoom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "out"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "output"
+                          },
+                          {
+                            "type": "string",
+                            "const": "cursor"
+                          },
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        ],
+                        "description": "A selector, or — in a terminal demo — `output` for the rows the last\ncommand wrote, `cursor` for the live prompt line, or `text=…` to\nframe whatever rows contain that text."
+                      },
+                      "level": {
+                        "type": "number",
+                        "minimum": 1,
+                        "maximum": 4,
+                        "description": "Magnification: 1 = whole viewport, 2 = half of it, …"
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Camera move duration (ms)."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "zoom"
+            ],
+            "additionalProperties": false,
+            "description": "Explicit camera control, for when auto-zoom's choice isn't the story you're\ntelling. \"out\" is a wide establishing shot."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "expect": {
+                "type": "object",
+                "properties": {
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "The element's text must contain this."
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Exactly this many elements must match."
+                  },
+                  "visible": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether the element must be visible (default true)."
+                  }
+                },
+                "required": [
+                  "selector"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "expect"
+            ],
+            "additionalProperties": false,
+            "description": "An assertion. Unlike `waitFor` (which only proves an element appears), this\nchecks what the app actually rendered — so `reel check` is a real smoke\ntest, not just a selector-existence probe."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "hold": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "hold"
+            ],
+            "additionalProperties": false,
+            "description": "Explicit pause — discouraged, but sometimes you want a deliberate hold."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "run": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "cmd": {
+                        "type": "string"
+                      },
+                      "input": {
+                        "type": "string",
+                        "description": "Text piped to stdin, for commands that prompt."
+                      },
+                      "expectCode": {
+                        "type": "integer",
+                        "description": "Fail the run unless the command exits with this code."
+                      },
+                      "replayMs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Override the replay budget for this command (ms)."
+                      },
+                      "hidden": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Run the command off camera.\n\nFor the setup a demo needs but nobody wants to watch — seeding a\nfixture, creating a scratch directory, installing something. The\ncommand still runs and `expectCode` still applies, so it stays part of\nwhat `reel check` verifies; it simply never reaches the screen.\n\nNote that each command runs in its own shell, so `cd` in a hidden step\ndoes not carry into later ones. Set `terminal.cwd` for that."
+                      }
+                    },
+                    "required": [
+                      "cmd"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "run"
+            ],
+            "additionalProperties": false,
+            "description": "Type a command at the prompt, run it, and replay its output. The command\nreally runs — so like `expect`, this makes `reel check` a genuine smoke\ntest of the CLI, not a scripted illusion of one."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "expectOutput": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "expectOutput"
+            ],
+            "additionalProperties": false,
+            "description": "Assert the terminal screen contains this text."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "clear": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "clear"
+            ],
+            "additionalProperties": false,
+            "description": "Clear the terminal screen."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "show": {
+                "type": "string",
+                "enum": [
+                  "terminal",
+                  "app"
+                ]
+              }
+            },
+            "required": [
+              "show"
+            ],
+            "additionalProperties": false,
+            "description": "Switch between the terminal and the app underneath it."
           }
         ]
       },
@@ -2876,14 +1768,6 @@
         "storyboard": {
           "type": "string",
           "description": "Directory to drop a PNG storyboard (one image per beat)."
-        },
-        "html": {
-          "type": "string",
-          "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
-        },
-        "player": {
-          "type": "string",
-          "description": "The demo as a document: a self-contained page that re-performs the\nrecording instead of baking it into pixels.\n\nThe frames are the app's own, because those genuinely are a recording.\nEverything layered on top stays what it was — text is text, the camera is a\ntransform, an annotation is SVG — so the result is selectable,\ntranslatable, searchable and readable by a screen reader, none of which\nsurvives being burned into a video.\n\nNot a replacement for `mp4:`. A social platform takes a video; this is for\na README, a docs site or a pull-request preview, where being a document is\nan advantage rather than a format problem."
         },
         "fps": {
           "type": "integer",
@@ -3010,14 +1894,6 @@
               "storyboard": {
                 "type": "string",
                 "description": "Directory to drop a PNG storyboard (one image per beat)."
-              },
-              "html": {
-                "type": "string",
-                "description": "Self-contained interactive HTML: a click-through of the same demo, with\nhotspots on the elements you acted on. One file, no hosting."
-              },
-              "player": {
-                "type": "string",
-                "description": "The demo as a document: a self-contained page that re-performs the\nrecording instead of baking it into pixels.\n\nThe frames are the app's own, because those genuinely are a recording.\nEverything layered on top stays what it was — text is text, the camera is a\ntransform, an annotation is SVG — so the result is selectable,\ntranslatable, searchable and readable by a screen reader, none of which\nsurvives being burned into a video.\n\nNot a replacement for `mp4:`. A social platform takes a video; this is for\na README, a docs site or a pull-request preview, where being a document is\nan advantage rather than a format problem."
               },
               "fps": {
                 "type": "integer",

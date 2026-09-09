@@ -91,7 +91,6 @@ describe("expandMatrix", () => {
           mp4: "out/{theme}.mp4",
           webm: "out/{theme}.webm",
           storyboard: "out/sb-{theme}",
-          html: "out/{theme}.html",
           subtitles: "out/{theme}",
         },
         matrix: { themes: ["light", "dark"] },
@@ -101,7 +100,6 @@ describe("expandMatrix", () => {
     assert.equal(dark.mp4, "out/dark.mp4");
     assert.equal(dark.webm, "out/dark.webm");
     assert.equal(dark.storyboard, "out/sb-dark");
-    assert.equal(dark.html, "out/dark.html");
     assert.equal(dark.subtitles, "out/dark");
   });
 

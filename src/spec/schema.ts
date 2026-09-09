@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_THEME, THEME_NAMES, TERMINAL_THEMES } from "../terminal/themes.js";
+import { LOOK_NAMES } from "../scene/looks.js";
 
 /**
  * The Reel demo spec — the heart of the tool.
@@ -16,6 +17,15 @@ import { DEFAULT_THEME, THEME_NAMES, TERMINAL_THEMES } from "../terminal/themes.
 export const SPEC_VERSION = 1;
 
 const cssColor = z.string().min(1);
+
+/**
+ * The named visual identities a `scene:` can be drawn in.
+ *
+ * Enumerated from the catalogue rather than hand-listed, so adding a look to
+ * `src/scene/looks.ts` offers it in the spec, in the JSON Schema and in the
+ * Studio without a second edit — the same rule the step kinds follow.
+ */
+const lookName = z.enum(LOOK_NAMES as [string, ...string[]]);
 
 /** The browser window the demo is filmed in. */
 export const viewportSchema = z.object({
@@ -122,6 +132,22 @@ export const polishSchema = z.object({
    * the title-card rule. One knob so a repo's demos look like one product.
    */
   accent: cssColor.default("#6d8bff"),
+  /**
+   * The visual identity every `scene:` in this spec is drawn in — its ground,
+   * its ink, its type and its backdrop. One word, and the whole film changes
+   * register.
+   *
+   * A look deliberately owns the scene's ground in preference to `background`
+   * above, which is the *film's* ground (what sits behind a padded frame)
+   * rather than a scene's. What a look never owns is `accent`: every backdrop
+   * in the catalogue is built out of it, so the same look on two products does
+   * not produce the same picture.
+   *
+   * When no look in the catalogue is the one you want, stop reaching for
+   * templates: `scene: { file: … }` renders a composition written for that one
+   * demo, and the `reel-scene` skill teaches an agent how to write one.
+   */
+  look: lookName.default("aurora"),
   /**
    * Playback rate for every authored duration — holds, captions, typing, camera
    * moves. 2 renders the same demo in half the time; 0.5 slows it down. Real
@@ -331,26 +357,6 @@ export const outputSchema = z
     webm: z.string().optional(),
     /** Directory to drop a PNG storyboard (one image per beat). */
     storyboard: z.string().optional(),
-    /**
-     * Self-contained interactive HTML: a click-through of the same demo, with
-     * hotspots on the elements you acted on. One file, no hosting.
-     */
-    html: z.string().optional(),
-  /**
-   * The demo as a document: a self-contained page that re-performs the
-   * recording instead of baking it into pixels.
-   *
-   * The frames are the app's own, because those genuinely are a recording.
-   * Everything layered on top stays what it was — text is text, the camera is a
-   * transform, an annotation is SVG — so the result is selectable,
-   * translatable, searchable and readable by a screen reader, none of which
-   * survives being burned into a video.
-   *
-   * Not a replacement for `mp4:`. A social platform takes a video; this is for
-   * a README, a docs site or a pull-request preview, where being a document is
-   * an advantage rather than a format problem.
-   */
-  player: z.string().optional(),
     /** Frame rate for video (overrides preset). */
     fps: z.number().int().positive().max(60).optional(),
     /** Cap the output width in px (overrides preset). */
@@ -378,8 +384,8 @@ export const outputSchema = z
      */
     targetDuration: z.union([z.number().positive(), z.string()]).optional(),
   })
-  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html || o.player, {
-    message: "output must specify at least one of: gif, mp4, webm, storyboard, html, player",
+  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard, {
+    message: "output must specify at least one of: gif, mp4, webm, storyboard",
   });
 export type Output = z.infer<typeof outputSchema>;
 
@@ -776,6 +782,21 @@ const baseStepSchema = z.union([
       items: z.array(z.string()).optional(),
       /** `statement`: who said it. */
       attribution: z.string().optional(),
+      /**
+       * The corner slate — a short label in letter-spaced caps, held for the
+       * whole scene. A film convention, and most of why a frame reads as
+       * produced rather than presented. Something like `03 · Chapter`.
+       */
+      slate: z.string().optional(),
+      /** The slate's second line — the product, a URL, a date. */
+      slateNote: z.string().optional(),
+      /**
+       * Which visual identity to draw this one scene in, overriding
+       * `polish.look`. Use it to let a chapter opener depart from the rest of
+       * the film — a `statement` in `editorial` between two `neon` chapters
+       * lands harder than either would alone.
+       */
+      look: lookName.optional(),
       ms: durationMs.default(3000),
       /** What the narrator says over it. */
       say: sayText.optional(),
@@ -921,43 +942,21 @@ const baseStepSchema = z.union([
   /** Switch between the terminal and the app underneath it. */
   z.object({ show: z.enum(["terminal", "app"]) }).strict(),
 ]);
-/** Every step except `branch` — what a branch path may contain. */
-export type BaseStep = z.infer<typeof baseStepSchema>;
-
 /**
- * A fork the viewer chooses between.
+ * One action in the demo. Every step is a single-key object.
  *
- * Two constraints shape this. A video is linear, so the rendered GIF/MP4
- * follows one designated path while the interactive build carries the whole
- * tree. And the app has state, so alternate paths can't be spliced in after the
- * fact — Reel re-runs the steps leading up to the branch before recording each
- * one, which is the only approach that holds for an app it knows nothing about.
+ * There used to be a second member here — `branch`, a fork the viewer chose
+ * between in the interactive build. Both went together: with no click-through
+ * to carry the alternate paths, a `branch:` step would have recorded its
+ * default and silently dropped the rest, which is a worse thing to offer than
+ * nothing at all.
  */
-export const branchPathSchema = z.object({
-  label: z.string().min(1),
-  /**
-   * The path the video follows, and the one pre-selected in the click-through.
-   * Defaults to the first path when none is marked.
-   */
-  default: z.boolean().default(false),
-  steps: z.array(baseStepSchema).min(1),
-});
-export type BranchPath = z.infer<typeof branchPathSchema>;
-
-export const branchSchema = z.object({
-  /** The question put to the viewer, e.g. "What do you want to see?" */
-  prompt: z.string().default("Choose a path"),
-  paths: z.array(branchPathSchema).min(2),
-});
-export type BranchConfig = z.infer<typeof branchSchema>;
-
-/** One action in the demo. Every step is a single-key object. */
-export const stepSchema = z.union([
-  baseStepSchema,
-  /** A fork the viewer chooses between, in the interactive build. */
-  z.object({ branch: branchSchema }).strict(),
-]);
+export const stepSchema = baseStepSchema;
 export type Step = z.infer<typeof stepSchema>;
+
+/** Kept as an alias: a great deal of code names this type. */
+export type BaseStep = Step;
+
 /**
  * A step as a person writes it, before defaults are filled in.
  *
@@ -967,29 +966,9 @@ export type Step = z.infer<typeof stepSchema>;
  */
 export type StepInput = z.input<typeof stepSchema>;
 
-/** Narrow a step to a branch without repeating the shape check everywhere. */
-export function isBranch(step: Step): step is { branch: BranchConfig } {
-  return typeof step === "object" && step !== null && "branch" in step;
-}
-
-/** The path the video follows: the one marked default, else the first. */
-export function defaultPath(branch: BranchConfig): BranchPath {
-  return branch.paths.find((p) => p.default) ?? branch.paths[0]!;
-}
-
-/**
- * The steps that must run before `index` to put the app where that step expects
- * it. Earlier branches collapse to their default path, so a later branch's
- * alternates are recorded on top of the same trunk the video shows.
- */
+/** The steps that must run before `index` to put the app where that step expects it. */
 export function trunkSteps(steps: Step[], index: number): BaseStep[] {
-  const out: BaseStep[] = [];
-  for (let i = 0; i < index; i++) {
-    const s = steps[i]!;
-    if (isBranch(s)) out.push(...defaultPath(s.branch).steps);
-    else out.push(s);
-  }
-  return out;
+  return steps.slice(0, index);
 }
 
 /* ------------------------- Privacy & data ------------------------ */

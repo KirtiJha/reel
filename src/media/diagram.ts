@@ -6,7 +6,7 @@ import { chromium } from "playwright-core";
 import { DETERMINISTIC_LAUNCH_ARGS } from "../driver/determinism.js";
 import { log, ReelError } from "../util/log.js";
 import type { LoadedImage } from "./image.js";
-import { isBranch, type Step } from "../spec/schema.js";
+import type { Step } from "../spec/schema.js";
 
 /**
  * Diagrams written as text.
@@ -134,10 +134,6 @@ export function diagramSources(
 ): { source: string; theme: string }[] {
   const out: { source: string; theme: string }[] = [];
   for (const step of steps) {
-    if (isBranch(step)) {
-      for (const path of step.branch.paths) out.push(...diagramSources(path.steps as Step[], specTheme));
-      continue;
-    }
     if (!("diagram" in step)) continue;
     out.push(
       typeof step.diagram === "string"
