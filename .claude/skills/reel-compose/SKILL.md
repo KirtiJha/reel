@@ -103,9 +103,37 @@ that counts, a chapter card between sections, a callout on the element the
 narration is about. Do not ask `compose` for more options — reach into the
 composition, which is where HyperFrames intends the work to happen.
 
-Pick the look by looking: `npm run dev -- looks --accent "#22d3ee"` renders the
-catalogue side by side (`aurora` `neon` `swiss` `editorial` `brutal` `terminal`
-`blueprint` `poster` `mono` `dawn`).
+## Picking an identity
+
+```bash
+npm run dev -- looks --title "The demo's actual title"   # .reel/looks.png
+```
+
+Twenty-three identities, side by side, each in its own typeface and its own
+accent: Reel's ten looks (`aurora` `neon` `swiss` `editorial` `brutal`
+`terminal` `blueprint` `poster` `mono` `dawn`) and every installed HyperFrames
+**frame preset** (`biennale-yellow` `blockframe` `blue-professional`
+`bold-poster` `broadside` `capsule` `cartesian` `cobalt-grid` `code-editorial`
+`coral` `creative-mode` `daisy-days` `editorial-forest`). Open the image and
+choose; never pick from the names.
+
+Presets are read from the installed `hyperframes-creative` skill rather than
+copied into Reel — `npx hyperframes skills` installs them. Each is a complete
+design system: palette, a full type ramp, spacing, component recipes and prose
+about when it is right. Two things follow from using one:
+
+- **Its typography is fetched at compose time and written into the project.**
+  A render still never fetches; composing is authoring. Without this the preset
+  renders in a system fallback, which is to say as not itself. `--no-fonts`
+  skips it and falls back to `local()` faces.
+- **A preset gets no accent bloom and no plate.** Every one of them is derived
+  from print — paper, hairlines, graph grids, flat registers — and a radial glow
+  behind the headline is the single element that says "not this system".
+
+Their display type is the surprise: 4.6–10.4cqw, which is 88–200px at 1920 and
+roughly twice what feels right when guessing. "One very large element" is the
+rule it comes from, and Reel honours a preset's own scale rather than imposing
+its own.
 
 ## Catalog blocks
 

@@ -46,7 +46,15 @@ export interface Backdrop {
 export type Entrance = "rise" | "mask" | "scale" | "blur" | "slide";
 
 export interface Look {
-  name: LookName;
+  /**
+   * The catalogue key, or a frame preset's directory name.
+   *
+   * Widened from the catalogue union deliberately: a HyperFrames frame preset
+   * is a look by every behaviour that matters, and forcing it through the
+   * built-in enum would mean copying thirteen design systems into this file
+   * rather than reading them where they live.
+   */
+  name: string;
   /** One line: what it feels like, and what it is for. */
   mood: string;
   /** Dark grounds get light ink. Drives the vignette and plate polarity too. */
@@ -74,6 +82,20 @@ export interface Look {
   plate: number;
   /** The backdrop, built from the spec's accent. */
   backdrop: (accent: string) => Backdrop;
+  /**
+   * Display size as a percentage of the frame's width, when the look carries
+   * its own type scale.
+   *
+   * Frame presets do, and their numbers are the surprise: display steps run
+   * 4.6-10.4cqw, which is 88-200px at 1920 and roughly twice what feels right
+   * when guessing. "One very large element" is the rule it comes from. Reel's
+   * own looks leave this unset and fall back to a proportion of the frame.
+   */
+  displayCqw?: number;
+  /** Line height for display type, when the look specifies one. */
+  displayLineHeight?: number;
+  /** Label size in px at 1920 wide, when the look specifies one. */
+  labelPx?: number;
 }
 
 const SANS =

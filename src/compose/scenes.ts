@@ -42,6 +42,13 @@ export const HANDOFF = 0.5;
 
 const r3 = (n: number): number => Number(n.toFixed(3));
 
+/** Display size in px: the look's own scale, or a proportion of the frame. */
+function displayPx(look: Look, frame: Frame): number {
+  return look.displayCqw === undefined
+    ? Math.round(frame.height * 0.09)
+    : Math.round((look.displayCqw / 100) * frame.width);
+}
+
 /**
  * Families a browser resolves for itself, which must not be declared.
  *
@@ -63,6 +70,8 @@ const GENERIC_FAMILIES = new Set([
  * the truth, that the face is expected to be on the machine.
  */
 export function fontFaces(...stacks: string[]): string {
+  // A caller that vendored real faces passes them separately; this only covers
+  // the system stacks Reel's own looks use.
   const seen = new Set<string>();
   const out: string[] = [];
   for (const stack of stacks) {
@@ -131,27 +140,48 @@ ${js}
 `;
 }
 
-/** Shared chrome: the ground, the accent bloom, the corner slate. */
+/**
+ * Shared chrome: the ground, whatever the look puts behind the type, the slate.
+ *
+ * A look with `bloom: 0` gets **no accent glow and no plate** — it supplies its
+ * own backdrop instead. That distinction is the whole reason frame presets look
+ * like themselves: every one of them is derived from print, and a radial bloom
+ * behind the headline is the single element that says "not this system".
+ */
 function groundCss(look: Look, accent: string, frame: Frame): string {
-  return `      #root { position: absolute; inset: 0; overflow: hidden; background: ${look.ground};
-        font-family: ${look.display}; color: ${look.ink}; }
-      .bg { position: absolute; inset: -30%; pointer-events: none; }
+  const glow = look.bloom > 0
+    ? `      .bg { position: absolute; inset: -30%; pointer-events: none; }
       .b1 { background: radial-gradient(closest-side, ${accent}, transparent 70%);
         filter: blur(${Math.round(frame.height * 0.065)}px) saturate(2); opacity: .85; }
       .b2 { background: radial-gradient(closest-side, ${accent}, transparent 72%);
-        filter: blur(${Math.round(frame.height * 0.083)}px) saturate(1.7) hue-rotate(80deg); opacity: .6; }
-      .plate { position: absolute; inset: 8% 4%; pointer-events: none;
+        filter: blur(${Math.round(frame.height * 0.083)}px) saturate(1.7) hue-rotate(80deg); opacity: .6; }`
+    : look.backdrop(accent).css;
+  const plate = look.plate > 0
+    ? `      .plate { position: absolute; inset: 8% 4%; pointer-events: none;
         background: radial-gradient(ellipse at 50% 50%,
-          ${look.dark ? "rgba(0,0,0,.86)" : "rgba(255,255,255,.9)"} 0%, transparent 74%); }
+          ${look.dark ? "rgba(0,0,0,.86)" : "rgba(255,255,255,.9)"} 0%, transparent 74%); }`
+    : "";
+  return `      #root { position: absolute; inset: 0; overflow: hidden; background: ${look.ground};
+        font-family: ${look.display}; color: ${look.ink}; }
+${glow}
+${plate}
       .slate { position: absolute; top: 6%; left: 5%; text-align: left;
         padding-left: 14px; border-left: 3px solid ${accent}; }
-      .slate .k { font-family: ${look.label}; font-size: ${Math.round(frame.height * 0.014)}px;
+      .slate .k { font-family: ${look.label}; font-size: ${look.labelPx ?? Math.round(frame.height * 0.014)}px;
         letter-spacing: .26em; text-transform: uppercase; color: ${look.muted}; }
       .slate .n { color: ${look.ink}; font-size: ${Math.round(frame.height * 0.023)}px;
         font-weight: 650; margin-top: 4px; }
       /* The flash that carries a cut. White at the seam reads as an edit rather
          than as a dissolve, and it is what a hard transition is made of. */
       .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }`;
+}
+
+/** The layers behind the type — the look's own, or the accent bloom. */
+function groundMarkup(look: Look, accent: string): string {
+  const layers = look.bloom > 0
+    ? `        <div class="bg b1"></div>\n        <div class="bg b2"></div>`
+    : `        ${look.backdrop(accent).markup}`;
+  return look.plate > 0 ? `${layers}\n        <div class="plate"></div>` : layers;
 }
 
 /** A word split for the waterfall cascade. */
@@ -185,6 +215,8 @@ function waterfall(selector: string, from: number): string {
 export interface CardOptions {
   id: string;
   look: Look;
+  /** Ready-made @font-face rules for any vendored webfaces. */
+  faces?: string;
   accent: string;
   frame: Frame;
   duration: number;
@@ -199,24 +231,31 @@ export interface CardOptions {
 /** A title, chapter or closing card. */
 export function cardScene(o: CardOptions): string {
   const { look, accent, frame } = o;
-  const style = `${fontFaces(look.display, look.label)}
+  const style = `${o.faces || fontFaces(look.display, look.label)}
 ${groundCss(look, accent, frame)}
       .stack { position: absolute; inset: 0; display: flex; flex-direction: column;
         align-items: center; justify-content: center; text-align: center; padding: 8% 10%; }
-      .headline { position: relative; font-size: ${Math.round(frame.height * 0.09)}px;
+      /* A preset carries its own scale; Reel's own looks fall back to a
+         proportion of the frame. The presets' numbers are the surprising part —
+         display type at 4.6-10.4cqw is roughly twice what feels right when
+         guessing, and it is most of what separates their frames from a first
+         attempt. */
+      .headline { position: relative; font-size: ${displayPx(look, frame)}px;
         font-weight: ${look.displayWeight}; letter-spacing: ${look.tracking};
-        line-height: 1.04; text-transform: ${look.transform}; }
+        line-height: ${look.displayLineHeight ?? 1.04}; text-transform: ${look.transform}; }
       /* Hidden at rest: a waterfall entry reveals instantly rather than fading,
          so the resting state has to be invisible. */
       .headline .w { display: inline-block; opacity: 0; }
       .rule { position: relative; width: ${Math.round(frame.width * 0.075)}px; height: 4px;
         border-radius: 3px; background: ${accent}; margin: ${Math.round(frame.height * 0.03)}px 0; }
+      /* Body copy, never the display face: a subtitle set in a condensed
+         poster face at 27px is unreadable, and inheriting #root's font-family
+         is how it silently becomes one. */
       .sub { position: relative; color: ${look.muted}; opacity: 0;
-        font-size: ${Math.round(frame.height * 0.027)}px; max-width: 46ch; line-height: 1.45; }`;
+        font-family: ${look.label}; text-transform: none; letter-spacing: 0;
+        font-size: ${Math.round(frame.height * 0.026)}px; max-width: 52ch; line-height: 1.5; }`;
 
-  const markup = `        <div class="bg b1"></div>
-        <div class="bg b2"></div>
-        <div class="plate"></div>
+  const markup = `${groundMarkup(look, accent)}
 ${o.slate ? `        <div class="slate"><div class="k">${esc(o.slate)}</div>${o.slateNote ? `<div class="n">${esc(o.slateNote)}</div>` : ""}</div>` : ""}
         <div class="stack">
           <div class="headline">${words(o.headline)}</div>
@@ -236,8 +275,11 @@ ${o.subtitle ? `          <div class="sub">${esc(o.subtitle)}</div>` : ""}
       : "",
     // The bloom moves for the card's whole life. One that stops after the
     // entrance is exactly what makes a card read as a slide.
-    `          tl.fromTo("#root .b1", { scale: .88 }, { scale: 1.2, duration: ${r3(o.duration)}, ease: "none" }, 0);`,
-    `          tl.fromTo("#root .b2", { scale: 1.18 }, { scale: .94, duration: ${r3(o.duration)}, ease: "none" }, 0);`,
+    look.bloom > 0
+      ? `          tl.fromTo("#root .b1", { scale: .88 }, { scale: 1.2, duration: ${r3(o.duration)}, ease: "none" }, 0);\n` +
+        `          tl.fromTo("#root .b2", { scale: 1.18 }, { scale: .94, duration: ${r3(o.duration)}, ease: "none" }, 0);`
+      : `          tl.fromTo("#root .rule-top", { scaleX: 0 }, { scaleX: 1, duration: .7, ease: "power4.out" }, 0.05);\n` +
+        `          tl.fromTo("#root .rule-bottom", { scaleX: 0 }, { scaleX: 1, duration: .7, ease: "power4.out" }, 0.12);`,
     o.flashIn
       ? `          tl.fromTo("#root .flash", { opacity: .85 }, { opacity: 0, duration: .32, ease: "power2.out" }, 0);`
       : "",
@@ -255,6 +297,7 @@ ${o.subtitle ? `          <div class="sub">${esc(o.subtitle)}</div>` : ""}
 export interface ShotOptions {
   id: string;
   look: Look;
+  faces?: string;
   accent: string;
   frame: Frame;
   shot: ShotManifest;
@@ -274,7 +317,7 @@ export interface ShotOptions {
 export function shotScene(o: ShotOptions): string {
   const { look, accent, frame, shot } = o;
 
-  const style = `${fontFaces(look.display, look.label)}
+  const style = `${o.faces || fontFaces(look.display, look.label)}
 ${groundCss(look, accent, frame)}
       /* The ground shows through wherever the footage does not reach. */
       .shot { position: absolute; inset: 0; }
@@ -299,8 +342,7 @@ ${groundCss(look, accent, frame)}
     return { i, at: r3(c.t), dur: r3(dur), text: c.text };
   });
 
-  const markup = `        <div class="bg b1"></div>
-        <div class="bg b2"></div>
+  const markup = `${groundMarkup(look, accent)}
         <div class="shot" id="shot">
           <video id="${o.id}-v" src="${o.footage}" data-start="0" data-duration="${r3(shot.duration)}"
                  muted playsinline></video>
@@ -341,8 +383,10 @@ ${thirds
       `          tl.fromTo("#lt${t.i} .lt-text", { y: 20 }, { y: 0, duration: .4, ease: "power4.out" }, ${t.at});`,
       `          tl.to("#lt${t.i}", { opacity: 0, duration: .28, ease: "power2.in" }, ${r3(t.at + t.dur - 0.28)});`,
     ]),
-    `          tl.fromTo("#root .b1", { scale: .95 }, { scale: 1.12, duration: ${r3(shot.duration)}, ease: "none" }, 0);`,
-    `          tl.fromTo("#root .b2", { scale: 1.1 }, { scale: .97, duration: ${r3(shot.duration)}, ease: "none" }, 0);`,
+    look.bloom > 0
+      ? `          tl.fromTo("#root .b1", { scale: .95 }, { scale: 1.12, duration: ${r3(shot.duration)}, ease: "none" }, 0);\n` +
+        `          tl.fromTo("#root .b2", { scale: 1.1 }, { scale: .97, duration: ${r3(shot.duration)}, ease: "none" }, 0);`
+      : "",
     `          tl.fromTo("#root .flash", { opacity: .7 }, { opacity: 0, duration: .3, ease: "power2.out" }, 0);`,
     `          tl.to("#root", { opacity: 0, duration: ${HANDOFF}, ease: "power2.inOut" }, ${r3(shot.duration - HANDOFF)});`,
   ].join("\n");

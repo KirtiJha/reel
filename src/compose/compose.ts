@@ -1,7 +1,9 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { DEFAULT_LOOK, lookFor, type LookName } from "../scene/looks.js";
+import { DEFAULT_LOOK, isLook, lookFor, type Look } from "../scene/looks.js";
+import { fontRequests, loadPreset, presetToLook } from "../scene/presets.js";
+import { faceRules, reportFonts, vendorFonts } from "./fonts.js";
 import { escapeCss } from "../scene/templates.js";
 import { renderSfx, toWav, type SfxCue, type SfxKind } from "../encode/sfx.js";
 import type { ShotManifest } from "../shoot/manifest.js";
@@ -43,7 +45,10 @@ import { frameMd, hyperframesJson, indexHtml, storyboardMd } from "./project.js"
 
 export interface ComposeOptions {
   out: string;
-  look?: LookName;
+  /** A Reel look, or a HyperFrames frame preset. */
+  look?: string;
+  /** Skip fetching webfonts; presets then fall back to local() faces. */
+  noFonts?: boolean;
   accent: string;
   width: number;
   height: number;
@@ -82,7 +87,12 @@ export async function compose(
     );
   }
 
-  const look = lookFor(opts.look ?? DEFAULT_LOOK);
+  // A name is a Reel look if the catalogue has it, and a frame preset
+  // otherwise. Presets win nothing by being checked first: the built-ins are a
+  // closed set and a preset install can add names at any time.
+  const name0 = opts.look ?? DEFAULT_LOOK;
+  const look: Look = isLook(name0) ? lookFor(name0) : presetToLook(await loadPreset(name0));
+  const isPreset = !isLook(name0);
   const accent = escapeCss(opts.accent);
   const frame = { width: opts.width, height: opts.height };
   const shots = await Promise.all(manifestPaths.map(readManifest));
@@ -90,6 +100,20 @@ export async function compose(
 
   await mkdir(join(dir, FRAMES, "media"), { recursive: true });
   await vendorGsap(dir);
+
+  // --- typography ---------------------------------------------------------
+  // Fetched here, at authoring time, and written into the project. A render
+  // still never fetches — that rule is what makes the output self-contained —
+  // but composing is authoring, and without this step every frame preset would
+  // silently render in a system fallback, which is to say as not itself.
+  let faces = "";
+  if (isPreset && !opts.noFonts) {
+    const preset = await loadPreset(name0);
+    const requests = fontRequests(preset);
+    const vendored = await vendorFonts(join(dir, FRAMES), requests);
+    reportFonts(vendored, requests.map((r) => r.family));
+    faces = faceRules(vendored, requests.map((r) => r.family));
+  }
 
   // --- media --------------------------------------------------------------
   const chapters: Chapter[] = [];
@@ -143,6 +167,7 @@ export async function compose(
       accent,
       frame,
       duration: TITLE,
+      faces,
       headline: opts.title ?? name,
       ...(opts.subtitle ? { subtitle: opts.subtitle } : {}),
       slate: "Reel",
@@ -171,6 +196,7 @@ export async function compose(
           accent,
           frame,
           duration: CHAPTER,
+          faces,
           headline: ch.shot.name,
           slate: `${pad(ch.i + 1)} · Chapter`,
           flashIn: true,
@@ -194,6 +220,7 @@ export async function compose(
         accent,
         frame,
         shot: ch.shot,
+        faces,
         footage: ch.footage,
         ...(ch.sfx ? { sfx: ch.sfx } : {}),
         fit: ch.fit,
@@ -221,6 +248,7 @@ export async function compose(
       accent,
       frame,
       duration: OUTRO,
+      faces,
       headline: name,
       slate: "Reel",
     }),

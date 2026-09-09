@@ -4,7 +4,9 @@ import { chromium, type Browser } from "playwright-core";
 import sharp from "sharp";
 import { DETERMINISTIC_LAUNCH_ARGS } from "../driver/determinism.js";
 import { buildScene } from "../scene/scene.js";
-import { isLook, LOOK_NAMES, lookFor, type LookName } from "../scene/looks.js";
+import { isLook, LOOK_NAMES, lookFor, type Look, type LookName } from "../scene/looks.js";
+import { fontRequests, loadPresets, presetToLook, type Preset } from "../scene/presets.js";
+import { inlineFaceRules } from "../compose/fonts.js";
 import { isTemplate } from "../scene/scene.js";
 import type { SceneFields } from "../scene/templates.js";
 import { log, ReelError } from "../util/log.js";
@@ -194,16 +196,33 @@ export interface LookSheetOptions extends ShotOptions {
  * and a list of names in `--help` tells you nothing about what you are choosing
  * between — the same reason `reel themes` prints swatches instead of words.
  */
-export async function lookSheet(opts: LookSheetOptions): Promise<{ out: string; looks: LookName[] }> {
+export async function lookSheet(opts: LookSheetOptions): Promise<{ out: string; looks: string[] }> {
+  // Reel's own catalogue first, then every installed HyperFrames frame preset.
+  // They are shown together because the choice is one choice: a preset is a
+  // look by every behaviour that matters, and a list that hid them behind a
+  // flag would be a list nobody scrolled past.
+  const presets = await loadPresets();
+  const entries: { name: string; look: Look; preset?: Preset }[] = [
+    ...LOOK_NAMES.map((name) => ({ name: name as string, look: lookFor(name) })),
+    ...presets.map((p) => ({ name: p.name, look: presetToLook(p), preset: p })),
+  ];
+
   const browser = await chromium.launch({ headless: true, args: DETERMINISTIC_LAUNCH_ARGS });
   try {
     const tiles: { shot: Buffer; caption: string }[] = [];
-    for (const name of LOOK_NAMES) {
+    for (const { name, look, preset } of entries) {
+      // A preset drawn in a system fallback is not the identity you would be
+      // choosing between, so its real faces are fetched and inlined here.
+      const faces = preset ? await inlineFaceRules(fontRequests(preset)) : "";
+      // A preset is shown in its own accent, not the caller's. You are picking
+      // an identity here, and a preset repainted in someone else's colour is
+      // not the identity you would get.
+      const accent = preset ? preset.accent : opts.accent;
       const html = await buildScene(
         {
           template: "title",
-          fields: { title: opts.title, subtitle: lookFor(name).mood, slate: name.toUpperCase() },
-          style: { accent: opts.accent, look: name },
+          fields: { title: opts.title, subtitle: look.mood.slice(0, 110), slate: name.toUpperCase() },
+          style: { accent, resolved: look, ...(faces ? { faces } : {}) },
         },
         process.cwd(),
       );
@@ -215,8 +234,8 @@ export async function lookSheet(opts: LookSheetOptions): Promise<{ out: string; 
     }
     const out = resolve(opts.out);
     await sheet(tiles, Math.min(opts.width, 420), 3, out);
-    log.info(`Wrote ${out}`);
-    return { out, looks: [...LOOK_NAMES] };
+    log.info(`Wrote ${out} — ${entries.length} identities`);
+    return { out, looks: entries.map((e) => e.name) };
   } finally {
     await browser.close();
   }

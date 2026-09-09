@@ -56,6 +56,8 @@ interface SceneOpts {
 interface ComposeOpts {
   out: string;
   look?: string;
+  /** commander sets this false for --no-fonts. */
+  fonts?: boolean;
   accent: string;
   title?: string;
   subtitle?: string;
@@ -472,7 +474,8 @@ program
   .argument("<manifest...>", "one or more shots.json files — each becomes a chapter, in order")
   .description("Assemble that footage into a HyperFrames project — scenes, storyboard, design spec.")
   .option("-o, --out <dir>", "where the project goes", "film")
-  .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
+  .option("--look <name>", `a Reel look (${LOOK_NAMES.join(", ")}) or an installed HyperFrames frame preset`)
+  .option("--no-fonts", "skip fetching a preset's webfonts; declare them local() instead")
   .option("--accent <color>", "brand accent the cards are built from", "#6d8bff")
   .option("--title <text>", "opening card headline (defaults to the spec's name)")
   .option("--subtitle <text>", "opening card subtitle")
@@ -483,7 +486,8 @@ program
       const [width, height] = parseSize(opts.size);
       const res = await compose(manifest, {
         out: opts.out,
-        ...(opts.look ? { look: opts.look as never } : {}),
+        ...(opts.look ? { look: opts.look } : {}),
+        ...(opts.fonts === false ? { noFonts: true } : {}),
         accent: opts.accent,
         width,
         height,

@@ -34,6 +34,7 @@ import {
   DEFAULT_LOOK,
   entranceCss,
   lookFor,
+  type Look,
   type LookName,
 } from "./looks.js";
 
@@ -54,6 +55,16 @@ export interface SceneStyle {
    * outgrown templates and wants `scene: { file: … }`.
    */
   look?: LookName;
+  /**
+   * An already-resolved look.
+   *
+   * How a HyperFrames frame preset reaches a scene: presets are read from an
+   * installed skill rather than enumerated here, so they cannot be named by the
+   * catalogue enum, but they are looks in every other respect.
+   */
+  resolved?: Look;
+  /** Extra `@font-face` rules — inlined webfaces for a preset's typography. */
+  faces?: string;
 }
 
 export interface SceneFields {
@@ -94,7 +105,7 @@ export function renderTemplate(
   fields: SceneFields,
   style: SceneStyle,
 ): string {
-  const look = lookFor(style.look ?? DEFAULT_LOOK);
+  const look = style.resolved ?? lookFor(style.look ?? DEFAULT_LOOK);
   const accent = escapeCss(style.accent);
   const backdrop = look.backdrop(accent);
 
@@ -105,9 +116,12 @@ export function renderTemplate(
   const glow = (px: number) => `0 0 calc(var(--in) * ${Math.round(px * look.bloom)}px)`;
 
   const base = `
+${style.faces ?? ""}
     :root { --p: 0; --in: 0; --out: 1; }
     * { box-sizing: border-box; margin: 0; }
     html, body { height: 100%; overflow: hidden; }
+    /* So a preset's cqw type scale resolves against the frame. */
+    body { container-type: inline-size; }
     body {
       position: relative;
       display: flex; align-items: center; justify-content: center;
@@ -151,7 +165,7 @@ ${plateCss(look.plate, look.dark)}
 
     /* --- type ----------------------------------------------------------- */
     .title {
-      font-size: clamp(34px, 7.2vw, 104px);
+      font-size: ${look.displayCqw === undefined ? "clamp(34px, 7.2vw, 104px)" : `${look.displayCqw}cqw`};
       font-weight: ${look.displayWeight};
       letter-spacing: ${look.tracking};
       text-transform: ${look.transform};
