@@ -53,16 +53,11 @@ describe("what an editor gets", () => {
   });
 
   test("enumerates the step kinds", async () => {
-    const kinds = (await committed()).properties.steps.items.anyOf[0].anyOf as Json[];
+    const kinds = (await committed()).properties.steps.items.anyOf as Json[];
     const names = kinds.map((k) => Object.keys(k.properties)[0]);
     for (const kind of ["goto", "click", "type", "waitFor", "expect", "caption", "run", "beat"]) {
       assert.ok(names.includes(kind), `missing step kind ${kind}`);
     }
-  });
-
-  test("branch steps are part of the grammar", async () => {
-    const step = (await committed()).properties.steps.items.anyOf[1] as Json;
-    assert.ok(step.properties.branch, "a branch step should be offered alongside the rest");
   });
 
   test("closed enums are enumerated, so the value is completed too", async () => {
@@ -77,7 +72,7 @@ describe("what an editor gets", () => {
     const c = await committed();
     assert.ok(c.properties.url.description, "url should be documented");
     assert.ok(c.properties.polish.properties.zoom.description, "polish.zoom should be documented");
-    const kinds = c.properties.steps.items.anyOf[0].anyOf as Json[];
+    const kinds = c.properties.steps.items.anyOf as Json[];
     const undocumented = kinds.filter((k) => !k.description).map((k) => Object.keys(k.properties)[0]);
     assert.deepEqual(undocumented, [], "every step kind should describe itself on hover");
   });

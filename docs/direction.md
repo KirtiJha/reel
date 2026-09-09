@@ -1209,3 +1209,77 @@ and Reel already owned the synthesis.
 - **The deeper one:** `compose` is still a generator. It emits a better
   structure now, and an agent can edit any single scene — but nothing forces the
   per-project authoring pass that makes their showcase output what it is.
+
+---
+
+# Part 12 — The deletion pass
+
+## What went, and why it had to
+
+The rescope added a second pipeline without removing the first, and a repository
+that tells two stories about what it is teaches neither. This removes the half
+the rescope replaced.
+
+| Removed | Why |
+| --- | --- |
+| `reel ci` + the GitHub Action (`action.yml`) | The whole thing was a drift gate: run every spec, regenerate committed media, fail the build when it moved. That is not what Reel is for now. |
+| `reel diff`, `src/diff/` | Pixel comparison of two renders. Only ever a review aid for committed media. |
+| `reel review`, `src/review/` | Model-judged verdicts on a changed render. Same. |
+| Fingerprints, stamps, `--if-changed` | Skipping a render when nothing changed paid for itself only in CI. |
+| `src/encode/html.ts`, `player.ts`, `document.ts` | The interactive click-through and the document build. A HyperFrames composition supersedes both. |
+| The `branch` step, `src/driver/branches.ts` | Went with the click-through — see below. |
+| `scripts/{player,branch}-selftest.ts`, `npm run test:{player,branch}` | Nothing left to test. |
+
+Roughly 1,500 lines of source, plus their tests and two examples.
+
+## The one that was not merely dead
+
+`branch:` still *ran*. With no click-through to carry the alternate paths it
+would have recorded its default and silently dropped the rest — a spec that
+declares three paths, gets one, and is told nothing. That is worse than not
+offering the feature, which is why it went with the build that gave it meaning
+rather than being left as a stub.
+
+## What was kept, and the judgement in each
+
+- **`reel record`.** It shares 95% of its machinery with `shoot` and produces a
+  finished GIF/MP4 with no composition involved, which is genuinely the right
+  tool for a quick artefact. Deleting it would also have meant deleting the
+  burn-in compositors — captions, device frame, fades, highlights — and with
+  them a large part of the spec grammar that existing specs use. Removing a
+  working feature to make a narrative tidier is not a good trade. It is demoted
+  in the README, not removed.
+- **`reel check`.** It *was* the drift gate, but it is also a cheap smoke test:
+  run every step headlessly, exit 1 if one cannot complete. Before a shoot that
+  takes minutes, that is worth thirty seconds. Reframed rather than deleted.
+- **`imageFiles` / `signInStates`**, rescued into `src/spec/inputs.ts`. They
+  were part of the fingerprint and answer a question that outlives it — *what
+  does this spec read from disk?* — and one is security-adjacent: a storage
+  state is a bearer credential, and knowing which files a spec will open is how
+  you notice one is committed.
+- **The Studio's beat strip**, repointed from the render stamp to the shot
+  manifest. The manifest is the better source anyway: it is written by the drive
+  that caused the beats rather than derived from the media afterwards.
+
+## What it cost to do
+
+The linter and the type checker did the work. The removals cascaded through
+`isBranch` in eight files, `output.html` through the matrix expander and the
+Studio summary, and `Scene`/`snap()` through every step handler — none of which
+would have been findable by grep alone, and all of which the compiler named.
+
+One real mistake on the way: the first cut at the schema deleted the region
+between "every step except `branch`" and the privacy section, which contained
+the step union itself, not only the branch grammar. Caught immediately by
+`tsc`, restored from git, redone precisely.
+
+763 tests pass. `reel shoot`, `reel compose` and `hyperframes check` were all
+re-run end to end afterwards — 0 errors, 0 warnings, 11/11 WCAG AA — because a
+deletion pass that leaves the pipeline broken is not a deletion pass.
+
+## What CI does now
+
+Typecheck and unit tests on Linux and Windows — Windows because that is where
+Reel's process handling is thinnest, since app and terminal teardown both signal
+a process group and Windows has none — plus the capture self-test on Linux,
+which needs a browser. No media is regenerated, committed or policed.

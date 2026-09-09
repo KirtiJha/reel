@@ -10,7 +10,7 @@ import {
   sameOrigin,
   type StorageState,
 } from "../src/driver/auth.js";
-import { signInStates } from "../src/spec/fingerprint.js";
+import { signInStates } from "../src/spec/inputs.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
 
 const HOUR = 3_600_000;
@@ -211,21 +211,6 @@ describe("a signIn file is an input to the render", () => {
       signInStates(parse([{ signIn: ".auth/a.json" }, { signIn: { state: ".auth/b.json" } }])),
       [".auth/a.json", ".auth/b.json"],
     );
-  });
-
-  test("including inside a branch, whose paths are recorded too", () => {
-    const steps = parse([
-      {
-        branch: {
-          prompt: "Which?",
-          paths: [
-            { label: "Admin", steps: [{ signIn: ".auth/admin.json" }] },
-            { label: "User", steps: [{ signIn: ".auth/user.json" }] },
-          ],
-        },
-      },
-    ]);
-    assert.deepEqual(signInStates(steps), [".auth/admin.json", ".auth/user.json"]);
   });
 
   test("a spec with no signIn contributes nothing", () => {

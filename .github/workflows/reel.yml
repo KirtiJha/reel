@@ -1,18 +1,14 @@
-# Reel — keep your demo media honest.
+# Reel's own CI.
 #
-# On PRs: fail the build if any demo step can't complete (drift detection), and
-# regenerate the README media so the change shows up as an image diff on the PR
-# itself — reviewers see what the demo now looks like without leaving the diff.
-# On push to main: regenerate and commit, so the media is never stale.
+# Deliberately small. This repository used to run Reel's GitHub Action against
+# itself on every pull request — drift-checking every example, regenerating the
+# README media and committing it back — and all of that went with the rescope:
+# Reel shoots footage now, HyperFrames cuts the film, and there is no
+# byte-identical media in the repository left to police.
 #
-# This only works because Reel's output is deterministic (see driver/timeline.ts):
-# identical app + identical spec produce identical bytes, so a media change in a
-# diff means the demo really changed, not that a runner was slow.
-#
-# SECURITY: `reel record` executes the spec's `run.cmd` in a shell. Never run an
-# untrusted spec (one from a fork's PR) in a job that holds write permissions or
-# secrets. The preview job below is deliberately restricted to same-repo PRs;
-# set REEL_NO_EXEC=1 to refuse to spawn `run.cmd` at all.
+# What remains is what a library owes its users: does it compile, do its tests
+# pass, and does it do both on the platform where its process handling is
+# thinnest.
 name: reel
 
 on:
@@ -21,115 +17,39 @@ on:
     branches: [main]
 
 jobs:
-  # Reel is published to npm with no OS constraint, so "works on Linux" is not
-  # the promise being made. Windows is where that promise is thinnest: the app
-  # and terminal teardown both signal a process group, which Windows does not
-  # have, so a command's children can outlive the command there. This job is
-  # what turns that from an assumption into a result.
-  #
-  # Unit tests only — recording needs a browser and ffmpeg, and the demo job
-  # below covers that on the platform CI actually renders media with.
   test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
     strategy:
-      # One platform failing should still report the other, or a Windows-only
-      # break looks like a break everywhere.
       fail-fast: false
       matrix:
+        # Reel is published with no OS constraint, so "works on Linux" is not
+        # the promise being made. Windows is where that promise is thinnest:
+        # app and terminal teardown both signal a process group, which Windows
+        # does not have, so a command's children can outlive the command there.
         os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
-      # Types are checked nowhere else in CI; a build that only breaks at
-      # publish time breaks for whoever runs `npm install` first.
       - run: npm run typecheck
       - run: npm test
 
-  demo:
+  # Capture writes specs; the only test that matters is whether the driver can
+  # replay what it wrote. Needs a browser, so it runs on Linux alone.
+  selftest:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # commits regenerated media
-      pull-requests: write # posts the preview comment
     steps:
-      # For same-repo PRs, check out the PR branch itself so regenerated media
-      # can be committed back onto it.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-
       - run: npm ci
-
-      # Reel's own action, built from this checkout rather than from npm. An
-      # action its author never runs is one that breaks quietly between
-      # releases, and this is the only way to notice before a user does.
-      #
-      # Pass one: does every demo in the repository still run at all? Nothing is
-      # rendered, so a fork's pull request gets the drift check safely.
-      - name: Drift check — every demo
-        uses: ./
-        with:
-          version: local
-          specs: examples/**/*.reel.yaml
-          mode: check
-
-      # Pass two: regenerate the README media, say what changed, and commit it
-      # back. `review` needs a model to judge; without the secret it still
-      # locates the changes and says plainly that nothing judged them.
-      - name: Regenerate and review the README demo
-        id: demo
-        uses: ./
-        with:
-          version: local
-          specs: examples/taskflow/showcase.reel.yaml
-          mode: record
-          review: true
-          comment: true
-          commit: true
-          commit-paths: docs
-          # Media moving is the expected outcome of changing the app. Only a
-          # caption the UI no longer matches is worth failing a build over.
-          fail-on: stale-caption
-          llm-api-key: ${{ secrets.REEL_LLM_API_KEY }}
-          llm-provider: ${{ vars.REEL_LLM_PROVIDER }}
-          llm-model: ${{ vars.REEL_LLM_MODEL }}
-          llm-base-url: ${{ vars.REEL_LLM_BASE_URL }}
-
-      # The self-tests the action cannot cover: they exercise Reel's own
-      # internals rather than a spec, and only a real browser can run them.
-      - name: Unit tests
-        run: npm test
-
-      # The interactive build ships its own router, autoplay and host API;
-      # only a real browser can prove the file people open actually works.
-      - name: Interactive build self-test
-        run: npm run test:player
-
-      # Capture writes specs; the only test that matters is whether the driver
-      # can replay what it wrote.
-      - name: Capture self-test
-        run: npm run test:capture
-
-      # Branching: every path is a flow that can break, including the ones the
-      # video never shows.
-      - name: Branching self-test
-        run: |
-          npm run reel -- record examples/taskflow/branching.reel.yaml
-          npm run test:branch
-
-      # The action uploads artifacts for the steps it runs; these are the ones
-      # it doesn't. A failed self-test leaves the same evidence behind, and the
-      # runner is destroyed with it otherwise.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:capture
       - name: Upload failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4

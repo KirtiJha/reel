@@ -11,7 +11,7 @@ function spec(p: Record<string, unknown>, steps: unknown[] = [{ goto: "/" }]) {
   return specSchema.parse({
     steps,
     polish: p,
-    output: { html: "out/d.html" },
+    output: { mp4: "o/d.mp4" },
   });
 }
 
@@ -40,24 +40,6 @@ describe("compositesCaptions", () => {
     assert.equal(
       compositesCaptions(
         spec({ zoom: false, frame: "none" }, [{ highlight: { selector: "#a" } }]),
-      ),
-      true,
-    );
-  });
-
-  test("a highlight inside a branch path counts too", () => {
-    assert.equal(
-      compositesCaptions(
-        spec({ zoom: false, frame: "none" }, [
-          {
-            branch: {
-              paths: [
-                { label: "a", steps: [{ highlight: { selector: "#a" } }] },
-                { label: "b", steps: [{ click: "#b" }] },
-              ],
-            },
-          },
-        ]),
       ),
       true,
     );

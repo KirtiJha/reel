@@ -1,7 +1,5 @@
 import { parse as parseYaml } from "yaml";
 import {
-  defaultPath,
-  isBranch,
   specSchema,
   type BaseStep,
   type Spec,
@@ -32,10 +30,6 @@ export interface OutlineStep {
    */
   hidden?: boolean;
   /** Present on a branch step. */
-  branch?: {
-    prompt: string;
-    paths: { label: string; isDefault: boolean; steps: OutlineStep[] }[];
-  };
 }
 
 export interface SpecSummary {
@@ -47,7 +41,6 @@ export interface SpecSummary {
   errors: string[];
   stepCount: number;
   outline: OutlineStep[];
-  branchCount: number;
   /** Number of rendered variants (viewport × theme); 1 when there's no matrix. */
   variants: number;
   matrix?: { viewports: string[]; themes: string[] };
@@ -131,18 +124,6 @@ function outlineOf(steps: (Step | BaseStep)[], from = 1): OutlineStep[] {
       // The shorthand `- run: ls` is never hidden; only the object form can be.
       entry.hidden = typeof run === "object" && run !== null && (run as { hidden?: boolean }).hidden === true;
     }
-    if (isBranch(step as Step)) {
-      const b = (step as { branch: Parameters<typeof defaultPath>[0] }).branch;
-      const chosen = defaultPath(b);
-      entry.branch = {
-        prompt: b.prompt,
-        paths: b.paths.map((p) => ({
-          label: p.label,
-          isDefault: p === chosen,
-          steps: outlineOf(p.steps, 1),
-        })),
-      };
-    }
     return entry;
   });
 }
@@ -157,10 +138,6 @@ function outlineOf(steps: (Step | BaseStep)[], from = 1): OutlineStep[] {
 function countSpoken(steps: (Step | BaseStep)[]): number {
   let n = 0;
   for (const step of steps) {
-    if (isBranch(step as Step)) {
-      n += countSpoken(defaultPath((step as { branch: Parameters<typeof defaultPath>[0] }).branch).steps);
-      continue;
-    }
     const s = step as Record<string, unknown>;
     if ("say" in s) n++;
     else if ("caption" in s) {
@@ -205,7 +182,6 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
       musicDuck: spec.audio?.music?.duck,
       spokenLines: countSpoken(spec.steps),
     },
-    html: o.html,
     gif: o.gif,
     mp4: o.mp4,
     webm: o.webm,
@@ -223,7 +199,6 @@ export function summarize(raw: string): SpecSummary {
     errors: [],
     stepCount: 0,
     outline: [],
-    branchCount: 0,
     variants: 1,
     options: {
       preset: "share",
@@ -275,7 +250,6 @@ export function summarize(raw: string): SpecSummary {
     errors: [],
     stepCount: spec.steps.length,
     outline: outlineOf(spec.steps),
-    branchCount: spec.steps.filter((s) => isBranch(s)).length,
     variants,
     matrix: spec.matrix ? { viewports, themes } : undefined,
     options: optionsOf(spec),

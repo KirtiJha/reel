@@ -4,7 +4,7 @@ import { beatLabels, draftProfile, driveThrough, previewRange } from "../src/pol
 import { resolveOutputProfile, specSchema, type Step } from "../src/spec/schema.js";
 
 const steps = (s: unknown[]) =>
-  specSchema.parse({ steps: s, output: { html: "out/d.html" } }).steps as Step[];
+  specSchema.parse({ steps: s, output: { mp4: "o/d.mp4" } }).steps as Step[];
 
 describe("draftProfile", () => {
   test("drops the frame rate and the resolution", () => {
@@ -91,24 +91,6 @@ describe("driveThrough", () => {
     const s = steps([{ click: "#a" }, { beat: "one" }]);
     assert.equal(driveThrough(s, "nope"), null);
   });
-
-  test("does not stop inside a branch", () => {
-    // A beat inside a path is reachable only by taking that path, and stopping
-    // mid-branch would leave the recording in a state the spec never describes.
-    const s = steps([
-      { beat: "one" },
-      {
-        branch: {
-          paths: [
-            { label: "a", steps: [{ beat: "inner" }] },
-            { label: "b", steps: [{ click: "#b" }] },
-          ],
-        },
-      },
-      { beat: "two" },
-    ]);
-    assert.equal(driveThrough(s, "inner"), null);
-  });
 });
 
 describe("beatLabels", () => {
@@ -122,17 +104,4 @@ describe("beatLabels", () => {
     assert.deepEqual(beatLabels(s), ["Opening", "hero", "Closing"]);
   });
 
-  test("reaches into branch paths", () => {
-    const s = steps([
-      {
-        branch: {
-          paths: [
-            { label: "a", steps: [{ beat: "inner" }] },
-            { label: "b", steps: [{ click: "#b" }] },
-          ],
-        },
-      },
-    ]);
-    assert.deepEqual(beatLabels(s), ["inner"]);
-  });
 });

@@ -237,7 +237,7 @@ describe("isTemplate", () => {
 
 describe("the scene step", () => {
   const parse = (scene: unknown) =>
-    specSchema.parse({ steps: [{ scene }], output: { html: "o/d.html" } }).steps[0] as {
+    specSchema.parse({ steps: [{ scene }], output: { mp4: "o/d.mp4" } }).steps[0] as {
       scene: Record<string, unknown>;
     };
 

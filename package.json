@@ -1,7 +1,7 @@
 {
   "name": "@kirti_jha/reel",
   "version": "0.4.0",
-  "description": "Demos-as-code for web apps and CLIs. A small YAML spec drives your real app and renders always-current GIF, MP4, storyboards and a self-contained interactive click-through — and fails your build when the flow breaks.",
+  "description": "Demos-as-code for web apps and CLIs. A small YAML spec drives your real app and renders always-current GIF, MP4, storyboards and a self-contained interactive click-through \u2014 and fails your build when the flow breaks.",
   "license": "MIT",
   "type": "module",
   "homepage": "https://github.com/KirtiJha/reel#readme",
@@ -38,8 +38,6 @@
     "test": "tsx scripts/run-tests.mts",
     "example": "tsx src/cli.ts record examples/taskflow/demo.reel.yaml",
     "test:author": "tsx scripts/author-selftest.ts",
-    "test:player": "tsx scripts/player-selftest.ts",
-    "test:branch": "tsx scripts/branch-selftest.ts",
     "ui": "tsx src/cli.ts ui",
     "studio:install": "npm --prefix studio install",
     "schema": "tsx scripts/gen-schema.ts",

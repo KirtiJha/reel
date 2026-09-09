@@ -14,12 +14,7 @@ import { heal } from "./heal/heal.js";
 import { launchStudio } from "./ui/launch.js";
 import { initSpec } from "./commands/init.js";
 import { doctor, printReport } from "./commands/doctor.js";
-import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
-import { SAME_FORMAT_THRESHOLD, sameFormat } from "./diff/compare.js";
-import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
-import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
 import { recordOne } from "./commands/record.js";
-import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
 import { say } from "./commands/say.js";
@@ -118,15 +113,6 @@ program
   .command("record")
   .argument("<spec>", "path to a .reel.yaml spec")
   .option(
-    "--if-changed",
-    "skip the render when the spec, its inputs and its outputs are all unchanged",
-    false,
-  )
-  .option(
-    "--app-revision <id>",
-    "identifier for the app being demoed (a commit SHA), so a changed app forces a re-render",
-  )
-  .option(
     "--draft",
     "quick preview: small, low frame rate, video only, and only narration already in the cache",
     false,
@@ -138,22 +124,17 @@ program
   .description("Drive your app from a spec and render the demo (GIF/MP4/WebM).")
   .action(async (
     specPath: string,
-    opts: { ifChanged: boolean; appRevision?: string; draft: boolean; only?: string },
+    opts: { draft: boolean; only?: string },
   ) => {
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
       const res = await recordOne(loaded, { ...opts, version: VERSION });
-      if (!res.skipped) {
-        log.phase("Done");
-        for (const o of res.outputs) log.info(o);
-      }
+      log.phase("Done");
+      for (const o of res.outputs) log.info(o);
       emit("record", true, {
         result: {
           spec: loaded.path,
           name: loaded.spec.name,
-          skipped: Boolean(res.skipped),
-          ...(res.skipped ? { reason: res.skipped } : {}),
-          fingerprint: res.fingerprint,
           variants: res.variants,
           outputs: res.outputs,
         },
@@ -265,166 +246,6 @@ program
       if (!report.ok) process.exitCode = 1;
     }, "doctor");
   });
-
-program
-  .command("diff")
-  .argument("<before>", "the earlier render (gif, mp4 or webm)")
-  .argument("<after>", "the newer render")
-  .description("Compare two renders and report which parts of the demo changed.")
-  .option("--fps <n>", "samples per second to compare at", String(DIFF_DEFAULTS.fps))
-  .option(
-    "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed " +
-      `(default: ${SAME_FORMAT_THRESHOLD * 100} comparing one format with itself, ` +
-      `${DIFF_DEFAULTS.threshold * 100} across formats)`,
-  )
-  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
-  .option("--no-out", "skip the comparison images")
-  .option("--exit-code", "exit 1 when the renders differ, like git diff --exit-code", false)
-  .action(
-    async (
-      before: string,
-      after: string,
-      opts: { fps: string; threshold?: string; out: string | false; exitCode: boolean },
-    ) => {
-      await withErrors(async () => {
-        // Two renders in the same format have a floor of literally zero — the
-        // output is deterministic — so holding them to a threshold sized for
-        // GIF palette quantisation throws away real detections. An explicit
-        // --threshold always wins.
-        const threshold =
-          opts.threshold !== undefined
-            ? Number(opts.threshold) / 100
-            : sameFormat(before, after)
-              ? SAME_FORMAT_THRESHOLD
-              : DIFF_DEFAULTS.threshold;
-        const report = await diff(before, after, {
-          fps: Number(opts.fps),
-          threshold,
-          out: opts.out,
-        });
-        printDiff(report);
-        emit("diff", true, { result: report });
-        // Opt-in, because two renders differing is the expected outcome of
-        // changing the app — it is a result, not a failure.
-        if (opts.exitCode && !report.identical) process.exitCode = 1;
-      }, "diff");
-    },
-  );
-
-program
-  .command("ci")
-  .argument("[specs...]", "spec paths or globs (default: **/*.reel.yaml)")
-  .description("Run every demo in the repository and report one result — what the Action calls.")
-  .option("--mode <mode>", "check (drift only) or record (regenerate media)", CI_DEFAULTS.mode)
-  .option("--review", "compare each re-render against the media it replaced", false)
-  .option(
-    "--fail-on <verdict>",
-    "exit 1 at this review verdict or worse: cosmetic, content, stale-caption, never",
-    CI_DEFAULTS.failOn,
-  )
-  .option("--if-changed", "skip a render when its spec, inputs and outputs are unchanged", false)
-  .option("--app-revision <id>", "identifier for the app being demoed (a commit SHA)")
-  .option("-C, --dir <dir>", "directory to resolve specs from", ".")
-  .option("--comment <file>", "write a pull-request comment for the whole run")
-  .action(
-    async (
-      specs: string[],
-      opts: {
-        mode: string;
-        review: boolean;
-        failOn: string;
-        ifChanged: boolean;
-        appRevision?: string;
-        dir: string;
-        comment?: string;
-      },
-    ) => {
-      await withErrors(async () => {
-        if (opts.mode !== "check" && opts.mode !== "record") {
-          throw new ReelError(`Unknown --mode: ${opts.mode}`, "One of: check, record.");
-        }
-        const failOn = opts.failOn as Verdict | "never";
-        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
-          throw new ReelError(
-            `Unknown --fail-on value: ${opts.failOn}`,
-            "One of: cosmetic, content, stale-caption, never.",
-          );
-        }
-        if (opts.review && opts.mode !== "record") {
-          throw new ReelError(
-            "--review needs --mode record.",
-            "A drift check renders nothing, so there is no new media to compare.",
-          );
-        }
-        const report = await ci(opts.dir, specs, {
-          mode: opts.mode,
-          review: opts.review,
-          failOn,
-          ifChanged: opts.ifChanged,
-          appRevision: opts.appRevision,
-          version: VERSION,
-          comment: opts.comment,
-        });
-        printCi(report);
-        await writeGithubOutputs(report);
-        emit("ci", !report.failed, { result: report });
-        if (report.failed) process.exitCode = 1;
-      }, "ci");
-    },
-  );
-
-program
-  .command("review")
-  .argument("<before>", "the earlier render (gif, mp4 or webm)")
-  .argument("<after>", "the newer render")
-  .description("Say what changed between two renders, and whether the demo is still true.")
-  .option("--fps <n>", "samples per second to compare at", String(REVIEW_DEFAULTS.fps))
-  .option(
-    "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed",
-    String(REVIEW_DEFAULTS.threshold * 100),
-  )
-  .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
-  .option(
-    "--fail-on <verdict>",
-    "exit 1 at this verdict or worse: cosmetic, content, stale-caption, never",
-    REVIEW_DEFAULTS.failOn,
-  )
-  .option("--model <name>", "model to review with (defaults to the configured one)")
-  .action(
-    async (
-      before: string,
-      after: string,
-      opts: {
-        fps: string;
-        threshold: string;
-        out: string | false;
-        failOn: string;
-        model?: string;
-      },
-    ) => {
-      await withErrors(async () => {
-        const failOn = opts.failOn as Verdict | "never";
-        if (!["cosmetic", "content", "stale-caption", "unreviewed", "never"].includes(failOn)) {
-          throw new ReelError(
-            `Unknown --fail-on value: ${opts.failOn}`,
-            "One of: cosmetic, content, stale-caption, never.",
-          );
-        }
-        const outcome = await runReview(before, after, {
-          fps: Number(opts.fps),
-          threshold: Number(opts.threshold) / 100,
-          out: opts.out,
-          failOn,
-          model: opts.model,
-        });
-        printReview(outcome);
-        emit("review", !outcome.failed, { result: outcome });
-        if (outcome.failed) process.exitCode = 1;
-      }, "review");
-    },
-  );
 
 program
   .command("themes")

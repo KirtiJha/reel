@@ -12,7 +12,7 @@ import {
   missingDiagrams,
 } from "../src/media/diagram.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
-import { imageFiles } from "../src/spec/fingerprint.js";
+import { imageFiles } from "../src/spec/inputs.js";
 
 const PNG = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6360000002000100" +
@@ -108,27 +108,11 @@ describe("diagram cache", () => {
 
 describe("collecting media from a spec", () => {
   const parse = (steps: unknown[]) =>
-    specSchema.parse({ steps, theme: "dark", output: { html: "out/d.html" } });
+    specSchema.parse({ steps, theme: "dark", output: { mp4: "o/d.mp4" } });
 
   test("a bare string is the file", () => {
     const spec = parse([{ image: "logo.png" }]);
     assert.deepEqual(imageFiles(spec.steps), ["logo.png"]);
-  });
-
-  test("images inside a branch path count as inputs too", () => {
-    // A branch path is recorded, so its picture is an input; missing it means
-    // `--if-changed` skips a render whose artwork changed.
-    const spec = parse([
-      {
-        branch: {
-          paths: [
-            { label: "a", steps: [{ image: { file: "a.png" } }] },
-            { label: "b", steps: [{ image: "b.png" }] },
-          ],
-        },
-      },
-    ]);
-    assert.deepEqual(imageFiles(spec.steps).sort(), ["a.png", "b.png"]);
   });
 
   test("a diagram is not a referenced file — it is written in the spec", () => {
@@ -146,25 +130,11 @@ describe("collecting media from a spec", () => {
       { source: "graph TD\n c-->d", theme: "light" },
     ]);
   });
-
-  test("diagrams inside a branch are collected", () => {
-    const spec = parse([
-      {
-        branch: {
-          paths: [
-            { label: "a", steps: [{ diagram: "graph TD\n x-->y" }] },
-            { label: "b", steps: [{ click: "#b" }] },
-          ],
-        },
-      },
-    ]);
-    assert.equal(diagramSources(spec.steps as Step[], spec.theme).length, 1);
-  });
 });
 
 describe("the image and diagram steps", () => {
   const parse = (step: unknown) =>
-    specSchema.parse({ steps: [step], output: { html: "out/d.html" } }).steps[0] as Record<
+    specSchema.parse({ steps: [step], output: { mp4: "o/d.mp4" } }).steps[0] as Record<
       string,
       Record<string, unknown>
     >;

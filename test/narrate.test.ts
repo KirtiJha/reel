@@ -6,7 +6,7 @@ import { toSteps, type CaptureEvent } from "../src/authoring/steps.js";
 import { OBSERVER_SCRIPT } from "../src/authoring/observe.js";
 
 const steps = (s: unknown[]) =>
-  specSchema.parse({ steps: s, output: { html: "out/d.html" } }).steps as Step[];
+  specSchema.parse({ steps: s, output: { mp4: "o/d.mp4" } }).steps as Step[];
 
 describe("readScript", () => {
   test("gathers every spoken line, whatever step it hangs off", () => {
@@ -60,23 +60,6 @@ describe("readScript", () => {
     // Narrating every click is how a demo becomes a description of itself.
     const script = readScript(steps([{ click: "#a" }, { type: { selector: "#b", text: "x" } }]));
     assert.deepEqual(script.silent, []);
-  });
-
-  test("reads narration inside branch paths", () => {
-    // Every path is narration somebody will hear in the click-through.
-    const script = readScript(
-      steps([
-        {
-          branch: {
-            paths: [
-              { label: "a", steps: [{ say: "Down this path." }] },
-              { label: "b", steps: [{ say: "Or this one." }] },
-            ],
-          },
-        },
-      ]),
-    );
-    assert.equal(script.lines.length, 2);
   });
 
   test("an empty spec is an empty script, not a crash", () => {
@@ -168,7 +151,7 @@ describe("capture writes the new step kinds", () => {
       { type: "mark", candidates: [{ kind: "id", selector: "#count", matches: 1 }] },
       { type: "say", text: "A spoken line." },
     ]);
-    assert.doesNotThrow(() => specSchema.parse({ steps: out, output: { html: "out/d.html" } }));
+    assert.doesNotThrow(() => specSchema.parse({ steps: out, output: { mp4: "o/d.mp4" } }));
   });
 });
 

@@ -1,5 +1,5 @@
 import type { LoadedSpec } from "../spec/load.js";
-import { isBranch, type BaseStep, type Step } from "../spec/schema.js";
+import type { BaseStep, Step } from "../spec/schema.js";
 import { chat, loadLlmConfig, messageText } from "../ai/llm.js";
 import { spokenTextOf } from "../narrate/spoken.js";
 import { log, ReelError } from "../util/log.js";
@@ -48,14 +48,6 @@ export function readScript(steps: Step[]): Script {
 
   const walk = (list: (Step | BaseStep)[]): void => {
     for (const step of list) {
-      if (isBranch(step as Step)) {
-        // A branch is one path in the video and every path in the click-through.
-        // Reading them all is right: each is narration somebody will hear.
-        for (const path of (step as { branch: { paths: { steps: BaseStep[] }[] } }).branch.paths) {
-          walk(path.steps);
-        }
-        continue;
-      }
       const said = spokenTextOf(step);
       const label = whereOf(step);
       if (said) {
@@ -199,15 +191,6 @@ function outlineFor(steps: Step[]): string {
   const out: string[] = [];
   const walk = (list: (Step | BaseStep)[], depth = 0): void => {
     for (const step of list) {
-      if (isBranch(step as Step)) {
-        const b = (step as { branch: { prompt: string; paths: { label: string; steps: BaseStep[] }[] } }).branch;
-        out.push(`${"  ".repeat(depth)}- branch: ${b.prompt}`);
-        for (const path of b.paths) {
-          out.push(`${"  ".repeat(depth + 1)}- path: ${path.label}`);
-          walk(path.steps, depth + 2);
-        }
-        continue;
-      }
       out.push(`${"  ".repeat(depth)}- ${whereOf(step)}${describeValue(step)}`);
     }
   };

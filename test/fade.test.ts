@@ -131,7 +131,7 @@ describe("fades through a cut", () => {
 
 describe("the transition step", () => {
   const parse = (transition: unknown) =>
-    specSchema.parse({ steps: [{ transition }], output: { html: "o/d.html" } }).steps[0] as {
+    specSchema.parse({ steps: [{ transition }], output: { mp4: "o/d.mp4" } }).steps[0] as {
       transition: Record<string, unknown> | number;
     };
 
@@ -156,7 +156,7 @@ describe("the transition step", () => {
 
 describe("the fade options", () => {
   test("default to off, so no existing demo changes", () => {
-    const spec = specSchema.parse({ steps: [{ click: "#a" }], output: { html: "o/d.html" } });
+    const spec = specSchema.parse({ steps: [{ click: "#a" }], output: { mp4: "o/d.mp4" } });
     assert.equal(spec.polish.fadeIn, 0);
     assert.equal(spec.polish.fadeOut, 0);
   });

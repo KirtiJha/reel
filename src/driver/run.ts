@@ -6,8 +6,6 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
 import {
-  defaultPath,
-  isBranch,
   resolveOutputProfile,
   type Step,
 } from "../spec/schema.js";
@@ -15,7 +13,6 @@ import { applyDeterminism, DETERMINISTIC_LAUNCH_ARGS } from "./determinism.js";
 import { Timeline } from "./timeline.js";
 import { Recorder } from "./recorder.js";
 import { TerminalController } from "../terminal/controller.js";
-import { recordAlternatePaths, type BranchPoint } from "./branches.js";
 import { installOverlay } from "../overlay/overlay.js";
 import { ScreenshotCapture } from "../capture/screenshot.js";
 import { startApp, type RunningApp } from "./app.js";
@@ -25,7 +22,6 @@ import { captureFailure, reportFailure, type FailureArtifacts } from "./failure.
 import { describeStep } from "../heal/selectors.js";
 import { encode, writeStoryboard } from "../encode/encode.js";
 import { resolveCutRange, sliceFrames, sliceTimeline, sliceSpans, cutDuration } from "../encode/cut.js";
-import { writeInteractiveHtml, type Scene } from "../encode/html.js";
 import { renderWithZoom } from "../polish/render.js";
 import { framingEnabled, compositesCaptions } from "../polish/frame.js";
 
@@ -42,7 +38,6 @@ import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
 import { dipColor, endFades, type FadeCue } from "../polish/fade.js";
-import { writeDocument } from "../encode/document.js";
 import { diagramSources, missingDiagrams } from "../media/diagram.js";
 import { beatLabels, draftProfile, driveThrough, previewRange, type Preview } from "../polish/preview.js";
 import { log, ReelError } from "../util/log.js";
@@ -200,7 +195,6 @@ export async function record(
     const say: SpokenCue[] = [];
     // What the demo sounded like, for the optional effects track.
     const sfx: SfxCue[] = [];
-    const scenes: Scene[] = [];
     const rec = new Recorder(page, capture, timeline, {
       fps: profile.fps,
       deterministic,
@@ -246,7 +240,6 @@ export async function record(
       capture,
       rec,
       term,
-      scenes,
       specDir: loaded.dir,
       overlayReady: () => overlayPending,
     };
@@ -293,46 +286,9 @@ export async function record(
         `${spec.steps.length} steps`,
       ),
     );
-    const branchPoints: BranchPoint[] = [];
     for (let i = 0; i < total; i++) {
       const step = spec.steps[i]!;
-
-      if (isBranch(step)) {
-        // The video can only take one path; the click-through gets the rest,
-        // recorded separately once the main pass is done.
-        const chosen = defaultPath(step.branch);
-        const id = `b${branchPoints.length + 1}`;
-        branchPoints.push({ id, index: i, config: step.branch });
-        log.step(`${String(i + 1).padStart(2, "0")}  branch “${step.branch.prompt}” → ${chosen.label}`);
-
-        scenes.push({
-          t: timeline.now(),
-          label: step.branch.prompt,
-          branch: {
-            id,
-            prompt: step.branch.prompt,
-            paths: step.branch.paths.map((p) => ({
-              id: `${id}:${pathSlug(p.label)}`,
-              label: p.label,
-              isDefault: p === chosen,
-            })),
-          },
-        });
-
-        ctx.currentPath = `${id}:${pathSlug(chosen.label)}`;
-        for (const inner of chosen.steps) {
-          await guarded(inner as Step, ctx, i, spec.retries, loaded, capture, framesDir);
-        }
-        ctx.currentPath = undefined;
-        continue;
-      }
-
       await guarded(step, ctx, i, spec.retries, loaded, capture, framesDir);
-    }
-
-    // A closing scene so the interactive build ends on the finished state.
-    if (mode === "record") {
-      scenes.push({ t: timeline.now(), label: "Done" });
     }
 
     let durationMs = timeline.now();
@@ -354,7 +310,6 @@ export async function record(
       for (const c of captions) c.t = retime.map(c.t);
       for (const z of zoom) z.t = retime.map(z.t);
       for (const b of beats) b.t = retime.map(b.t);
-      for (const s of scenes) s.t = retime.map(s.t);
       remapHighlights(highlights, retime.map);
       remapFades(fades, retime.map);
       log.step(`Pacing ${(durationMs / 1000).toFixed(1)}s → ${(retime.endMs / 1000).toFixed(1)}s`);
@@ -362,20 +317,7 @@ export async function record(
     }
 
     if (mode === "check") {
-      // Every branch path is a flow that can break, so drift detection has to
-      // walk all of them — not just the one the video happens to take.
-      if (branchPoints.length) {
-        await recordAlternatePaths({
-          browser,
-          loaded,
-          framesDir,
-          points: branchPoints,
-          fps: profile.fps,
-          makeContext: prepareContext,
-          capture: false,
-        });
-      }
-      // Narration is drift too. A spec whose spoken lines have no audio behind
+      // Narration is worth reporting here. A spec whose spoken lines have no audio behind
       // them renders a video that is silent where it should not be, and finding
       // that out from the finished file is finding out too late. Reported here,
       // where it costs nothing: reading the cache needs no API key.
@@ -459,7 +401,6 @@ export async function record(
           for (const z of zoom) z.t = fit.map(z.t);
           for (const b of beats) b.t = fit.map(b.t);
           for (const c of sfx) c.t = fit.map(c.t);
-          for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
           remapHighlights(highlights, fit.map);
           remapFades(fades, fit.map);
@@ -477,7 +418,6 @@ export async function record(
           for (const c of captions) c.t = fit.map(c.t);
           for (const z of zoom) z.t = fit.map(z.t);
           for (const b of beats) b.t = fit.map(b.t);
-          for (const s of scenes) s.t = fit.map(s.t);
           for (const l of spoken) l.t = fit.map(l.t);
           remapHighlights(highlights, fit.map);
           remapFades(fades, fit.map);
@@ -882,58 +822,6 @@ export async function record(
           if (t) outputs.push(t);
         }
       }
-    }
-
-    // Interactive build: the same demo as a self-contained click-through, and
-    // the only output that can carry more than one path.
-    // The demo as a document. Built from the same cue lists the video is
-    // composited from, so the two cannot describe different demos.
-    if (spec.output.player && !previewing) {
-      log.phase("Player");
-      await writeDocument({
-        frames,
-        framesDir,
-        outPath: resolveOutput(loaded, spec.output.player),
-        spec,
-        durationMs,
-        maxWidth: profile.maxWidth,
-        zoom,
-        captions,
-        highlights,
-        fades,
-        beats,
-        // The mixed track, when the render produced one. Inlined so the page
-        // stays a single file you can email.
-        audioFile: outputs.find((o) => o.endsWith(".m4a")),
-      });
-      outputs.push(resolveOutput(loaded, spec.output.player));
-    }
-
-    if (spec.output.html && !previewing) {
-      const htmlPath = resolveOutput(loaded, spec.output.html);
-      log.phase("Interactive");
-      let allScenes = scenes;
-      if (branchPoints.length) {
-        const alt = await recordAlternatePaths({
-          browser,
-          loaded,
-          framesDir,
-          points: branchPoints,
-          fps: profile.fps,
-          makeContext: prepareContext,
-        });
-        allScenes = [...scenes, ...alt.scenes];
-      }
-      await writeInteractiveHtml({
-        scenes: allScenes,
-        frames,
-        framesDir,
-        outPath: htmlPath,
-        spec,
-        maxWidth: profile.maxWidth,
-        durationMs,
-      });
-      outputs.push(htmlPath);
     }
 
     // Narration: subtitles and localized variants (all opt-in).

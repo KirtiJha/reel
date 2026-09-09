@@ -1,4 +1,4 @@
-import { isBranch, type Polish, type Step } from "../spec/schema.js";
+import type { Polish, Step } from "../spec/schema.js";
 
 /**
  * Device frames, padding, and backgrounds (product plan §8 v0.2).
@@ -60,11 +60,7 @@ export function compositesCaptions(spec: { polish: Polish; steps: Step[] }): boo
  * caption into the page and then composites it again in post.
  */
 function hasHighlight(steps: Step[]): boolean {
-  return steps.some(
-    (s) =>
-      "highlight" in s ||
-      (isBranch(s) && s.branch.paths.some((p) => hasHighlight(p.steps))),
-  );
+  return steps.some((s) => "highlight" in s);
 }
 
 export function computeFrameLayout(

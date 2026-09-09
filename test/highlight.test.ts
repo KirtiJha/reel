@@ -170,7 +170,7 @@ describe("highlightSvg", () => {
 
 describe("the highlight step", () => {
   const parse = (highlight: unknown) =>
-    specSchema.parse({ steps: [{ highlight }], output: { html: "out/d.html" } }).steps[0] as {
+    specSchema.parse({ steps: [{ highlight }], output: { mp4: "o/d.mp4" } }).steps[0] as {
       highlight: Record<string, unknown>;
     };
 

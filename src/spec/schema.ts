@@ -357,26 +357,6 @@ export const outputSchema = z
     webm: z.string().optional(),
     /** Directory to drop a PNG storyboard (one image per beat). */
     storyboard: z.string().optional(),
-    /**
-     * Self-contained interactive HTML: a click-through of the same demo, with
-     * hotspots on the elements you acted on. One file, no hosting.
-     */
-    html: z.string().optional(),
-  /**
-   * The demo as a document: a self-contained page that re-performs the
-   * recording instead of baking it into pixels.
-   *
-   * The frames are the app's own, because those genuinely are a recording.
-   * Everything layered on top stays what it was — text is text, the camera is a
-   * transform, an annotation is SVG — so the result is selectable,
-   * translatable, searchable and readable by a screen reader, none of which
-   * survives being burned into a video.
-   *
-   * Not a replacement for `mp4:`. A social platform takes a video; this is for
-   * a README, a docs site or a pull-request preview, where being a document is
-   * an advantage rather than a format problem.
-   */
-  player: z.string().optional(),
     /** Frame rate for video (overrides preset). */
     fps: z.number().int().positive().max(60).optional(),
     /** Cap the output width in px (overrides preset). */
@@ -404,8 +384,8 @@ export const outputSchema = z
      */
     targetDuration: z.union([z.number().positive(), z.string()]).optional(),
   })
-  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html || o.player, {
-    message: "output must specify at least one of: gif, mp4, webm, storyboard, html, player",
+  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard, {
+    message: "output must specify at least one of: gif, mp4, webm, storyboard",
   });
 export type Output = z.infer<typeof outputSchema>;
 
@@ -962,43 +942,21 @@ const baseStepSchema = z.union([
   /** Switch between the terminal and the app underneath it. */
   z.object({ show: z.enum(["terminal", "app"]) }).strict(),
 ]);
-/** Every step except `branch` — what a branch path may contain. */
-export type BaseStep = z.infer<typeof baseStepSchema>;
-
 /**
- * A fork the viewer chooses between.
+ * One action in the demo. Every step is a single-key object.
  *
- * Two constraints shape this. A video is linear, so the rendered GIF/MP4
- * follows one designated path while the interactive build carries the whole
- * tree. And the app has state, so alternate paths can't be spliced in after the
- * fact — Reel re-runs the steps leading up to the branch before recording each
- * one, which is the only approach that holds for an app it knows nothing about.
+ * There used to be a second member here — `branch`, a fork the viewer chose
+ * between in the interactive build. Both went together: with no click-through
+ * to carry the alternate paths, a `branch:` step would have recorded its
+ * default and silently dropped the rest, which is a worse thing to offer than
+ * nothing at all.
  */
-export const branchPathSchema = z.object({
-  label: z.string().min(1),
-  /**
-   * The path the video follows, and the one pre-selected in the click-through.
-   * Defaults to the first path when none is marked.
-   */
-  default: z.boolean().default(false),
-  steps: z.array(baseStepSchema).min(1),
-});
-export type BranchPath = z.infer<typeof branchPathSchema>;
-
-export const branchSchema = z.object({
-  /** The question put to the viewer, e.g. "What do you want to see?" */
-  prompt: z.string().default("Choose a path"),
-  paths: z.array(branchPathSchema).min(2),
-});
-export type BranchConfig = z.infer<typeof branchSchema>;
-
-/** One action in the demo. Every step is a single-key object. */
-export const stepSchema = z.union([
-  baseStepSchema,
-  /** A fork the viewer chooses between, in the interactive build. */
-  z.object({ branch: branchSchema }).strict(),
-]);
+export const stepSchema = baseStepSchema;
 export type Step = z.infer<typeof stepSchema>;
+
+/** Kept as an alias: a great deal of code names this type. */
+export type BaseStep = Step;
+
 /**
  * A step as a person writes it, before defaults are filled in.
  *
@@ -1008,29 +966,9 @@ export type Step = z.infer<typeof stepSchema>;
  */
 export type StepInput = z.input<typeof stepSchema>;
 
-/** Narrow a step to a branch without repeating the shape check everywhere. */
-export function isBranch(step: Step): step is { branch: BranchConfig } {
-  return typeof step === "object" && step !== null && "branch" in step;
-}
-
-/** The path the video follows: the one marked default, else the first. */
-export function defaultPath(branch: BranchConfig): BranchPath {
-  return branch.paths.find((p) => p.default) ?? branch.paths[0]!;
-}
-
-/**
- * The steps that must run before `index` to put the app where that step expects
- * it. Earlier branches collapse to their default path, so a later branch's
- * alternates are recorded on top of the same trunk the video shows.
- */
+/** The steps that must run before `index` to put the app where that step expects it. */
 export function trunkSteps(steps: Step[], index: number): BaseStep[] {
-  const out: BaseStep[] = [];
-  for (let i = 0; i < index; i++) {
-    const s = steps[i]!;
-    if (isBranch(s)) out.push(...defaultPath(s.branch).steps);
-    else out.push(s);
-  }
-  return out;
+  return steps.slice(0, index);
 }
 
 /* ------------------------- Privacy & data ------------------------ */
