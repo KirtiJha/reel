@@ -1090,3 +1090,122 @@ so it judges graphics and cards but not the footage itself.
   Reel's own scenes; the composer reimplements a subset. One source.
 - **Beat-driven camera.** The manifest has the beats; `compose` should be able
   to emit a punch-in on each one rather than leaving every camera move manual.
+
+---
+
+# Part 11 — Doing it the way HyperFrames actually does it
+
+## The honest starting point
+
+Part 10 wired HyperFrames in as a renderer and stopped there. Asked whether
+everything had been incorporated, the answer was no, and the inventory was
+embarrassing: 155 registry blocks unused, 220 components unused, shader
+transitions unused, 20 skills unused (a bespoke one written instead), 13 frame
+presets unused, the audio mixer unused, the film silent. Worse, `compose` was
+emitting **one fixed template from code** — the exact mistake Part 9 diagnosed
+and swore off.
+
+The film looked much like Reel's old output because the design was still
+hand-rolled and identical every run. HyperFrames' output looks good because an
+*agent authors each composition* against those skills and that catalog. The
+mechanism had been bypassed entirely.
+
+## What their project actually looks like
+
+Read from `references/production-loop.md`, `sub-compositions.md`,
+`storyboard-format.md` and `design-spec.md` rather than guessed:
+
+```
+frame.md                       design spec — YAML frontmatter is normative, prose is context
+STORYBOARD.md                  the plan layer; Studio renders it as a contact sheet
+hyperframes.json               what makes the directory a project
+index.html                     assembly only — scenes as sub-compositions on tracks
+compositions/frames/NN-*.html  one scene per file
+```
+
+`reel compose` now emits exactly that. The monolithic `index.html` is gone.
+
+**Why one file per scene.** A monolithic composition renders perfectly well and
+is still wrong: a scene you cannot open, snapshot and rewrite on its own is a
+scene nobody edits. It is also the structure every one of their skills expects.
+
+## Five mount-contract failures their linter caught
+
+None would have been found by reading the files, and all seven errors came from
+one `hyperframes check`:
+
+1. **`missing_timeline_registry`.** The index had no timeline — deliberately, on
+   the theory that scenes own their motion. A composition with no
+   `window.__timelines` entry is an error regardless. It now drives a global
+   grade layer, a vignette that breathes across the whole film, which is a real
+   finishing element rather than a stub tween.
+2. **`id_requires_css_escape`.** Scene ids began `00-`, so `#00-title-v` throws
+   a SyntaxError in `querySelector` — inside the scene's own timeline script.
+   Ids are prefixed with a letter now.
+3. **`media_missing_data_start`.** Video and audio inside a sub-composition still
+   need their own timing; HyperFrames cannot own playback for untimed media.
+4. **`invalid_parent_traversal_in_asset_path`.** Media referenced as
+   `../../media/…` works at render — which rewrites `../` against the
+   sub-composition's own path — and 404s in Studio, which resolves from the
+   project root. Media moved beside the scenes that play it.
+5. **`studio_missing_editable_id`.** Host clips need ids or Studio has no stable
+   edit target.
+
+Then: 0 errors, 0 warnings, 11/11 WCAG AA, and a contact sheet confirming all
+five scenes mount.
+
+## The catalog, made usable
+
+`npx hyperframes add` works, and every block it installs links GSAP from
+jsdelivr and its fonts from Google Fonts. Fine with open egress, fatal without —
+and the font case is the dangerous one, because a blocked script *fails* the
+render while a blocked font silently substitutes a typeface, so the block ships
+looking wrong rather than not at all.
+
+`reel blocks <project>` rewrites them: GSAP re-pointed at the vendored copy,
+remote font imports and links dropped, and every family they were fetching
+re-declared as a `local()` face so `check` can still resolve it. Everything else
+is left exactly as the catalog wrote it — a block edited beyond recognition is
+no longer the block you installed. Verified on `cinematic-zoom`: one script, four
+families, zero remaining remote references.
+
+## What the skills corrected
+
+`waterfall-entry`, from `hyperframes-animation`, says two things that are
+counter-intuitive and both wrong in the earlier version:
+
+- **Opacity is binary.** A word is revealed with a zero-duration `set`, never
+  faded. "Never fade an arrival."
+- **It is fast.** 0.13–0.20s per word, against the 0.7s that felt right when
+  guessing — four times too slow — and the cascade *overlaps*, each word
+  starting before the previous settles.
+
+A title now composes by ~0.8s instead of ~2s. That single rule is most of the
+difference between a title card and a slide.
+
+## Sound
+
+Reel has always collected sfx cues to build its own audio track. Handed to a
+composition they are worth more: a click landing on the exact frame the button
+went down is not something an editor can place by ear afterwards, because only
+the driver knows when the press happened. `RunResult` and the shot manifest
+carry them; `compose` synthesizes a WAV per shot and places it as a timed
+`<audio>`. Synthesized, not sampled — no licence to honour, no binary vendored,
+and Reel already owned the synthesis.
+
+## Still not incorporated
+
+- **BGM.** HyperFrames bundles SFX but no music, and the local generators
+  (Kokoro, MusicGen) are not installed here.
+- **Frame presets and visual styles.** Thirteen complete design languages plus
+  eight named visual styles; Reel still uses its own `looks.ts`. These should
+  merge — a look and a frame preset are the same idea in two vocabularies.
+- **Shader transitions.** Installed and de-CDN'd blocks can now be mounted, but
+  no scene handoff uses one yet; the handoffs are crossfades and a flash.
+- **The creation workflows.** `/product-launch-video`, `/motion-graphics` and
+  the rest plan a film from a brief. Reel's spec is a different front door and
+  the two have not been reconciled.
+- **Captions track, LUTs, `media-use` sourcing.**
+- **The deeper one:** `compose` is still a generator. It emits a better
+  structure now, and an agent can edit any single scene — but nothing forces the
+  per-project authoring pass that makes their showcase output what it is.

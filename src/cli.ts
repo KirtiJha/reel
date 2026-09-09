@@ -28,6 +28,7 @@ import { runDirect } from "./commands/direct.js";
 import { lookSheet, previewScene } from "./commands/scene.js";
 import { shoot } from "./commands/shoot.js";
 import { compose } from "./compose/compose.js";
+import { deCdnInstalled } from "./compose/catalog.js";
 import { LOOK_NAMES, lookFor } from "./scene/looks.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
@@ -469,7 +470,7 @@ program
 program
   .command("compose")
   .argument("<manifest...>", "one or more shots.json files — each becomes a chapter, in order")
-  .description("Scaffold a HyperFrames composition around that footage.")
+  .description("Assemble that footage into a HyperFrames project — scenes, storyboard, design spec.")
   .option("-o, --out <dir>", "where the project goes", "film")
   .option("--look <name>", `visual identity: ${LOOK_NAMES.join(", ")}`)
   .option("--accent <color>", "brand accent the cards are built from", "#6d8bff")
@@ -491,8 +492,20 @@ program
         ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
       });
       emit("compose", true, {
-        result: { dir: res.dir, index: res.index, duration: res.duration, chapters: res.chapters },
+        result: { dir: res.dir, index: res.index, duration: res.duration, frames: res.frames },
       });
+    });
+  });
+
+program
+  .command("blocks")
+  .argument("<project>", "a project directory written by `reel compose`")
+  .description("Make installed catalog blocks renderable offline (rewrite their CDN references).")
+  .action(async (project: string) => {
+    await withErrors(async () => {
+      const touched = await deCdnInstalled(project);
+      if (touched.length === 0) log.info("Nothing to rewrite — no installed block links a CDN.");
+      emit("blocks", true, { result: { project, rewritten: touched } });
     });
   });
 
