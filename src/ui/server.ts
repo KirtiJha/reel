@@ -18,7 +18,7 @@ import { say } from "../commands/say.js";
 import { runDirect } from "../commands/direct.js";
 import { moveStep, verifyReorder } from "../direct/apply.js";
 import { addAsset, addAssetFromUrl } from "../media/assets.js";
-import type { ShotManifest } from "../shoot/manifest.js";
+import { readStamp, stampPath } from "../spec/fingerprint.js";
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -147,23 +147,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   }
 
   // The beat strip. Read from the last render's stamp rather than by rendering
-  // again: the shot manifest already records what the beats were and when, so
-  // the strip costs a file read. A spec never shot has no beats yet, and says so.
-  //
-  // This used to read the render stamp, which is gone with the rest of the
-  // drift machinery. The manifest is the better source anyway: it is written by
-  // the drive that caused the beats rather than derived afterwards.
+  // again: the stamp already records what the beats were and when, so the strip
+  // costs a file read. A spec never rendered has no beats yet, and says so.
   if (path === "/api/beats" && req.method === "POST") {
     const body = await readBody(req);
     const file = safePathOrThrow(cwd, body.path);
     const loaded = await loadSpec(file);
-    const shot = await readFile(join(loaded.dir, "shot", "shots.json"), "utf8")
-      .then((raw) => JSON.parse(raw) as ShotManifest)
-      .catch(() => null);
+    const stamp = await readStamp(stampPath(loaded)).catch(() => null);
     return sendJson(res, 200, {
-      beats: shot?.beats.map((b) => ({ label: b.label, t: b.t * 1000 })) ?? [],
-      durationMs: (shot?.duration ?? 0) * 1000,
-      rendered: Boolean(shot?.beats.length),
+      beats: stamp?.beats ?? [],
+      durationMs: stamp?.durationMs ?? 0,
+      rendered: Boolean(stamp?.beats?.length),
     });
   }
 
@@ -315,6 +309,7 @@ export interface GallerySpec {
   /** At-a-glance facts, so the gallery can show what kind of demo this is. */
   kind: "web" | "terminal";
   stepCount: number;
+  branchCount: number;
   variants: number;
 }
 
@@ -450,6 +445,7 @@ async function gallery(cwd: string): Promise<GallerySpec[]> {
       outputs: await renderedOutputs(full, cwd),
       kind: s.kind,
       stepCount: s.stepCount,
+      branchCount: s.branchCount,
       variants: s.variants,
     });
   }

@@ -1,4 +1,4 @@
-import type { BaseStep, Step, StepInput } from "../spec/schema.js";
+import { isBranch, type BaseStep, type Step, type StepInput } from "../spec/schema.js";
 import { spokenTextOf } from "../narrate/spoken.js";
 
 /**
@@ -58,6 +58,7 @@ export function direct(steps: Step[]): Direction[] {
 function proposeHighlights(steps: Step[]): Direction[] {
   const out: Direction[] = [];
   for (const [i, step] of steps.entries()) {
+    if (isBranch(step)) continue;
     const line = spokenTextOf(step);
     if (!line) continue;
     // Already directed here: an author who wrote a highlight has answered this.
@@ -89,9 +90,9 @@ function proposeHighlights(steps: Step[]): Direction[] {
 function proposeEstablishing(steps: Step[]): Direction[] {
   const out: Direction[] = [];
   for (const [i, step] of steps.entries()) {
-    if (!("card" in step)) continue;
+    if (isBranch(step) || !("card" in step)) continue;
     const next = steps[i + 1];
-    if (!next) continue;
+    if (!next || isBranch(next)) continue;
     // Only where the very next thing crops in. Anything else already gives the
     // viewer a wide moment to place themselves in.
     if (!cropsIn(next)) continue;
@@ -121,7 +122,7 @@ function bestMatch(
 
   for (let j = Math.max(0, from - NEARBY); j <= Math.min(steps.length - 1, from + NEARBY); j++) {
     const step = steps[j];
-    if (!step) continue;
+    if (!step || isBranch(step)) continue;
     const selector = selectorOf(step);
     if (!selector) continue;
     const name = nameIn(selector);
@@ -206,7 +207,7 @@ function selectorOf(step: Step | BaseStep): string | null {
 function hasHighlightNear(steps: Step[], i: number): boolean {
   for (let j = Math.max(0, i - 2); j <= Math.min(steps.length - 1, i + 2); j++) {
     const step = steps[j];
-    if (step && ("highlight" in step || "callout" in step)) return true;
+    if (step && !isBranch(step) && ("highlight" in step || "callout" in step)) return true;
   }
   return false;
 }
@@ -221,7 +222,7 @@ function hasHighlightNear(steps: Step[], i: number): boolean {
 function nextBeatLabel(steps: Step[], from: number): string | undefined {
   for (let j = from + 1; j < steps.length; j++) {
     const step = steps[j];
-    if (!step) continue;
+    if (!step || isBranch(step)) continue;
     if ("beat" in step && typeof step.beat === "string") return step.beat;
   }
   return undefined;

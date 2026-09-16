@@ -1,4 +1,4 @@
-import type { OutputProfile, Step } from "../spec/schema.js";
+import { isBranch, type OutputProfile, type Step } from "../spec/schema.js";
 import type { CutRange } from "../encode/cut.js";
 
 /**
@@ -90,6 +90,7 @@ export function driveThrough(steps: Step[], only: string): number | null {
   const want = only.toLowerCase();
   let found = -1;
   for (const [i, step] of steps.entries()) {
+    if (isBranch(step)) continue;
     if (!("beat" in step)) continue;
     const label = typeof step.beat === "string" ? step.beat : "";
     if (found < 0) {
@@ -107,6 +108,10 @@ export function driveThrough(steps: Step[], only: string): number | null {
 export function beatLabels(steps: Step[]): string[] {
   const out: string[] = [];
   for (const step of steps) {
+    if (isBranch(step)) {
+      for (const path of step.branch.paths) out.push(...beatLabels(path.steps as Step[]));
+      continue;
+    }
     if ("beat" in step && typeof step.beat === "string") out.push(step.beat);
     if ("card" in step) out.push(typeof step.card === "string" ? step.card : step.card.title);
   }

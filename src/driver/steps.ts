@@ -8,9 +8,6 @@ import {
   showCard,
   showImage,
   hideImage,
-  showScene,
-  seekScene,
-  hideScene,
   smoothScroll,
   spotlight,
   toPlaywrightSelector,
@@ -21,8 +18,6 @@ import type { CaptionCue } from "../polish/captions.js";
 import { DEFAULT_HIGHLIGHT_MS, type HighlightCue } from "../polish/highlight.js";
 import { dipColor, type FadeCue } from "../polish/fade.js";
 import { loadImage } from "../media/image.js";
-import { buildScene } from "../scene/scene.js";
-import type { LookName } from "../scene/looks.js";
 import { loadDiagram } from "../media/diagram.js";
 import type { SpokenCue } from "../narrate/voice.js";
 import type { SfxCue } from "../encode/sfx.js";
@@ -31,6 +26,7 @@ import type { Rect, ZoomKey } from "../polish/zoom.js";
 import { type GridRegion, measureGrid, regionToRect, tailRegion } from "../terminal/grid.js";
 import { panScroll, scrollTargetFor } from "../capture/pan.js";
 import type { ScreenshotCapture } from "../capture/screenshot.js";
+import type { Scene } from "../encode/html.js";
 import { applyStorageState, loadStorageState } from "./auth.js";
 import { resolveFrom } from "../spec/load.js";
 import { isGitIgnored, warnAboutCredentials } from "../util/secrets.js";
@@ -77,6 +73,8 @@ export interface StepContext {
   rec: Recorder;
   /** Present when the spec declares a `terminal:` block. */
   term?: TerminalController | null;
+  /** Click-through scenes for the interactive HTML build. */
+  scenes: Scene[];
   /** The spec's own directory, for steps that name a file relative to it. */
   specDir: string;
   /**
@@ -88,23 +86,55 @@ export interface StepContext {
    * real-world timing rather than on the spec.
    */
   overlayReady?: () => Promise<void>;
+  /** Branch path these steps belong to, stamped onto every scene they produce. */
+  currentPath?: string;
   /** When the last title card appeared — a card resets the narration context. */
   cardAt?: number;
 }
 
+/** Record a scene for the interactive build, tagged with the caption on screen. */
+function snap(
+  ctx: StepContext,
+  label: string,
+  extra: { hotspot?: Scene["hotspot"]; chapter?: string; caption?: string } = {},
+): void {
+  // "stills" records scenes for the interactive build without filming them —
+  // how alternate branch paths are captured.
+  if (ctx.mode === "check") return;
+  ctx.scenes.push({
+    t: ctx.now(),
+    label,
+    caption: extra.caption ?? activeCaptionText(ctx),
+    chapter: extra.chapter,
+    hotspot: extra.hotspot,
+    path: ctx.currentPath,
+  });
+}
+
 /**
- * Take any caption off screen.
- *
- * A full-frame composition — a card, a scene, a `full` image — replaces the
- * picture entirely, and a caption from an earlier step has nothing left to
- * caption. Captions are composited in post from this cue list, where a cue runs
- * until the next one, so the only way to end one early is to say so. An empty
- * cue is how: `captionAt` treats blank text as nothing on screen.
+ * The narration for a scene: the most recent caption, even if it has already
+ * timed out on screen. In a video an expired caption should disappear; in a
+ * click-through each scene is a page the viewer reads, so it keeps the last
+ * thing you said until you say something else.
  */
-function clearCaption(ctx: StepContext): void {
-  const last = ctx.captions[ctx.captions.length - 1];
-  if (!last || !last.text.trim()) return; // nothing up, nothing to clear
-  ctx.captions.push({ t: ctx.now(), text: "", position: last.position });
+function activeCaptionText(ctx: StepContext): string | undefined {
+  const now = ctx.now();
+  for (let i = ctx.captions.length - 1; i >= 0; i--) {
+    const c = ctx.captions[i]!;
+    if (c.t > now) continue;
+    // A title card ends the previous section; don't carry its narration past it.
+    if (ctx.cardAt !== undefined && ctx.cardAt > c.t) return undefined;
+    return c.text;
+  }
+  return undefined;
+}
+
+/** Camera directions, not chapter names — they shouldn't reach the chapter rail. */
+const CAMERA_BEATS = /^(hero|outro|intro|wide|done|beat|end)$/i;
+
+/** Element box → hotspot rect, in viewport CSS px. */
+function toHotspot(box: { x: number; y: number; width: number; height: number }): Scene["hotspot"] {
+  return { x: box.x, y: box.y, w: box.width, h: box.height };
 }
 
 /** Hold timings (ms) tuned so a demo reads comfortably on camera. */
@@ -172,6 +202,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     const box = await pointAt(ctx, step.click, cinematic);
     // Snap before the click: the interactive build shows the state you act on,
     // with the target as its hotspot, and advances to the result.
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     if (cinematic) ctx.sfx.push({ t: ctx.now(), kind: "click" });
     await locate(page, step.click).click();
     await ctx.rec.hold(HOLD.afterClick);
@@ -180,6 +211,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("dblclick" in step) {
     const box = await pointAt(ctx, step.dblclick, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     await locate(page, step.dblclick).dblclick();
     await ctx.rec.hold(HOLD.afterClick);
     return;
@@ -198,6 +230,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
       );
     }
     const target = await dragTarget(ctx, to);
+    snap(ctx, label, { hotspot: toHotspot(box) });
     await ctx.rec.dragCursor(
       { x: box.x + box.width / 2, y: box.y + box.height / 2 },
       target,
@@ -217,6 +250,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
   if ("hover" in step) {
     const box = await pointAt(ctx, step.hover, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     await locate(page, step.hover).hover();
     return;
   }
@@ -224,6 +258,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   if ("type" in step) {
     const { selector, text, delay } = step.type;
     const box = await pointAt(ctx, selector, cinematic);
+    snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     const loc = locate(page, selector);
     if (cinematic) ctx.sfx.push({ t: ctx.now(), kind: "click" });
     await loc.click();
@@ -280,6 +315,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     if (panned === 0) await smoothScroll(page, targetY, scaledMs);
     ctx.rec.timeline.advanceScaled(scaledMs);
     await ctx.rec.hold(HOLD.afterScroll);
+    snap(ctx, label);
     return;
   }
 
@@ -380,7 +416,14 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // Hero/outro beats read best as wide establishing/closing shots.
     const wide = /hero|outro|intro|wide/i.test(beatLabel);
     if (wide) zoomOut(ctx);
-    if (cinematic) await ctx.rec.hold(HOLD.beat);
+    if (cinematic) {
+      await ctx.rec.hold(HOLD.beat);
+      // A descriptively-named beat is a chapter boundary; "hero"/"outro" are
+      // camera directions, and a card right before has already named the scene.
+      const lastChapter = [...ctx.scenes].reverse().find((s) => s.chapter)?.chapter;
+      const isChapter = !CAMERA_BEATS.test(beatLabel) && lastChapter !== beatLabel;
+      snap(ctx, beatLabel, { chapter: isChapter ? beatLabel : undefined });
+    }
     return;
   }
 
@@ -403,10 +446,10 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     if (cinematic) {
       ctx.sfx.push({ t: ctx.now(), kind: "card" });
       zoomOut(ctx); // never crop into a full-screen card
-      clearCaption(ctx);
       await showCard(page, c.title, c.subtitle);
       await ctx.rec.hold(Math.min(500, c.ms)); // let it settle before the snap
       ctx.cardAt = ctx.now();
+      snap(ctx, c.title, { chapter: c.title, caption: c.subtitle });
       await ctx.rec.hold(Math.max(0, c.ms - 500));
       await hideCard(page);
       await ctx.rec.hold(HOLD.afterCard);
@@ -429,64 +472,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
         zoomOut(ctx);
         await spotlight(page, { x: box.x, y: box.y, w: box.width, h: box.height }, text);
         await ctx.rec.hold(Math.min(450, ms));
+        snap(ctx, label, { hotspot: toHotspot(box), caption: text });
         await ctx.rec.hold(Math.max(0, ms - 450));
         await clearSpotlight(page);
         await ctx.rec.hold(300); // let the dim fade out before moving on
       }
-    }
-    return;
-  }
-
-  if ("scene" in step) {
-    const sc = step.scene;
-    // A scene is a moment, so it narrates like a card — and is recorded in
-    // every mode so `reel check` can audit the line and the voice cache.
-    if (sc.say) ctx.say.push({ t: ctx.now(), text: sc.say, alt: sc.sayIn });
-
-    if (!sc.file && !sc.template && !sc.title) {
-      throw new ReelError(
-        "A `scene:` step needs something to show.",
-        "Give it a `template:` with a `title:`, or a `file:` pointing at your own composition.",
-      );
-    }
-
-    const html = await buildScene(
-      {
-        ...(sc.template ? { template: sc.template } : {}),
-        ...(sc.file ? { file: sc.file } : {}),
-        fields: {
-          ...(sc.title === undefined ? {} : { title: sc.title }),
-          ...(sc.subtitle === undefined ? {} : { subtitle: sc.subtitle }),
-          ...(sc.eyebrow === undefined ? {} : { eyebrow: sc.eyebrow }),
-          ...(sc.items === undefined ? {} : { items: sc.items }),
-          ...(sc.attribution === undefined ? {} : { attribution: sc.attribution }),
-          ...(sc.slate === undefined ? {} : { slate: sc.slate }),
-          ...(sc.slateNote === undefined ? {} : { slateNote: sc.slateNote }),
-        },
-        style: {
-          accent: ctx.spec.polish.accent,
-          // A scene's look is the spec's, unless this one scene departs from it.
-          look: (sc.look ?? ctx.spec.polish.look) as LookName,
-        },
-      },
-      ctx.specDir,
-    );
-
-    if (cinematic) {
-      ctx.sfx.push({ t: ctx.now(), kind: "card" });
-      zoomOut(ctx); // never crop into a full-frame composition
-      clearCaption(ctx);
-      ctx.beats.push({ label: sc.title ?? "scene", t: ctx.now() });
-      await showScene(page, html);
-      // The same primitive that synthesizes a scroll: one frame per output
-      // frame at an exact timeline position, so the scene's motion is a
-      // function of the spec rather than of how fast this machine is.
-      await ctx.rec.motion(sc.ms, async (p) => {
-        await seekScene(page, p);
-      });
-      ctx.cardAt = ctx.now();
-      await hideScene(page);
-      await ctx.rec.hold(HOLD.afterCard);
     }
     return;
   }
@@ -517,14 +507,11 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
 
     if (cinematic && loaded) {
       // Never crop into a picture that already fills the frame.
-      if (media.as !== "inset") {
-        zoomOut(ctx);
-        // `inset` leaves the app visible behind it, so a caption still belongs.
-        if (media.as === "full") clearCaption(ctx);
-      }
+      if (media.as !== "inset") zoomOut(ctx);
       await showImage(page, loaded.dataUri, media.as, media.corner);
       await ctx.rec.hold(Math.min(500, media.ms));
       const label = media.alt ?? ("mermaid" in media ? "Diagram" : media.file);
+      snap(ctx, label, { caption: media.alt });
       await ctx.rec.hold(Math.max(0, media.ms - 500));
       await hideImage(page);
       await ctx.rec.hold(HOLD.afterCard);
@@ -626,6 +613,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // camera at and nothing new for a storyboard beat to capture.
     if (!r.hidden) {
       await autoZoomOutput(ctx, term);
+      snap(ctx, label);
     }
     return;
   }
@@ -651,6 +639,7 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
     // viewer a moment to register that they're looking at something else.
     zoomOut(ctx);
     await ctx.rec.hold(HOLD.afterGoto);
+    snap(ctx, label);
     return;
   }
 

@@ -1,0 +1,367 @@
+# Reel — the GitHub Action.
+#
+# Deliberately thin. Everything that involves a decision — which specs to run,
+# what "changed" means, whether a review verdict should fail the build — lives
+# in `reel ci`, where it is typechecked, unit-tested and reproducible on a
+# laptop. What is left here is the part that genuinely belongs to a runner:
+# Node, a browser, a cache, and moving files around afterwards.
+#
+# That split is the point. Logic embedded in workflow YAML is typechecked by
+# nothing, tested by nothing, and only ever runs on a machine you cannot attach
+# a debugger to. Anything you see this action do, you can do locally with the
+# same command and get the same answer.
+#
+# SECURITY: `reel record` executes each spec's `run.cmd` in a shell — a
+# .reel.yaml is executable code. Never run specs from a fork's pull request in a
+# job holding secrets or write permissions. `commit: true` is refused for a fork
+# PR for that reason, and REEL_NO_EXEC=1 refuses to spawn `run.cmd` at all.
+name: Reel
+description: Record, drift-check and review demos-as-code for web apps and CLIs.
+author: Kirti Jha
+
+branding:
+  icon: film
+  color: purple
+
+inputs:
+  specs:
+    description: >-
+      Spec paths or globs, whitespace or newline separated.
+      Default: every **/*.reel.yaml in the repository.
+    required: false
+    default: ""
+  mode:
+    description: "check (drift only, renders nothing) or record (regenerate media)."
+    required: false
+    default: check
+  review:
+    description: >-
+      Compare each regenerated demo against the media it replaced and say what
+      changed. Needs mode=record. Judgement needs a model (see llm-api-key);
+      without one you still get the pixel comparison.
+    required: false
+    default: "false"
+  fail-on:
+    description: "Fail the build at this review verdict or worse: cosmetic, content, stale-caption, never."
+    required: false
+    default: stale-caption
+  if-changed:
+    description: "Skip a render when its spec, inputs and outputs are all unchanged."
+    required: false
+    default: "false"
+  app-revision:
+    description: >-
+      Identifier for the app being demoed, usually a commit SHA. Part of the
+      render fingerprint, so a changed app forces a re-render under if-changed.
+    required: false
+    default: ""
+  working-directory:
+    description: "Directory to resolve specs from."
+    required: false
+    default: "."
+  version:
+    description: >-
+      Which @kirti_jha/reel to install. Default: the version this action ships
+      with, so a pinned action tag is a pinned tool. Use `local` to build Reel
+      from the action's own checkout instead of installing from npm — which is
+      how this repository tests its own action, and how you would try an
+      unreleased change.
+    required: false
+    default: ""
+  node-version:
+    description: "Node to set up. Set to empty to use whatever the job already has."
+    required: false
+    default: "20"
+  browser:
+    description: "Install a Playwright browser. Set to empty to skip (mode=check still needs one)."
+    required: false
+    default: chromium
+  comment:
+    description: >-
+      Post one pull-request comment describing what the demos did. Needs
+      pull-requests: write.
+    required: false
+    default: "false"
+  commit:
+    description: >-
+      Commit regenerated media back to the branch. Needs contents: write, and is
+      refused on a pull request from a fork.
+    required: false
+    default: "false"
+  commit-message:
+    description: "Commit message for regenerated media."
+    required: false
+    default: "chore: regenerate demo media [skip ci]"
+  commit-paths:
+    description: "Paths to stage when committing. Default: everything the run rendered."
+    required: false
+    default: ""
+  upload-artifacts:
+    description: "Upload a failed step's screenshot, clip and DOM as a build artifact."
+    required: false
+    default: "true"
+  llm-api-key:
+    description: "API key for the review pass. Pass a secret; never a literal."
+    required: false
+    default: ""
+  llm-provider:
+    description: "Provider id for the review pass (anthropic, openai, litellm, …)."
+    required: false
+    default: ""
+  llm-model:
+    description: "Model for the review pass."
+    required: false
+    default: ""
+  llm-base-url:
+    description: "Base URL for the review pass, for a proxy or a self-hosted endpoint."
+    required: false
+    default: ""
+  token:
+    description: "Token used to comment and to push. Defaults to the job's GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  specs:
+    description: "How many specs ran."
+    value: ${{ steps.run.outputs.specs }}
+  failed:
+    description: "true when a spec broke, or a review verdict met fail-on."
+    value: ${{ steps.run.outputs.failed }}
+  changed:
+    description: "true when any demo's media is different from what it replaced."
+    value: ${{ steps.run.outputs.changed }}
+  verdict:
+    description: "Worst review verdict across every spec: cosmetic, unreviewed, content or stale-caption."
+    value: ${{ steps.run.outputs.verdict }}
+  outputs:
+    description: "JSON array of every media file rendered."
+    value: ${{ steps.run.outputs.outputs }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      if: inputs.node-version != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # Installed beside the action rather than into the caller's node_modules: a
+    # demo tool has no business appearing in the dependency tree of the project
+    # it films, and this keeps the caller's lockfile authoritative.
+    - name: Install Reel
+      id: install
+      shell: bash
+      env:
+        REEL_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        TOOLS="$RUNNER_TEMP/reel-tool"
+        mkdir -p "$TOOLS/bin"
+
+        if [ "$REEL_VERSION" = "local" ]; then
+          # Build from the action's own checkout. This is what lets Reel's
+          # repository run its own action on every pull request: an action whose
+          # author never uses it is one that breaks silently between releases.
+          echo "Building Reel from $ACTION_PATH"
+          npm --prefix "$ACTION_PATH" ci --no-audit --no-fund --silent
+          npm --prefix "$ACTION_PATH" run build --silent
+          # A shim rather than `npm link`, which needs a writable global prefix
+          # and leaves state behind on a self-hosted runner.
+          printf '#!/bin/sh\nexec node "%s/dist/cli.js" "$@"\n' "$ACTION_PATH" > "$TOOLS/bin/reel"
+          chmod +x "$TOOLS/bin/reel"
+          ln -sfn "$ACTION_PATH/node_modules" "$TOOLS/node_modules"
+          echo "$TOOLS/bin" >> "$GITHUB_PATH"
+        else
+          # An empty version means "whatever this action tag ships with", read
+          # from the action's own checkout so the tag pins the tool too.
+          if [ -z "$REEL_VERSION" ]; then
+            REEL_VERSION="$(node -p "require('$ACTION_PATH/package.json').version")"
+          fi
+          echo "Installing @kirti_jha/reel@$REEL_VERSION"
+          npm install --prefix "$TOOLS" --no-audit --no-fund --silent \
+            "@kirti_jha/reel@$REEL_VERSION"
+          echo "$TOOLS/node_modules/.bin" >> "$GITHUB_PATH"
+        fi
+        echo "tools=$TOOLS" >> "$GITHUB_OUTPUT"
+        # The cache key below has to name the Playwright the browser will be
+        # driven by, not today's date — a cache keyed on anything else
+        # eventually serves a browser the installed Playwright cannot talk to.
+        echo "playwright=$(node -p "require('$TOOLS/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    # Browsers are the slowest part of a cold run by a wide margin.
+    - name: Cache the browser
+      if: inputs.browser != ''
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/Library/Caches/ms-playwright
+          ~\AppData\Local\ms-playwright
+        key: reel-playwright-${{ runner.os }}-${{ steps.install.outputs.playwright }}-${{ inputs.browser }}
+
+    - name: Install the browser
+      if: inputs.browser != ''
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browser }}
+        TOOLS: ${{ steps.install.outputs.tools }}
+      run: |
+        set -euo pipefail
+        # playwright-core's own CLI rather than `npx playwright`: it is the
+        # package Reel actually drives the browser with, so the browser it
+        # installs is guaranteed to be one it can talk to. A second download of
+        # a possibly different Playwright is how version-skew starts.
+        CLI="$TOOLS/node_modules/playwright-core/cli.js"
+        # --with-deps needs root and only does anything on Linux; elsewhere the
+        # system libraries are already present and asking for them fails.
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          node "$CLI" install --with-deps "$BROWSER"
+        else
+          node "$CLI" install "$BROWSER"
+        fi
+
+    # Fails here, where the message names the missing thing, rather than three
+    # minutes later from inside a library, phrased for that library's authors.
+    - name: Preflight
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: reel doctor
+
+    # Everything that matters. One command, one exit code, and outputs the rest
+    # of the workflow can branch on without grepping a log.
+    - name: Run the demos
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        REEL_LLM_API_KEY: ${{ inputs.llm-api-key }}
+        REEL_LLM_PROVIDER: ${{ inputs.llm-provider }}
+        REEL_LLM_MODEL: ${{ inputs.llm-model }}
+        REEL_LLM_BASE_URL: ${{ inputs.llm-base-url }}
+        SPECS: ${{ inputs.specs }}
+        MODE: ${{ inputs.mode }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        DO_REVIEW: ${{ inputs.review }}
+        IF_CHANGED: ${{ inputs.if-changed }}
+        APP_REVISION: ${{ inputs.app-revision }}
+        WANT_COMMENT: ${{ inputs.comment }}
+      run: |
+        set -euo pipefail
+        # `if` rather than `cond && append`: under `set -e` a false condition on
+        # the last line of the script is a non-zero exit, so the shorter form
+        # fails the step whenever review happens to be off.
+        args=(ci --mode "$MODE" --fail-on "$FAIL_ON")
+        if [ "$DO_REVIEW" = "true" ]; then args+=(--review); fi
+        if [ "$IF_CHANGED" = "true" ]; then args+=(--if-changed); fi
+        if [ -n "$APP_REVISION" ]; then args+=(--app-revision "$APP_REVISION"); fi
+        if [ "$WANT_COMMENT" = "true" ]; then args+=(--comment "$RUNNER_TEMP/reel-comment.md"); fi
+        # Split on whitespace but never glob: `set -f` keeps the shell's hands
+        # off the patterns so `reel ci` resolves all of them with one tested
+        # matcher. Left to bash, `**/*.reel.yaml` would silently collapse to a
+        # single level, because globstar is off by default.
+        if [ -n "$SPECS" ]; then
+          set -f
+          # shellcheck disable=SC2206
+          args+=($SPECS)
+          set +f
+        fi
+        reel "${args[@]}"
+
+    # A failed step writes a screenshot, a clip of the seconds leading up to it,
+    # and the page's DOM — then the runner is destroyed and takes them with it.
+    # Uploading is what makes a red build diagnosable without reproducing it,
+    # which for a timing-sensitive recording is sometimes not possible at all.
+    - name: Upload failure artifacts
+      if: failure() && inputs.upload-artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: reel-failure-${{ github.run_id }}-${{ github.job }}
+        path: "**/.reel-failures/**"
+        if-no-files-found: ignore
+        retention-days: 7
+
+    # Fork pull requests never get a write-back: the token is read-only there and
+    # pushing to somebody else's branch is not possible anyway. Saying so beats
+    # a permissions error four steps later.
+    - name: Commit regenerated media
+      if: >-
+        inputs.commit == 'true' &&
+        steps.run.outputs.changed == 'true' &&
+        (github.event_name != 'pull_request' ||
+         github.event.pull_request.head.repo.full_name == github.repository)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PATHS: ${{ inputs.commit-paths }}
+        MESSAGE: ${{ inputs.commit-message }}
+        OUTPUTS: ${{ steps.run.outputs.outputs }}
+      run: |
+        set -euo pipefail
+        git config user.name "reel-bot"
+        git config user.email "bot@users.noreply.github.com"
+        if [ -n "$PATHS" ]; then
+          # shellcheck disable=SC2086
+          git add $PATHS
+        else
+          # Stage exactly what was rendered. `git add .` would sweep up whatever
+          # else the job happened to leave in the tree.
+          node -e '
+            const files = JSON.parse(process.env.OUTPUTS || "[]");
+            if (files.length) console.log(files.join("\n"));
+          ' | while IFS= read -r f; do
+            [ -e "$f" ] && git add -- "$f"
+          done
+        fi
+        if git diff --cached --quiet; then
+          echo "Nothing staged — the rendered files are unchanged or ignored."
+          exit 0
+        fi
+        git commit -m "$MESSAGE"
+        git push origin "HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}"
+
+    - name: Comment on the pull request
+      if: >-
+        inputs.comment == 'true' &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const { readFileSync, existsSync } = require('node:fs');
+          const file = `${process.env.RUNNER_TEMP}/reel-comment.md`;
+          if (!existsSync(file)) {
+            core.info('No comment was written — nothing to say.');
+            return;
+          }
+          const body = readFileSync(file, 'utf8');
+          // One comment per pull request, updated in place. A dozen demos over a
+          // dozen pushes is otherwise a thread nobody reads to the bottom of.
+          const marker = '### 🎬 Demos';
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            per_page: 100,
+          });
+          const mine = comments.find(
+            (c) => c.user?.type === 'Bot' && c.body?.startsWith(marker),
+          );
+          if (mine) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: mine.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }

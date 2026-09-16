@@ -18,7 +18,7 @@ function terminal(cfg: Record<string, unknown>) {
   return specSchema.parse({
     steps: [{ run: "true" }],
     terminal: cfg,
-    output: { mp4: "o/d.mp4" },
+    output: { html: "out/d.html" },
   }).terminal!;
 }
 
@@ -120,7 +120,7 @@ describe("terminal schema", () => {
     const r = specSchema.safeParse({
       steps: [{ run: "true" }],
       terminal: { palette: ["#000000"] },
-      output: { mp4: "o/d.mp4" },
+      output: { html: "out/d.html" },
     });
     assert.equal(r.success, false);
   });
@@ -129,7 +129,7 @@ describe("terminal schema", () => {
     const r = specSchema.safeParse({
       steps: [{ run: "true" }],
       terminal: { theme: "no-such-theme" },
-      output: { mp4: "o/d.mp4" },
+      output: { html: "out/d.html" },
     });
     assert.equal(r.success, false);
   });
@@ -144,7 +144,7 @@ describe("terminal schema", () => {
     assert.deepEqual(terminal({}).require, []);
     const spec = specSchema.parse({
       steps: [{ run: { cmd: "true" } }],
-      output: { mp4: "o/d.mp4" },
+      output: { html: "out/d.html" },
     });
     const step = spec.steps[0] as { run: { hidden: boolean } };
     assert.equal(step.run.hidden, false);
@@ -153,7 +153,7 @@ describe("terminal schema", () => {
   test("hidden is accepted on the object form of run", () => {
     const spec = specSchema.parse({
       steps: [{ run: { cmd: "true", hidden: true } }],
-      output: { mp4: "o/d.mp4" },
+      output: { html: "out/d.html" },
     });
     const step = spec.steps[0] as { run: { hidden: boolean } };
     assert.equal(step.run.hidden, true);
