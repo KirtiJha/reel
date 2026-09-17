@@ -160,20 +160,43 @@ describe("terminal schema", () => {
   });
 });
 
-describe("the Studio's copy of the theme list", () => {
-  test("matches THEME_NAMES exactly", () => {
-    // The dropdown hardcodes the names the way it hardcodes PRESETS and FRAMES,
-    // because the Studio is a separate package that can't import from src/.
-    // Without this check, adding a scheme to one and not the other produces a
-    // dropdown entry the schema rejects — or a theme nobody can select.
-    const src = readFileSync(
-      new URL("../studio/app/studio/page.tsx", import.meta.url),
-      "utf8",
+describe("the Studio gets the theme list from the theme list", () => {
+  // There used to be a second copy of the names in the Studio page, and this
+  // suite existed to stop the two drifting. The copy is gone: the API serves
+  // THEME_NAMES and the dropdown renders whatever it is given, so there is
+  // nothing left to drift — which is what these two now check.
+
+  test("the API serves THEME_NAMES rather than a list of its own", () => {
+    const src = readFileSync(new URL("../src/ui/server.ts", import.meta.url), "utf8");
+    assert.match(
+      src,
+      /terminalThemes:\s*\[\.\.\.THEME_NAMES\]/,
+      "/api/config should spread THEME_NAMES, not enumerate the schemes",
     );
-    const block = /const TERMINAL_THEMES = \[([\s\S]*?)\]/.exec(src);
-    assert.ok(block, "could not find TERMINAL_THEMES in the Studio page");
-    const listed = [...block[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(listed, [...THEME_NAMES]);
+    assert.match(src, /import\s*\{\s*THEME_NAMES\s*\}\s*from\s*"\.\.\/terminal\/themes\.js"/);
+  });
+
+  test("the Studio page carries no copy of the names", () => {
+    const src = readFileSync(new URL("../studio/app/studio/page.tsx", import.meta.url), "utf8");
+    assert.ok(
+      !/const TERMINAL_THEMES\s*=\s*\[/.test(src),
+      "the Studio should render the served list, not hold one",
+    );
+    // One name is still allowed to appear: the fallback the form shows before
+    // the config request lands, and for a spec that names no theme. It has to
+    // be the schema's default, or the form would offer to change a setting the
+    // spec does not have.
+    for (const name of THEME_NAMES) {
+      if (name === DEFAULT_THEME) continue;
+      assert.ok(
+        !src.includes(`"${name}"`),
+        `"${name}" is hardcoded in the Studio page — it should come from /api/config`,
+      );
+    }
+    assert.ok(
+      src.includes(`terminalTheme: "${DEFAULT_THEME}"`),
+      "the form's fallback theme should be the default one",
+    );
   });
 });
 

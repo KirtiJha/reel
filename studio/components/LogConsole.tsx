@@ -13,7 +13,15 @@ const cls: Record<string, string> = {
 };
 const sym: Record<string, string> = { step: "→", ok: "✓", warn: "!", error: "✗", info: "›", debug: "", phase: "" };
 
-export function LogConsole({ lines, running }: { lines: LogLine[]; running?: boolean }) {
+export function LogConsole({
+  lines,
+  running,
+  label = "Run log",
+}: {
+  lines: LogLine[];
+  running?: boolean;
+  label?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight });
@@ -22,6 +30,14 @@ export function LogConsole({ lines, running }: { lines: LogLine[]; running?: boo
   return (
     <div
       ref={ref}
+      // A log, and a polite one: a render streams dozens of lines and an
+      // assertive region would talk over everything else for minutes. It is
+      // also focusable, because a scrollable region a keyboard can't reach is
+      // a region a keyboard user cannot read.
+      role="log"
+      aria-live="polite"
+      aria-label={label}
+      tabIndex={0}
       className="max-h-[360px] min-h-[120px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-line bg-[#07090f] p-4 font-mono text-[12.5px] leading-relaxed"
     >
       {lines.length === 0 && !running && <span className="text-faint">Logs will stream here…</span>}

@@ -4,7 +4,20 @@ import { useState } from "react";
 import { Carousel } from "@/components/Carousel";
 import { GitHubLink } from "@/components/GitHubLink";
 import { Logo } from "@/components/Logo";
+import { NavMenu, type NavItem } from "@/components/NavMenu";
+import { TabPanel, Tabs } from "@/components/bits";
 import { DOCS_URL, ISSUES_URL, REPO_URL, SPEC_DOCS_URL } from "@/lib/site";
+
+/** The page's own sections, so the row and the small-screen menu can't drift. */
+const NAV: NavItem[] = [
+  { href: "#how", label: "How it works" },
+  { href: "#features", label: "Features" },
+  { href: "#sound", label: "Sound" },
+  { href: "#start", label: "Quickstart" },
+  { href: "#cli", label: "CLI" },
+  { href: "#studio", label: "Studio" },
+  { href: DOCS_URL, label: "Docs", external: true },
+];
 
 /**
  * The landing page.
@@ -289,35 +302,23 @@ export default function Landing() {
             <Logo size={30} />
             <span className="text-[17px] font-bold tracking-tight">Reel</span>
           </div>
-          <nav className="flex items-center gap-1 text-sm max-[720px]:hidden">
-            <a href="#how" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              How it works
-            </a>
-            <a href="#features" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              Features
-            </a>
-            <a href="#sound" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              Sound
-            </a>
-            <a href="#start" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              Quickstart
-            </a>
-            <a href="#cli" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              CLI
-            </a>
-            <a href="#studio" className="rounded-lg px-3 py-2 text-muted transition hover:text-ink">
-              Studio
-            </a>
-            <a
-              href={DOCS_URL}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="rounded-lg px-3 py-2 text-muted transition hover:text-ink"
-            >
-              Docs
-            </a>
+          {/* The same links twice: a row where it fits, a menu where it
+              doesn't. It used to be the row alone, `display:none` below 720px,
+              which left a phone with no navigation at all. */}
+          <nav className="hidden items-center gap-1 text-sm md:flex" aria-label="Sections">
+            {NAV.map((n) => (
+              <a
+                key={n.href}
+                href={n.href}
+                {...(n.external ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+                className="rounded-lg px-3 py-2 text-muted transition hover:text-ink"
+              >
+                {n.label}
+              </a>
+            ))}
           </nav>
           <div className="flex items-center gap-2">
+            <NavMenu items={NAV} />
             <GitHubLink compact />
             {PUBLIC_SITE ? (
               <a href="#start" className="btn btn-brand btn-sm">
@@ -420,44 +421,42 @@ export default function Landing() {
 
             <div className="card !p-0">
               <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2.5">
-                {FORMATS.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => setFormat(f)}
-                    className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${
-                      format.id === f.id
-                        ? "bg-brand-soft text-ink"
-                        : "text-muted hover:bg-panel2 hover:text-ink"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                <Tabs
+                  tabs={FORMATS.map((f) => ({ id: f.id, label: f.label }))}
+                  active={format.id}
+                  onChange={(id) => setFormat(FORMATS.find((f) => f.id === id)!)}
+                  label="Output format to preview"
+                  idBase="fmt"
+                  variant="soft"
+                  className="flex flex-wrap items-center gap-1.5"
+                />
                 <span className="tag ml-auto">output</span>
               </div>
-              <div className="grid place-items-center bg-[#05070c] p-4">
-                {format.type === "video" ? (
-                  // eslint-disable-next-line jsx-a11y/media-has-caption
-                  <video
-                    key={format.id}
-                    className="w-full rounded-lg"
-                    src={format.src}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                  />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={format.id}
-                    className="w-full rounded-lg"
-                    alt={format.label}
-                    src={format.src}
-                  />
-                )}
-              </div>
-              <p className="px-5 py-4 text-[13.5px] text-muted">{format.blurb}</p>
+              <TabPanel idBase="fmt" active={format.id}>
+                <div className="grid place-items-center bg-[#05070c] p-4">
+                  {format.type === "video" ? (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video
+                      key={format.id}
+                      className="w-full rounded-lg"
+                      src={format.src}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={format.id}
+                      className="w-full rounded-lg"
+                      alt={format.label}
+                      src={format.src}
+                    />
+                  )}
+                </div>
+                <p className="px-5 py-4 text-[13.5px] text-muted">{format.blurb}</p>
+              </TabPanel>
             </div>
           </div>
         </div>
@@ -551,40 +550,38 @@ export default function Landing() {
             <div className="flex flex-col gap-6">
             <div className="card !p-0">
               <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2.5">
-                {TRACKS.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setTrack(t)}
-                    className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition ${
-                      track.id === t.id
-                        ? "bg-brand-soft text-ink"
-                        : "text-muted hover:bg-panel2 hover:text-ink"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                <Tabs
+                  tabs={TRACKS.map((t) => ({ id: t.id, label: t.label }))}
+                  active={track.id}
+                  onChange={(id) => setTrack(TRACKS.find((t) => t.id === id)!)}
+                  label="Narration language"
+                  idBase="track"
+                  variant="soft"
+                  className="flex flex-wrap items-center gap-1.5"
+                />
                 <span className="ml-auto font-mono text-[12px] text-faint">{track.length}</span>
               </div>
-              <div className="bg-[#05070c] p-4">
-                <video
-                  key={track.id}
-                  className="block w-full rounded-lg"
-                  src={track.src}
-                  poster="/demo/narrated.png"
-                  controls
-                  preload="metadata"
-                  playsInline
-                >
-                  <track
-                    kind="captions"
-                    src={track.vtt}
-                    srcLang={track.lang}
-                    label={track.label}
-                    default
-                  />
-                </video>
-              </div>
+              <TabPanel idBase="track" active={track.id}>
+                <div className="bg-[#05070c] p-4">
+                  <video
+                    key={track.id}
+                    className="block w-full rounded-lg"
+                    src={track.src}
+                    poster="/demo/narrated.png"
+                    controls
+                    preload="metadata"
+                    playsInline
+                  >
+                    <track
+                      kind="captions"
+                      src={track.vtt}
+                      srcLang={track.lang}
+                      label={track.label}
+                      default
+                    />
+                  </video>
+                </div>
+              </TabPanel>
               <p className="px-5 py-4 text-[13.5px] text-muted">
                 One recording, both languages. The subtitles on this player are the sidecar Reel
                 wrote beside the video.

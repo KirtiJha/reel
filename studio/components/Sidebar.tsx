@@ -45,7 +45,7 @@ export function Sidebar() {
   const configured = cfg?.llm.configured;
 
   return (
-    <aside className="sticky top-0 flex h-screen flex-col gap-7 border-r border-line bg-gradient-to-b from-panel/50 to-bg/10 px-3.5 py-6 max-[900px]:static max-[900px]:h-auto max-[900px]:flex-row max-[900px]:flex-wrap max-[900px]:items-center max-[900px]:gap-4">
+    <aside className="static flex h-auto flex-row flex-wrap items-center gap-4 border-b border-line bg-gradient-to-b from-panel/50 to-bg/10 px-3.5 py-6 lg:sticky lg:top-0 lg:h-screen lg:flex-col lg:flex-nowrap lg:items-stretch lg:gap-7 lg:border-b-0 lg:border-r">
       {/* Home is the landing page — the only way back out of the workspace. */}
       <Link
         href="/"
@@ -61,7 +61,7 @@ export function Sidebar() {
         </div>
       </Link>
 
-      <nav className="flex flex-col gap-0.5 max-[900px]:flex-row max-[900px]:flex-wrap">
+      <nav className="flex flex-row flex-wrap gap-0.5 lg:flex-col lg:flex-nowrap">
         {NAV.map((n) => {
           const active = pathname === n.href || pathname?.startsWith(`${n.href}/`);
           return (
@@ -74,7 +74,7 @@ export function Sidebar() {
               }`}
             >
               {active && (
-                <span className="absolute left-0 top-1/2 h-5 w-[2.5px] -translate-y-1/2 rounded-r bg-brand2 max-[900px]:hidden" />
+                <span className="absolute left-0 top-1/2 h-5 w-[2.5px] -translate-y-1/2 rounded-r bg-brand2 max-lg:hidden" />
               )}
               <svg
                 width="17"
@@ -95,7 +95,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-auto max-[900px]:mt-0">
+      <div className="mt-0 lg:mt-auto">
         {cfg === null ? (
           <span className="pill w-full justify-center text-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-faint" />
@@ -103,7 +103,7 @@ export function Sidebar() {
           </span>
         ) : configured ? (
           <div
-            className="rounded-xl border border-ok/25 bg-ok/[0.07] px-3 py-2.5 max-[900px]:py-1.5"
+            className="rounded-xl border border-ok/25 bg-ok/[0.07] px-3 py-1.5 lg:py-2.5"
             title={cfg.llm.host}
           >
             <div className="flex items-center gap-2">

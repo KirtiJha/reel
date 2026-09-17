@@ -58,30 +58,63 @@ export default function AuthorPage() {
         eyebrow="AI authoring"
         title="Describe it. Reel drives your app."
         sub="An agent opens your running app, works out the selectors, performs the story and verifies each step — then emits a spec you own and edit. Add branches, terminal steps or a viewport matrix afterwards in Studio."
+        actions={
+          <Link href="/new" className="btn btn-sm btn-ghost">
+            Other ways to start
+          </Link>
+        }
       />
 
+      {/* A fork, not a wall. This used to be a dead end that named the one
+          thing you couldn't do and offered nothing you could — on the page the
+          Gallery's empty state sent every new user to. Two other routes to a
+          spec need no key at all, so they go first. */}
       {noModel && (
-        <div className="card mb-6 border-warn/25 bg-warn/[0.06]">
+        <div className="card mb-6 border-warn/25 bg-warn/[0.06]" role="status">
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full bg-warn/15 text-[13px] text-warn">
+            <span
+              aria-hidden
+              className="mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full bg-warn/15 text-[13px] text-warn"
+            >
               !
             </span>
-            <div>
-              <div className="text-sm font-semibold text-warn">No model configured</div>
-              <div className="mt-1 text-sm leading-relaxed text-muted">
-                Authoring is the one feature that needs one. Recording, drift checks and
-                self-healing all work without a model —{" "}
-                <Link href="/settings" className="text-brand2 underline-offset-2 hover:underline">
-                  set one up in Settings
-                </Link>
-                .
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-warn">
+                No model configured — authoring is the one feature that needs one
               </div>
+              <div className="mt-1 text-sm leading-relaxed text-muted">
+                Everything else works without a key. You can still get a spec two other ways, and
+                recording, drift checks and self-healing never need a model at all.
+              </div>
+              {/* The server already worked out what is missing and which
+                  variable would fix it; it was populating this field and
+                  nothing rendered it. */}
+              {cfg?.llm.error && (
+                <p className="mt-2 rounded-lg border border-warn/25 bg-warn/[0.06] px-3 py-2 font-mono text-[12.5px] leading-relaxed text-warn">
+                  {cfg.llm.error}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/new" className="btn btn-sm btn-brand">
+                  Start a demo without a model
+                </Link>
+                <Link href="/settings" className="btn btn-sm">
+                  Set up a model
+                </Link>
+              </div>
+              <p className="mt-3 text-[12.5px] leading-relaxed text-faint">
+                Or from a terminal: <code>reel init</code> scaffolds a spec,{" "}
+                <code>reel capture --url {url || "<url>"}</code> writes one down as you demo the app.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 max-[1000px]:grid-cols-1">
+      {/* Mobile-first, like the rest of Tailwind: one column, two from `lg`.
+          The ad-hoc `max-[1000px]` here disagreed with the `max-[1100px]` in
+          Studio and with the `lg:` rules inside it. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* ---- the brief ---- */}
         <div className="card flex flex-col gap-5">
           <Field label="The story to demo" hint="plain English, in order">
@@ -121,7 +154,7 @@ export default function AuthorPage() {
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3 max-[560px]:grid-cols-1">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Save spec to">
               <input
                 className="input font-mono text-[13px]"
@@ -183,13 +216,17 @@ export default function AuthorPage() {
           )}
 
           {error && (
-            <div className="mt-3 rounded-xl border border-err/30 bg-err/[0.07] p-3.5 text-sm leading-relaxed text-err">
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-3 rounded-xl border border-err/30 bg-err/[0.07] p-3.5 text-sm leading-relaxed text-err"
+            >
               {error}
             </div>
           )}
 
           {result && (
-            <div className="mt-4 animate-fade-up">
+            <div className="mt-4 animate-fade-up" role="status" aria-live="polite">
               <div className="text-sm text-muted">
                 Created <span className="font-mono text-brand2">{result.path}</span>
               </div>

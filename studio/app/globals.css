@@ -113,8 +113,11 @@ body {
   .btn-lg {
     @apply rounded-[14px] px-6 py-3.5 text-[15px];
   }
+  /* `line2` rather than `line`: this is a control boundary, and WCAG 1.4.11
+     asks a control's edge to clear 3:1 against what surrounds it. `line` is for
+     dividers and card edges, which carry no state and are held to no such bar. */
   .input {
-    @apply w-full rounded-xl border border-line bg-bg2 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-faint hover:border-line2 focus:border-brand focus:ring-2 focus:ring-brand/20;
+    @apply w-full rounded-xl border border-line2 bg-bg2 px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-faint hover:border-brand/60 focus:border-brand focus:ring-2 focus:ring-brand/20;
   }
   .label {
     @apply mb-1.5 block text-xs font-medium text-muted;

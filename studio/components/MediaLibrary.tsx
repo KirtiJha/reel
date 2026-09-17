@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { postJSON } from "@/lib/api";
 
 /**
@@ -29,6 +29,8 @@ export function MediaLibrary({
   const [tone, setTone] = useState<"ok" | "err">("ok");
   const [over, setOver] = useState(false);
   const [working, setWorking] = useState(false);
+  const inputId = useId();
+  const urlId = useId();
 
   async function add(body: Record<string, unknown>) {
     setWorking(true);
@@ -79,20 +81,34 @@ export function MediaLibrary({
         <p className="mt-1 text-xs text-faint">
           It lands in <code>assets/</code> beside the spec, and is committed with it.
         </p>
-        <label className="btn btn-sm btn-ghost mt-3 inline-block cursor-pointer">
+        {/* `display:none` on the input took the only control here out of the
+            tab order entirely — the label was not focusable either, so the drop
+            zone was the whole feature and it was mouse-only. Clipped rather
+            than hidden keeps the input focusable, and `peer` puts the focus
+            ring on the button the user can actually see. The input comes first
+            because `peer-*` only reaches later siblings. */}
+        <input
+          id={inputId}
+          type="file"
+          accept="image/*"
+          className="peer sr-only"
+          disabled={disabled}
+          onChange={(e) => void addFiles(e.target.files)}
+        />
+        <label
+          htmlFor={inputId}
+          className="btn btn-sm btn-ghost mt-3 inline-block cursor-pointer peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand"
+        >
           Choose a file
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            disabled={disabled}
-            onChange={(e) => void addFiles(e.target.files)}
-          />
         </label>
       </div>
 
       <div className="flex gap-2">
+        <label htmlFor={urlId} className="sr-only">
+          Image URL to download into the spec&apos;s directory
+        </label>
         <input
+          id={urlId}
           className="input flex-1"
           placeholder="…or paste an image URL"
           value={url}
@@ -112,7 +128,13 @@ export function MediaLibrary({
       </div>
 
       {note && (
-        <p className={`text-[13px] ${tone === "err" ? "text-err" : "text-ok"}`}>{note}</p>
+        <p
+          role={tone === "err" ? "alert" : "status"}
+          aria-live="polite"
+          className={`text-[13px] ${tone === "err" ? "text-err" : "text-ok"}`}
+        >
+          {note}
+        </p>
       )}
       <p className="text-xs leading-relaxed text-faint">
         Downloading happens now, while you are editing — never while rendering. A render reads

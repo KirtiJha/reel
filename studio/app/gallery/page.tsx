@@ -52,15 +52,20 @@ export default function GalleryPage() {
         title="Your demos"
         sub="Every spec in this workspace and whatever it last rendered. Open one to record, check or heal it."
         actions={
-          <Link href="/author" className="btn btn-brand btn-sm">
-            New demo
-          </Link>
+          <>
+            <Link href="/new" className="btn btn-brand btn-sm">
+              New demo
+            </Link>
+            <Link href="/studio" className="btn btn-ghost btn-sm">
+              Open Studio
+            </Link>
+          </>
         }
       />
 
       {specs !== null && specs.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Filter demos by kind">
             {(
               [
                 ["all", "All"],
@@ -72,6 +77,7 @@ export default function GalleryPage() {
               <button
                 key={id}
                 onClick={() => setFilter(id)}
+                aria-pressed={filter === id}
                 className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${
                   filter === id
                     ? "bg-brand-soft text-ink"
@@ -83,8 +89,11 @@ export default function GalleryPage() {
               </button>
             ))}
           </div>
+          {/* `w-[240px]` with no floor pushed the row past a 320px viewport;
+              it now shrinks with the screen instead of overflowing it. */}
           <input
-            className="input ml-auto !w-[240px] !py-1.5 text-[13px]"
+            aria-label="Filter demos by name or path"
+            className="input ml-auto min-w-0 !w-full !py-1.5 text-[13px] sm:!w-[240px]"
             placeholder="Filter by name or path…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -93,7 +102,7 @@ export default function GalleryPage() {
       )}
 
       {specs === null ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-5">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="overflow-hidden rounded-2xl border border-line bg-panel">
               <div className="aspect-[16/10] animate-pulse bg-bg2" />
@@ -108,16 +117,21 @@ export default function GalleryPage() {
         <EmptyState
           icon="M4 5h16v14H4zM4 10h16"
           title="No specs in this workspace yet"
-          sub="A spec is a short YAML file describing the demo. Describe one in plain English and let an agent write it for you."
+          sub="A spec is a short YAML file describing the demo. Scaffold one from a template, or drive your app in a browser and have Reel write down what you did — neither needs an API key."
         >
-          <Link href="/author" className="btn btn-brand">
-            Author your first demo
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link href="/new" className="btn btn-brand">
+              New demo
+            </Link>
+            <Link href="/author" className="btn btn-ghost">
+              Describe one instead
+            </Link>
+          </div>
         </EmptyState>
       ) : shown.length === 0 ? (
         <EmptyState title="Nothing matches that filter" sub="Try a different search or category." />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-5 stagger">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-5 stagger">
           {shown.map((s) => {
             const video = s.outputs.find((o) => o.kind === "mp4" || o.kind === "webm");
             const gifRaw = s.outputs.find((o) => o.kind === "gif");

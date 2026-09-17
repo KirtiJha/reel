@@ -185,7 +185,12 @@ export function SpecOutline({
     );
   }
   return (
-    <ul className="-mx-2 max-h-[420px] space-y-0.5 overflow-y-auto">
+    /* Relative to the viewport rather than a fixed 420px: on a short laptop
+       screen the old cap was taller than the space it had, and on a tall one it
+       scrolled a list that would have fitted. It is now the only scroller in
+       this pane — the tab used to cap itself at 720px around it, which left the
+       wheel caught in the inner list while the outer bar moved nothing. */
+    <ul className="-mx-2 max-h-[min(60vh,560px)] space-y-0.5 overflow-y-auto">
       {summary.outline.map((s) => (
         <Row key={s.index} step={s} onToggleHidden={onToggleHidden} />
       ))}

@@ -10,11 +10,20 @@ export default {
         panel: "#151823",
         panel2: "#1a1e2b",
         elev: "#1f2434",
-        line: "#262b3b",
-        line2: "#333a4f",
+        /* Boundaries. Both were inside a 1.07–1.67 contrast band against every
+           surface they sit on, which is why controls had no edge to find and
+           the whole UI read as one flat sheet. `line` now clears 3:1 against
+           the darkest surface it borders (bg #0b0d12) so a card, an input and a
+           divider are all separable; `line2` stays the brighter of the two for
+           hover and for the controls that need to look raised. */
+        line: "#454d63",
+        line2: "#646f8a",
         ink: "#e9ecf5",
         muted: "#98a1b8",
-        faint: "#6b7488",
+        /* #6b7488 measured 3.29–4.15:1 across the app's surfaces — below AA, on
+           text that carries real content (hints, paths, counts, empty-state
+           copy). #838ca0 clears 4.5:1 on every one of them, elev included. */
+        faint: "#838ca0",
         brand: "#6d8bff",
         brand2: "#7cf3c4",
         ok: "#4ade80",

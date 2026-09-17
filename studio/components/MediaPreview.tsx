@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { TabPanel, Tabs } from "@/components/bits";
 import { mediaUrl } from "@/lib/api";
 
 const ext = (p: string) => p.slice(p.lastIndexOf(".")).toLowerCase();
@@ -60,16 +61,52 @@ export function MediaPreview({ outputs }: { outputs: string[] }) {
   const showing = html && (mode === "interactive" || (!video && !gif)) ? "interactive" : "video";
   // Directories (a storyboard) can't be served as media — link them separately.
   const extras = outputs.filter((o) => !MEDIA.has(ext(o)));
+  /** Whether there is anything to switch between, and therefore a tab strip. */
+  const tabbed = Boolean(html && (video || gif));
+
+  const stage =
+    showing === "interactive" && html ? (
+      <div className="overflow-hidden rounded-xl border border-line bg-black">
+        <iframe
+          title="Interactive demo"
+          src={mediaUrl(html)}
+          className="block h-[560px] w-full border-0"
+        />
+      </div>
+    ) : (
+      <div className="overflow-hidden rounded-xl border border-line bg-black">
+        {!video && !gif && audio ? (
+          <div className="p-4">
+            <audio controls className="w-full" src={mediaUrl(audio)} />
+            <div className="mt-2 text-xs text-faint">
+              The mixed soundtrack on its own — narration, bed and effects.
+            </div>
+          </div>
+        ) : video ? (
+          <video controls playsInline className="block w-full" src={mediaUrl(video)}>
+            {vtt && <track kind="subtitles" src={mediaUrl(vtt)} default label="Captions" />}
+          </video>
+        ) : gif ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="demo" className="block w-full" src={mediaUrl(gif)} />
+        ) : null}
+      </div>
+    );
 
   return (
     <div className="animate-fade-up">
       {variants.length > 1 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div
+          className="mb-3 flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="Rendered variant"
+        >
           <span className="text-xs text-faint">Variant</span>
           {variants.map((v, i) => (
             <button
               key={v.name || i}
               onClick={() => setVariant(i)}
+              aria-pressed={i === variant}
               className={`rounded-lg border px-2.5 py-1 text-[12px] font-medium transition ${
                 i === variant
                   ? "border-brand bg-brand/10 text-brand"
@@ -83,48 +120,23 @@ export function MediaPreview({ outputs }: { outputs: string[] }) {
       )}
 
       {html && (video || gif) && (
-        <div className="mb-3 inline-flex rounded-xl border border-line bg-bg2 p-1">
-          {(["video", "interactive"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${
-                showing === m ? "bg-brand text-[#0a0d13]" : "text-muted hover:text-ink"
-              }`}
-            >
-              {m === "video" ? "Video" : "Interactive"}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          tabs={[
+            { id: "video", label: "Video" },
+            { id: "interactive", label: "Interactive" },
+          ]}
+          active={showing}
+          onChange={setMode}
+          label="How to preview this demo"
+          idBase="preview"
+          className="mb-3 inline-flex rounded-xl border border-line bg-bg2 p-1"
+        />
       )}
 
-      {showing === "interactive" && html ? (
-        <div className="overflow-hidden rounded-xl border border-line bg-black">
-          <iframe
-            title="Interactive demo"
-            src={mediaUrl(html)}
-            className="block h-[560px] w-full border-0"
-          />
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-line bg-black">
-          {!video && !gif && audio ? (
-            <div className="p-4">
-              <audio controls className="w-full" src={mediaUrl(audio)} />
-              <div className="mt-2 text-xs text-faint">
-                The mixed soundtrack on its own — narration, bed and effects.
-              </div>
-            </div>
-          ) : video ? (
-            <video controls playsInline className="block w-full" src={mediaUrl(video)}>
-              {vtt && <track kind="subtitles" src={mediaUrl(vtt)} default label="Captions" />}
-            </video>
-          ) : gif ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt="demo" className="block w-full" src={mediaUrl(gif)} />
-          ) : null}
-        </div>
-      )}
+      {/* Wrapped as a tab panel only when there is a strip naming it — an
+          `aria-labelledby` pointing at a tab that isn't rendered is worse than
+          none at all. */}
+      {tabbed ? <TabPanel idBase="preview" active={showing}>{stage}</TabPanel> : stage}
 
       {showing === "interactive" && html && (
         <div className="mt-3 flex flex-wrap items-center gap-3">

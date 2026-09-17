@@ -29,9 +29,14 @@ export function Shell({ children }: { children: ReactNode }) {
   if (PUBLIC_SITE) return <LocalOnly />;
 
   return (
-    <div className="grid min-h-screen grid-cols-[248px_1fr] max-[900px]:grid-cols-1">
+    /* `lg` (1024px) is the one breakpoint the workspace turns on, so the
+       sidebar folds into a bar at exactly the width the pages inside it drop to
+       a single column. They used to disagree — 900 here, 1000 on Settings and
+       Author, 1100 in Studio — which is how the preview card ended up sticky
+       inside a stack it was no longer beside. */
+    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[248px_1fr]">
       <Sidebar />
-      <main className="w-full px-8 pb-20 pt-8 max-[900px]:px-5">
+      <main className="w-full min-w-0 px-5 pb-20 pt-8 lg:px-8">
         <div className="page">{children}</div>
       </main>
     </div>

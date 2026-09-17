@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { PageHead, Pill } from "@/components/bits";
+import { Banner, PageHead, Pill } from "@/components/bits";
 import { getJSON, postJSON, type ConfigInfo } from "@/lib/api";
 
 /**
@@ -96,7 +96,7 @@ export default function SettingsPage() {
         sub="Reel is provider-agnostic and bring-your-own-key. Pick a provider, point it at a model, and test it. Settings are written to this workspace's .env, which Reel reads on every run."
       />
 
-      <div className="grid grid-cols-[1.15fr_1fr] gap-6 max-[1000px]:grid-cols-1">
+      <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
         {/* ---- model ---- */}
         <div className="card">
           <div className="mb-4 flex items-center justify-between gap-4">
@@ -112,6 +112,16 @@ export default function SettingsPage() {
               <Pill tone="off">not configured</Pill>
             )}
           </div>
+
+          {/* The server works out exactly what is missing and which variable
+              would fix it, and has always sent it back in `llm.error`. Nothing
+              rendered it, so the page said "not configured" and left the reason
+              in a JSON response nobody reads. */}
+          {cfg && !connected && cfg.llm.error && (
+            <div className="mb-4 rounded-lg border border-warn/25 bg-warn/[0.06] px-3 py-2 text-[12.5px] leading-relaxed text-warn">
+              {cfg.llm.error}
+            </div>
+          )}
 
           {cfg === null ? (
             <div className="text-[14px] text-muted">Loading…</div>
@@ -203,17 +213,10 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              {note && (
-                <div
-                  className={`rounded-lg border px-3 py-2 text-[13px] leading-relaxed ${
-                    note.ok
-                      ? "border-ok/25 bg-ok/[0.07] text-ok"
-                      : "border-err/30 bg-err/[0.07] text-err"
-                  }`}
-                >
-                  {note.text}
-                </div>
-              )}
+              {/* Saving and testing both answer without moving focus, so the
+                  answer has to announce itself or a screen-reader user presses
+                  Test and is told nothing at all. */}
+              {note && <Banner tone={note.ok ? "ok" : "err"}>{note.text}</Banner>}
 
               <p className="text-[12.5px] leading-relaxed text-faint">
                 Saved to <span className="font-mono">.env</span> in this workspace, which is
@@ -261,7 +264,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-6 max-[1000px]:grid-cols-1">
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="card">
           <h2 className="mb-2 text-[15px] font-semibold">Subtitles &amp; localization</h2>
           <p className="text-[14px] leading-relaxed text-muted">

@@ -627,7 +627,9 @@ describe("what the Studio is told about audio", () => {
     const s = spec("  - caption: A");
     assert.equal(s.options.audio.enabled, false);
     assert.equal(s.options.audio.sfx, "none");
-    assert.equal(s.options.audio.fit, "stretch");
+    // The schema's default, so the Studio shows what a spec without the key
+    // would actually render as rather than a second opinion about it.
+    assert.equal(s.options.audio.fit, "flow");
   });
 });
 

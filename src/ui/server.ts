@@ -11,6 +11,10 @@ import { authorSpec } from "../ai/author.js";
 import { addLogSink, log, ReelError } from "../util/log.js";
 import { chat, loadLlmConfig } from "../ai/llm.js";
 import { PROVIDERS, findProvider } from "../ai/providers.js";
+import { THEME_NAMES } from "../terminal/themes.js";
+import { doctor } from "../commands/doctor.js";
+import { initSpec } from "../commands/init.js";
+import { capture } from "../commands/capture.js";
 import { writeEnvFile } from "./env-file.js";
 import { summarize } from "./summary.js";
 import { readScript, draftNarration } from "../commands/narrate.js";
@@ -70,6 +74,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
 
   // --- Read-only API ---
   if (path === "/api/config" && req.method === "GET") return sendJson(res, 200, await getConfig());
+  /**
+   * Preflight. Wraps the same `reel doctor` the CLI runs, so the Studio can say
+   * "ffmpeg is missing" before a render spends two minutes discovering it and
+   * reports it as one red line at the bottom of a failed job.
+   */
+  if (path === "/api/doctor" && req.method === "GET") return sendJson(res, 200, await doctor());
   if (path === "/api/specs" && req.method === "GET") return sendJson(res, 200, { specs: await listSpecs(cwd) });
   if (path === "/api/gallery" && req.method === "GET") return sendJson(res, 200, { specs: await gallery(cwd) });
   if (path === "/api/patch" && req.method === "POST") {
@@ -81,6 +91,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
       // author's work with an empty document.
       return sendJson(res, 200, { raw: String(body.raw ?? "") });
     }
+  }
+  /**
+   * Summarize YAML that hasn't been saved yet.
+   *
+   * The options form is built from the summary, so hand-editing the YAML used
+   * to leave the two out of step until the next save — and the next thing
+   * touched in the form would write the stale value back over the edit. This
+   * lets the editor re-derive the form from the buffer, not from disk.
+   */
+  if (path === "/api/summary" && req.method === "POST") {
+    const body = await readBody(req);
+    return sendJson(res, 200, { summary: summarize(String(body.raw ?? "")) });
   }
   if (path === "/api/step-hidden" && req.method === "POST") {
     const body = await readBody(req);
@@ -172,7 +194,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
     const after = specSchema.parse(parseYaml(next));
     verifyReorder(before, after.steps);
     await writeFile(file, next, "utf8");
-    return sendJson(res, 200, { ok: true, raw: next, summary: await summarize(file) });
+    // `summarize` reads YAML, not a path. Handing it the filename parsed as a
+    // bare scalar, failed the schema, and every reorder came back
+    // `{valid:false}` — the outline emptied itself on a successful move.
+    return sendJson(res, 200, { ok: true, raw: next, summary: summarize(next) });
   }
 
   // The media library. Downloading happens while you edit, never while you
@@ -235,6 +260,54 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
       return r;
     });
   }
+  /**
+   * Scaffold a starter spec — the key-free way to a first demo.
+   *
+   * `reel init` needs no model and no browser, so it is the one path that works
+   * on a machine that has only just installed Reel. Studio had no way to reach
+   * it at all, which left "author with an LLM" as the only door in.
+   */
+  if (path === "/api/init" && req.method === "POST") {
+    const body = await readBody(req);
+    const dir = safePath(cwd, String(body.dir ?? ".") || ".");
+    if (!dir) return sendJson(res, 400, { error: "bad path" });
+    try {
+      await initSpec(dir, {
+        url: String(body.url ?? "http://localhost:3000"),
+        name: String(body.name ?? "My demo"),
+      });
+      const file = join(dir, "demo.reel.yaml");
+      return sendJson(res, 200, { ok: true, path: rel(cwd, file), raw: await readFile(file, "utf8") });
+    } catch (err) {
+      const e = err as ReelError;
+      return sendJson(res, 200, { ok: false, error: e.message, hint: e.hint });
+    }
+  }
+
+  /**
+   * Author by doing. Opens a real browser window on this machine and hands back
+   * a spec when the person presses Finish.
+   *
+   * It works from Studio for the same reason Studio exists at all: the server is
+   * bound to loopback and runs on the machine in front of the user, so the
+   * window it opens is one they can see. On a headless box it fails the way the
+   * CLI does — with the message that points at `reel doctor` — rather than
+   * hanging, and the UI offers the command line as the fallback.
+   */
+  if (path === "/api/capture" && req.method === "POST") {
+    const body = await readBody(req);
+    return streamJob(res, async () => {
+      const out = safePathOrThrow(cwd, body.out || "demo.reel.yaml");
+      const r = await capture({
+        url: String(body.url ?? ""),
+        out,
+        name: body.name ? String(body.name) : undefined,
+        force: Boolean(body.force),
+      });
+      return { path: rel(cwd, r.file), steps: r.steps, raw: await readFile(r.file, "utf8") };
+    });
+  }
+
   if (path === "/api/author" && req.method === "POST") {
     const body = await readBody(req);
     return streamJob(res, async () => {
@@ -273,7 +346,15 @@ async function getConfig() {
     // nothing is — the message already names the provider and the variable.
     llm = { configured: false, error: err instanceof Error ? err.message : undefined };
   }
-  return { llm, platform: process.platform, providers: PROVIDERS.map((p) => ({ id: p.id, label: p.label })) };
+  return {
+    llm,
+    platform: process.platform,
+    providers: PROVIDERS.map((p) => ({ id: p.id, label: p.label })),
+    // Served rather than hand-copied into the UI: the Studio derives what it
+    // offers from the source of truth, so adding a scheme in one place cannot
+    // leave a second list behind to go stale.
+    terminalThemes: [...THEME_NAMES],
+  };
 }
 
 async function listSpecs(cwd: string): Promise<string[]> {

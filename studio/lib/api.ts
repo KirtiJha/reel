@@ -17,6 +17,27 @@ export interface ConfigInfo {
   platform: string;
   /** Every provider Reel knows how to talk to. */
   providers?: { id: string; label: string }[];
+  /**
+   * Terminal colour schemes, served from `src/terminal/themes.ts`.
+   *
+   * Served rather than hand-copied: a scheme added to the source of truth shows
+   * up here for free, and there is no second list to drift.
+   */
+  terminalThemes?: string[];
+}
+
+/** One `reel doctor` check, as the CLI reports it. */
+export interface DoctorCheck {
+  name: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+  /** The command that fixes it, when there is one. */
+  fix?: string;
+}
+
+export interface DoctorReport {
+  ok: boolean;
+  checks: DoctorCheck[];
 }
 export interface GallerySpec {
   path: string;
@@ -93,6 +114,8 @@ export interface SpecSummary {
     mp4?: string;
     webm?: string;
     storyboard?: string;
+    /** Reported, not offered: it counts towards "the spec renders something". */
+    player?: string;
   };
 }
 

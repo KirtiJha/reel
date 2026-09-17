@@ -201,7 +201,11 @@ export function ScriptPanel({
         )}
       </div>
 
-      {note && <p className="text-[13px] text-err">{note}</p>}
+      {note && (
+        <p role="alert" aria-live="assertive" className="text-[13px] text-err">
+          {note}
+        </p>
+      )}
     </div>
   );
 }

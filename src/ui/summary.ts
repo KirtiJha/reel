@@ -91,6 +91,14 @@ export interface SpecSummary {
     mp4?: string;
     webm?: string;
     storyboard?: string;
+    /**
+     * The demo as a document, when the spec asks for one.
+     *
+     * Reported but not offered as a checkbox: it is here so the Studio can tell
+     * that a spec already renders *something* before it lets the last format
+     * be switched off, which the schema rejects.
+     */
+    player?: string;
   };
 }
 
@@ -198,7 +206,10 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
       enabled: Boolean(spec.audio) && o.audio !== false,
       provider: spec.audio?.voice.provider ?? "elevenlabs",
       voiceId: spec.audio?.voice.id,
-      fit: spec.audio?.fit ?? "stretch",
+      // The schema's own default, not a second opinion about it: `flow` is what
+      // a spec with no `fit:` actually renders as, so anything else here shows
+      // the user a setting their spec does not have.
+      fit: spec.audio?.fit ?? "flow",
       sfx: spec.audio?.sfx ?? "none",
       music: spec.audio?.music?.file,
       musicGain: spec.audio?.music?.gain,
@@ -210,6 +221,7 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
     mp4: o.mp4,
     webm: o.webm,
     storyboard: o.storyboard,
+    player: o.player,
   };
 }
 
@@ -240,7 +252,7 @@ export function summarize(raw: string): SpecSummary {
       audio: {
         enabled: false,
         provider: "elevenlabs",
-        fit: "stretch",
+        fit: "flow",
         sfx: "none",
         spokenLines: 0,
       },
