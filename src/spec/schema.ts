@@ -230,7 +230,14 @@ export type Polish = z.infer<typeof polishSchema>;
  * interpolation anywhere in this grammar — the key comes from the environment.
  */
 export const voiceSchema = z.object({
-  provider: z.enum(["openai", "elevenlabs"]).default("openai"),
+  /**
+   * Who synthesizes the narration.
+   *
+   * `voicestudio` is a local, offline synthesizer you run yourself — no key, no
+   * account, and the audio never leaves the machine. Reel speaks to it over
+   * HTTP and ships none of its code; install it separately.
+   */
+  provider: z.enum(["openai", "elevenlabs", "voicestudio"]).default("openai"),
   /** Voice id or name, as the vendor names it. Omit for the provider default. */
   id: z.string().optional(),
   /** The synthesis model. Omit for the provider default. */

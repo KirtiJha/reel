@@ -298,9 +298,11 @@
               "type": "string",
               "enum": [
                 "openai",
-                "elevenlabs"
+                "elevenlabs",
+                "voicestudio"
               ],
-              "default": "openai"
+              "default": "openai",
+              "description": "Who synthesizes the narration.\n\n`voicestudio` is a local, offline synthesizer you run yourself — no key, no\naccount, and the audio never leaves the machine. Reel speaks to it over\nHTTP and ships none of its code; install it separately."
             },
             "id": {
               "type": "string",

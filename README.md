@@ -499,7 +499,7 @@ Demos can talk. Add a spoken line beside the caption it belongs to:
 
 ```yaml
 audio:
-  voice: { provider: elevenlabs }   # or openai
+  voice: { provider: elevenlabs }   # or openai, or voicestudio (local)
   fit: stretch                      # let the picture wait for the voice
   sfx: subtle                       # a tick on a click, key texture while typing
   music:
@@ -515,6 +515,31 @@ steps:
       sayIn:
         es: "Aquí no hay grabador de pantalla ni edición."
 ```
+
+### Narration with no key, no account and no network
+
+`provider: voicestudio` points Reel at [VoiceStudio](https://github.com/debpalash/VoiceStudio),
+an open-source synthesizer that runs entirely on your machine:
+
+```yaml
+audio:
+  voice: { provider: voicestudio, id: <a voice it serves> }
+```
+
+Install and start it, and that is the whole setup — Reel talks to its
+OpenAI-compatible endpoint on `127.0.0.1:3900` and sends no credential, because
+a loopback server wants none. `REEL_VOICE_API_BASE` points elsewhere if you run
+it on another port or host, and `REEL_VOICE_API_KEY` is sent as a bearer token
+if you set one, for a remote worker that expects it.
+
+Why it is worth the install: every other provider makes narration something you
+cannot do on a plane, in CI without a secret, or in a repo whose contributors do
+not each hold a vendor account — and it sends your script to somebody else's
+server. This is the one that does not.
+
+Reel ships none of its code and speaks to it over HTTP. That is deliberate:
+VoiceStudio is AGPL-3.0 and Reel is MIT, so it stays a separate program you
+install rather than something vendored in here.
 
 **`say` is separate from `text` on purpose.** A caption is read; narration is
 heard. Captions are terse by necessity, and terse text spoken aloud comes out
