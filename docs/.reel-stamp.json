@@ -19,11 +19,11 @@
     },
     {
       "label": "One spec. Every format.",
-      "t": 18860
+      "t": 19005
     },
     {
       "label": "outro",
-      "t": 20880
+      "t": 21025
     }
   ],
   "captions": [
@@ -32,13 +32,13 @@
       "text": "Type a task and add it — that's the whole flow"
     },
     {
-      "t": 11280,
+      "t": 11425,
       "text": "Reel scrolls, frames, and narrates the story for you, so a long page still reads as one continuous take"
     },
     {
-      "t": 18860,
+      "t": 19005,
       "text": ""
     }
   ],
-  "durationMs": 22180
+  "durationMs": 22325
 }
