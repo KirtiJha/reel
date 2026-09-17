@@ -10,6 +10,7 @@ import {
   renderTerminal,
   showTerminal,
 } from "./surface.js";
+import { typingDelays } from "../overlay/cadence.js";
 import { ReelError, log } from "../util/log.js";
 
 /**
@@ -123,6 +124,14 @@ export class TerminalController {
     expectCode?: number;
     replayMs?: number;
     hidden?: boolean;
+    /**
+     * How the command is typed, from the spec's `polish.typing`.
+     *
+     * Passed in rather than read from `terminal:` because it is one decision
+     * about the whole demo — a spec whose browser typed like a person and whose
+     * shell typed like a metronome would be stranger than one that did neither.
+     */
+    cadence?: { jitter: boolean; seed: number };
   }): Promise<void> {
     const { cmd } = opts;
 
@@ -144,10 +153,19 @@ export class TerminalController {
     // 1) Prompt and typed command.
     this.emu.write(this.cfg.prompt);
     await this.paint();
-    for (const ch of cmd) {
-      this.emu.write(ch);
+    // Computed up front, and a pure function of the command text: two runs of
+    // one spec type it with the same rhythm, which is what keeps the frame
+    // timestamps — and so the encoded bytes — identical.
+    const delays = typingDelays(cmd, {
+      delay: this.cfg.typing,
+      jitter: opts.cadence?.jitter ?? true,
+      seed: opts.cadence?.seed ?? 0,
+    });
+    const chars = [...cmd];
+    for (let i = 0; i < chars.length; i++) {
+      this.emu.write(chars[i]!);
       await this.paint();
-      await this.rec.frameFor(this.cfg.typing);
+      await this.rec.frameFor(delays[i] ?? this.cfg.typing);
     }
     this.emu.write("\n");
     await this.paint();

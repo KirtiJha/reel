@@ -124,7 +124,19 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
 
     if (event.type === "key") {
       if (!event.key) continue;
-      steps.push(selector ? { press: { selector, key: event.key } } : { press: { key: event.key } });
+      // A chord belongs to the app, not to whatever happened to have focus.
+      //
+      // ⌘K is caught by the document: the browser reports it against `<body>`,
+      // or against the card the pointer was resting over, and writing the step
+      // down that way records a relationship that isn't there. It matters more
+      // than tidiness now that a press draws a key cap — an anchored cap is
+      // placed beside its element and the camera moves to it, so a shortcut
+      // attributed to the page background would point the viewer at nothing.
+      //
+      // Only Control/Meta/Alt count. `Shift+ArrowDown` really is aimed at the
+      // field it extends the selection in.
+      const target = isChord(event.key) || !nameable(selector) ? null : selector;
+      steps.push(target ? { press: { selector: target, key: event.key } } : { press: { key: event.key } });
       continue;
     }
 
@@ -168,6 +180,32 @@ export function toSteps(events: CaptureEvent[], baseUrl: string): CaptureResult 
   flush();
   settle();
   return { steps, skipped };
+}
+
+/**
+ * Whether a key combination is a command rather than text entry.
+ *
+ * Control, Meta and Alt are how an app spells "this is a shortcut"; Shift is
+ * how a keyboard spells a capital letter, so it never makes a chord on its own.
+ */
+export function isChord(key: string): boolean {
+  return key
+    .split("+")
+    .slice(0, -1)
+    .some((part) => part === "Control" || part === "Meta" || part === "Alt");
+}
+
+/**
+ * Whether a selector names something, as opposed to naming the page.
+ *
+ * `body` and `html` always match, so they read as valid selectors and are worth
+ * nothing: a step written against them says "somewhere on the page", which is
+ * where a keystroke goes anyway.
+ */
+function nameable(selector: string | null): selector is string {
+  if (!selector) return false;
+  const bare = selector.trim().toLowerCase();
+  return bare !== "body" && bare !== "html" && bare !== ":root";
 }
 
 /** `click:#save` — a cheap identity for the "is this the same target" checks. */

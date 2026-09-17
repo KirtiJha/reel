@@ -177,6 +177,24 @@
           "default": "smooth",
           "description": "Render a synthetic cursor that eases between targets."
         },
+        "keys": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "none"
+          ],
+          "default": "auto",
+          "description": "Show the key combination a `press:` step sends, as a key cap on screen.\n\nThe one thing a screen recording genuinely cannot show. A cursor makes a\nclick legible — there is something to see move and land — but a keyboard\nshortcut has no picture at all, so a demo of a ⌘K palette is a palette\nappearing for no reason the viewer can name. `auto` draws `⌘ K` for a beat\nas the key goes down, and points the camera at what the press was aimed at.\n\n`none` is what Reel did before: press the key, show nothing, move no\ncamera."
+        },
+        "typing": {
+          "type": "string",
+          "enum": [
+            "human",
+            "uniform"
+          ],
+          "default": "human",
+          "description": "The cadence of typed text, on the page and at the terminal prompt.\n\n`human` is the default: the per-character delay wanders by about a third\neither side, the hands rest at a word boundary, and a full stop is a beat.\nEvenly-spaced keystrokes are the loudest automation tell a demo has, and\nthis is the one line of it that costs nothing.\n\nIt stays byte-reproducible because the wander is derived rather than\nrandom — from the character's position, the text itself and\n`deterministic.seedRandom` — so two runs of one spec type identically.\n\n`uniform` restores the flat delay. A single `type:` step can opt out on its\nown with `jitter: false`."
+        },
         "captions": {
           "type": "boolean",
           "default": true,
@@ -778,6 +796,10 @@
                         "minimum": 0,
                         "default": 60,
                         "description": "Per-character delay (ms) so typing reads naturally on camera."
+                      },
+                      "jitter": {
+                        "type": "boolean",
+                        "description": "Let the cadence wander around `delay` instead of being flat, and\nrest at word boundaries and punctuation — see `polish.typing`, which\nthis overrides for one step. Off is right for a field whose contents\nare a code or an id rather than something a person composes."
                       }
                     },
                     "required": [
@@ -1899,6 +1921,10 @@
                                         "minimum": 0,
                                         "default": 60,
                                         "description": "Per-character delay (ms) so typing reads naturally on camera."
+                                      },
+                                      "jitter": {
+                                        "type": "boolean",
+                                        "description": "Let the cadence wander around `delay` instead of being flat, and\nrest at word boundaries and punctuation — see `polish.typing`, which\nthis overrides for one step. Off is right for a field whose contents\nare a code or an id rather than something a person composes."
                                       }
                                     },
                                     "required": [

@@ -13,8 +13,13 @@ import {
   hideScene,
   smoothScroll,
   spotlight,
+  showKeys,
+  keysAt,
+  hideKeys,
   toPlaywrightSelector,
 } from "../overlay/overlay.js";
+import { keyCaps } from "../overlay/keycap.js";
+import { typingDelays } from "../overlay/cadence.js";
 import type { Recorder } from "./recorder.js";
 import type { TerminalController } from "../terminal/controller.js";
 import type { CaptionCue } from "../polish/captions.js";
@@ -168,6 +173,15 @@ const HOLD = {
   camera: 520,
 };
 
+/**
+ * The beat a key cap gets: spring in, sit long enough to read, fade out.
+ *
+ * Short on purpose. The cap is punctuation for what the app does next, not an
+ * event of its own, and a chip that outstays the palette it opened is worse
+ * than no chip at all.
+ */
+const KEYCAP = { in: 200, hold: 700, out: 220 };
+
 export async function runStep(step: Step, ctx: StepContext, i: number): Promise<void> {
   const { page, mode } = ctx;
   const label = describe(step);
@@ -275,17 +289,27 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("type" in step) {
-    const { selector, text, delay } = step.type;
+    const { selector, text, delay, jitter } = step.type;
     const box = await pointAt(ctx, selector, cinematic);
     snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
     const loc = locate(page, selector);
     if (cinematic) ctx.sfx.push({ t: ctx.now(), kind: "click" });
     await loc.click();
     // One cue spanning the whole burst; the track spreads ticks across it. The
-    // span is measured rather than predicted, because `typeInto` decides the
+    // span is measured rather than predicted, because the cadence decides the
     // per-character delay and a guess here would drift out of sync with it.
     const from = ctx.now();
-    await ctx.rec.typeInto(loc, text, delay);
+    const cadence = typingCadence(ctx);
+    // `jitter` on the step wins over `polish.typing`, so one field of machine
+    // text can stay flat inside a demo that otherwise types like a person.
+    const human = jitter ?? cadence.jitter;
+    if (!human || !ctx.rec.cinematic) {
+      // Flat delay: hand it to the recorder's own loop, so a spec that opts out
+      // is byte-for-byte the demo it was before any of this existed.
+      await ctx.rec.typeInto(loc, text, delay);
+    } else {
+      await typeHumanly(ctx, loc, text, typingDelays(text, { delay, ...cadence, jitter: true }));
+    }
     if (cinematic) ctx.sfx.push({ t: from, kind: "type", durationMs: ctx.now() - from });
     await ctx.rec.hold(HOLD.afterType);
     return;
@@ -297,8 +321,48 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   }
 
   if ("press" in step) {
-    if (step.press.selector) await locate(page, step.press.selector).press(step.press.key);
-    else await page.keyboard.press(step.press.key);
+    const { selector, key } = step.press;
+    const caps = keyCaps(key);
+    // `none` is the old behaviour exactly: press the key, draw nothing, leave
+    // the camera where it was. Nothing below may run in that case, or turning
+    // key caps off would still re-shoot the demo.
+    const show = cinematic && ctx.spec.polish.keys === "auto" && caps.length > 0;
+
+    // A press aimed at an element is aimed at something the viewer can see, so
+    // the camera goes there and the caps sit beside it. The cursor travels too
+    // — but it does *not* pulse: a ripple is the picture of a click, and
+    // drawing one for a keystroke would show the viewer something that never
+    // happened.
+    const box = selector && show ? await pointAt(ctx, selector, cinematic, { pulse: false }) : null;
+
+    if (show) {
+      // A chord with nothing to point at is a global action (⌘K, Esc). Widen
+      // out: what a shortcut does is usually the whole screen, and it also
+      // guarantees a centred cap can't be cropped away by a close-up left over
+      // from the step before.
+      if (!box) zoomOut(ctx);
+      // Snapped before the press, like a click: the click-through shows the
+      // state you act on, with the key still on screen, and advances to what
+      // the shortcut did.
+      snap(ctx, label, { hotspot: box ? toHotspot(box) : undefined });
+      const anchor = box ? { x: box.x, y: box.y, w: box.width, h: box.height } : null;
+      await showKeys(page, caps, anchor);
+      await ctx.rec.motion(KEYCAP.in, (p) => keysAt(page, p));
+      // The key going down sounds like a key going down.
+      ctx.sfx.push({ t: ctx.now(), kind: "click" });
+    }
+
+    if (selector) await locate(page, selector).press(key);
+    else await page.keyboard.press(key);
+
+    if (show) {
+      // The cap is still up while the app responds, which is what ties the two
+      // together — the palette opens *under* the combination that opened it.
+      await ctx.rec.hold(KEYCAP.hold);
+      await ctx.rec.motion(KEYCAP.out, (p) => keysAt(page, 1 - p));
+      await hideKeys(page);
+      await ctx.rec.hold(HOLD.afterClick);
+    }
     return;
   }
 
@@ -685,7 +749,8 @@ export async function runStep(step: Step, ctx: StepContext, i: number): Promise<
   if ("run" in step) {
     const term = requireTerminal(ctx, "run");
     const r = typeof step.run === "string" ? { cmd: step.run, hidden: false } : step.run;
-    await term.run(r);
+    // The prompt types like the page does: one spec, one pair of hands.
+    await term.run({ ...r, cadence: typingCadence(ctx) });
     // A hidden command produced no frames, so there is nothing to point the
     // camera at and nothing new for a storyboard beat to capture.
     if (!r.hidden) {
@@ -804,6 +869,7 @@ async function pointAt(
   ctx: StepContext,
   selector: string,
   cinematic: boolean,
+  opts: { pulse?: boolean } = {},
 ): Promise<{ x: number; y: number; width: number; height: number } | null> {
   if (!cinematic) return null;
   const box = await locate(ctx.page, selector).boundingBox();
@@ -816,9 +882,58 @@ async function pointAt(
   }
   if (ctx.spec.polish.cursor !== "none") {
     await ctx.rec.glideCursor(cx, cy);
-    await ctx.rec.pulse(cx, cy);
+    // The ripple is the picture of a click. A step that travels to an element
+    // without clicking it — a key press aimed at a field — asks for the move
+    // and not the press, or the recording shows a click that never happened.
+    if (opts.pulse !== false) await ctx.rec.pulse(cx, cy);
   }
   return box;
+}
+
+/**
+ * How this spec types: the wander, and the seed it is derived from.
+ *
+ * One place so the web `type` step and the terminal prompt agree — a demo where
+ * the browser typed like a person and the shell typed like a metronome would be
+ * worse than one that did neither.
+ */
+function typingCadence(ctx: StepContext): { jitter: boolean; seed: number } {
+  return {
+    jitter: ctx.spec.polish.typing === "human",
+    seed: ctx.spec.deterministic.seedRandom ?? 0,
+  };
+}
+
+/**
+ * Type text at a human cadence, one captured frame per character.
+ *
+ * The delays are computed up front rather than drawn as we go, which is the
+ * whole reason this is safe: the array is a pure function of the text, so the
+ * frame timestamps it produces are identical on every run and on every machine.
+ */
+async function typeHumanly(
+  ctx: StepContext,
+  loc: ReturnType<typeof locate>,
+  text: string,
+  delays: number[],
+): Promise<void> {
+  const chars = [...text];
+  const { rec } = ctx;
+  for (let i = 0; i < chars.length; i++) {
+    await loc.pressSequentially(chars[i]!, { delay: 0 });
+    const ms = delays[i] ?? 0;
+    if (rec.deterministic) {
+      // Sample at the current timeline position, then let that character's
+      // dwell pass — the same shape `Recorder.typeInto` uses for a flat delay.
+      await rec.frameFor(ms);
+    } else {
+      // Realtime: the free-running capture loop is filming, so the wait has to
+      // actually happen for the typing to appear in the frames it grabs.
+      const d = rec.timeline.scale(ms);
+      await rec.settle(d);
+      rec.timeline.advanceScaled(d);
+    }
+  }
 }
 
 /**
@@ -988,6 +1103,10 @@ function describe(step: Step): string {
       const to = typeof v.to === "string" ? v.to : "a point";
       return `${key} ${v.from} → ${to}`;
     }
+    // A press is named by the key, not by what it was aimed at: "press" alone
+    // was the log line, the storyboard label and the click-through caption for
+    // every keyboard step in every demo.
+    if ("key" in v) return `${key} ${v.key}${"selector" in v ? ` in ${v.selector}` : ""}`;
     if ("selector" in v) return `${key} ${v.selector}${"text" in v ? ` "${v.text}"` : ""}`;
     if ("title" in v) return `${key} “${v.title}”`;
     if ("text" in v) return `${key} “${v.text}”`;

@@ -98,6 +98,35 @@ export const polishSchema = z.object({
   zoomRows: z.number().int().positive().max(120).default(12),
   /** Render a synthetic cursor that eases between targets. */
   cursor: z.union([z.literal("smooth"), z.literal("none")]).default("smooth"),
+  /**
+   * Show the key combination a `press:` step sends, as a key cap on screen.
+   *
+   * The one thing a screen recording genuinely cannot show. A cursor makes a
+   * click legible — there is something to see move and land — but a keyboard
+   * shortcut has no picture at all, so a demo of a ⌘K palette is a palette
+   * appearing for no reason the viewer can name. `auto` draws `⌘ K` for a beat
+   * as the key goes down, and points the camera at what the press was aimed at.
+   *
+   * `none` is what Reel did before: press the key, show nothing, move no
+   * camera.
+   */
+  keys: z.enum(["auto", "none"]).default("auto"),
+  /**
+   * The cadence of typed text, on the page and at the terminal prompt.
+   *
+   * `human` is the default: the per-character delay wanders by about a third
+   * either side, the hands rest at a word boundary, and a full stop is a beat.
+   * Evenly-spaced keystrokes are the loudest automation tell a demo has, and
+   * this is the one line of it that costs nothing.
+   *
+   * It stays byte-reproducible because the wander is derived rather than
+   * random — from the character's position, the text itself and
+   * `deterministic.seedRandom` — so two runs of one spec type identically.
+   *
+   * `uniform` restores the flat delay. A single `type:` step can opt out on its
+   * own with `jitter: false`.
+   */
+  typing: z.enum(["human", "uniform"]).default("human"),
   /** Show caption text overlays. */
   captions: z.boolean().default(true),
   /**
@@ -592,6 +621,13 @@ const baseStepSchema = z.union([
         text: z.string(),
         /** Per-character delay (ms) so typing reads naturally on camera. */
         delay: durationMs.default(60),
+        /**
+         * Let the cadence wander around `delay` instead of being flat, and
+         * rest at word boundaries and punctuation — see `polish.typing`, which
+         * this overrides for one step. Off is right for a field whose contents
+         * are a code or an id rather than something a person composes.
+         */
+        jitter: z.boolean().optional(),
       }).strict(),
     })
     .strict(),

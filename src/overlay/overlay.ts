@@ -238,6 +238,30 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
       } as CSSStyleDeclaration);
       root.appendChild(scene);
 
+      // --- Key caps ---
+      //
+      // A row of chips showing the combination a `press:` step just sent. The
+      // one piece of a demo a screen recording genuinely cannot capture: a
+      // command palette opening for no visible reason is the viewer's problem,
+      // not the app's. Positioned by the controller, because only the page
+      // knows how wide the caps came out.
+      const keys = document.createElement("div");
+      Object.assign(keys.style, {
+        position: "fixed",
+        left: "0",
+        top: "0",
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        transform: "translate(-50%, -50%) scale(1)",
+        transformOrigin: "50% 50%",
+        opacity: "0",
+        pointerEvents: "none",
+        willChange: "transform, opacity",
+        zIndex: "4",
+      } as CSSStyleDeclaration);
+      root.appendChild(keys);
+
       // --- Caption bar (used when captions aren't composited in post) ---
       const caption = document.createElement("div");
       Object.assign(caption.style, {
@@ -483,6 +507,81 @@ export async function installOverlay(page: Page, opts: OverlayOptions): Promise<
             spotLabel.style.opacity = "1";
           }
         },
+        /**
+         * Build the caps for a key combination and place them on screen.
+         *
+         * `anchor` is the element the press was aimed at, when it was aimed at
+         * one: the caps sit under it, flipping above when there isn't room, the
+         * same way a spotlight label does. Without an anchor the press was a
+         * global chord and the caps go to the middle of the frame — low enough
+         * not to cover whatever the shortcut opens, high enough to survive the
+         * camera's wide shot.
+         *
+         * Nothing here animates: the driver steps the entrance itself through
+         * `keysAt`, so a frame is the same frame on every run.
+         */
+        keysShow(caps: string[], anchor: { x: number; y: number; w: number; h: number } | null) {
+          keys.replaceChildren();
+          for (const label of caps) {
+            const cap = document.createElement("div");
+            cap.textContent = label;
+            Object.assign(cap.style, {
+              minWidth: "20px",
+              padding: "11px 15px",
+              borderRadius: "11px",
+              background: "linear-gradient(180deg, rgba(41,45,60,.97), rgba(20,22,31,.98))",
+              border: "1px solid rgba(255,255,255,.17)",
+              // The accent as the key's edge: the same brand colour the ripple,
+              // the spotlight ring and the card rule already use.
+              borderBottom: `3px solid ${o.accent}`,
+              color: "#fff",
+              font: `600 23px/1 ${fontStack}`,
+              letterSpacing: ".01em",
+              textAlign: "center",
+              boxShadow: "0 12px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.14)",
+            } as CSSStyleDeclaration);
+            keys.appendChild(cap);
+          }
+          keys.style.opacity = "0";
+
+          // Laid-out size, not the transformed box: the caps are drawn scaled
+          // during the entrance and the placement must not move with it.
+          const w = keys.offsetWidth;
+          const h = keys.offsetHeight;
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const gap = 14;
+
+          let cx = vw / 2;
+          let cy = vh * 0.66;
+          if (anchor) {
+            cx = anchor.x + anchor.w / 2;
+            const below = anchor.y + anchor.h + gap + h / 2;
+            const above = anchor.y - gap - h / 2;
+            if (below + h / 2 <= vh - 8) cy = below;
+            else if (above - h / 2 >= 8) cy = above;
+            else cy = anchor.y + anchor.h / 2; // no room either side — over it
+          }
+          keys.style.left = `${Math.min(Math.max(cx, w / 2 + 12), Math.max(w / 2 + 12, vw - w / 2 - 12))}px`;
+          keys.style.top = `${Math.min(Math.max(cy, h / 2 + 12), Math.max(h / 2 + 12, vh - h / 2 - 12))}px`;
+        },
+        /**
+         * The caps at an explicit progress (0→1), so a deterministic recording
+         * can step the pop-in and the fade-out frame by frame — the same
+         * treatment `rippleAt` gives the click ripple.
+         */
+        keysAt(p: number) {
+          const e = Math.min(1, Math.max(0, p));
+          // Springs in from slightly small, with the same overshoot the cursor
+          // lands with, so a key cap arrives like a press rather than a dialog.
+          const scale = 0.86 + 0.14 * easeOutBack(e);
+          keys.style.opacity = String(e);
+          keys.style.transform = `translate(-50%, -50%) scale(${scale})`;
+        },
+        keysHide() {
+          keys.style.opacity = "0";
+          keys.replaceChildren();
+        },
         spotOut() {
           spot.style.opacity = "0";
           spot.style.boxShadow = "0 0 0 9999px rgba(6,8,14,0)";
@@ -690,6 +789,34 @@ export async function spotlight(
     ({ r, t, d }) => (window as any).__reel__?.spot(r, t, d),
     { r: rect, t: text ?? "", d: dim },
   );
+}
+
+/**
+ * Draw the caps for a key combination, invisible until `keysAt` reveals them.
+ *
+ * `anchor` is the box of the element the press targeted, in viewport CSS px, or
+ * null for a chord aimed at the app as a whole.
+ */
+export async function showKeys(
+  page: Page,
+  caps: string[],
+  anchor: { x: number; y: number; w: number; h: number } | null,
+): Promise<void> {
+  await page
+    .evaluate(
+      ({ c, a }) => (window as any).__reel__?.keysShow(c, a),
+      { c: caps, a: anchor },
+    )
+    .catch(() => {});
+}
+
+/** Put the key caps at an exact progress (deterministic recording). */
+export async function keysAt(page: Page, p: number): Promise<void> {
+  await page.evaluate((v) => (window as any).__reel__?.keysAt(v), p).catch(() => {});
+}
+
+export async function hideKeys(page: Page): Promise<void> {
+  await page.evaluate(() => (window as any).__reel__?.keysHide()).catch(() => {});
 }
 
 export async function clearSpotlight(page: Page): Promise<void> {
