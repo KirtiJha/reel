@@ -1,7 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -15,9 +14,10 @@ import {
 } from "../src/spec/fingerprint.js";
 import { specSchema } from "../src/spec/schema.js";
 import type { LoadedSpec } from "../src/spec/load.js";
+import { tempDir } from "./tmp.js";
 
 async function fixture(yaml: string): Promise<LoadedSpec> {
-  const dir = await mkdtemp(join(tmpdir(), "reel-fp-"));
+  const dir = await tempDir("reel-fp");
   const path = join(dir, "demo.reel.yaml");
   await writeFile(path, yaml, "utf8");
   return { spec: specSchema.parse(parse(yaml)), path, dir };
@@ -81,7 +81,7 @@ describe("fingerprint", () => {
 
   test("covers referenced files, not just the YAML", async () => {
     // A HAR is not part of the spec text but absolutely changes the render.
-    const dir = await mkdtemp(join(tmpdir(), "reel-fp-"));
+    const dir = await tempDir("reel-fp");
     const har = join(dir, "net.har");
     const yaml = `name: D\nmock: { har: net.har }\nsteps: [{ goto: / }]\noutput: { gif: out/d.gif }\n`;
     const path = join(dir, "demo.reel.yaml");
@@ -96,7 +96,7 @@ describe("fingerprint", () => {
   });
 
   test("a missing referenced file differs from a present one", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-fp-"));
+    const dir = await tempDir("reel-fp");
     const har = join(dir, "net.har");
     const yaml = `name: D\nmock: { har: net.har }\nsteps: [{ goto: / }]\noutput: { gif: out/d.gif }\n`;
     const path = join(dir, "demo.reel.yaml");
@@ -159,7 +159,7 @@ describe("declaredOutputs", () => {
 
 describe("the stamp is committed, so it has to be reproducible", () => {
   async function written(outputs: string[]): Promise<{ path: string; raw: string }> {
-    const dir = await mkdtemp(join(tmpdir(), "reel-stamp-"));
+    const dir = await tempDir("reel-stamp");
     const path = join(dir, "docs", ".reel-stamp.json");
     await writeStamp(path, { hash: "h", inputs: [], version: "0.2.0", epoch: RENDER_EPOCH }, outputs);
     return { path, raw: await readFile(path, "utf8") };
@@ -176,7 +176,7 @@ describe("the stamp is committed, so it has to be reproducible", () => {
   test("records outputs relative to itself, never absolute", async () => {
     // These used to be absolute: somebody's home directory, in a public repo,
     // different on every machine.
-    const dir = await mkdtemp(join(tmpdir(), "reel-stamp-"));
+    const dir = await tempDir("reel-stamp");
     const path = join(dir, "docs", ".reel-stamp.json");
     await writeStamp(path, { hash: "h", inputs: [], version: "0.2.0", epoch: RENDER_EPOCH }, [
       join(dir, "docs", "demo.gif"),
@@ -192,7 +192,7 @@ describe("the stamp is committed, so it has to be reproducible", () => {
     // the demo, and it should not read as one in a diff.
     const fp = { hash: "h", inputs: [], version: "0.2.0", epoch: RENDER_EPOCH };
     const write = async (names: string[]): Promise<string> => {
-      const dir = await mkdtemp(join(tmpdir(), "reel-stamp-"));
+      const dir = await tempDir("reel-stamp");
       const path = join(dir, "docs", ".reel-stamp.json");
       await writeStamp(path, fp, names.map((n) => join(dir, "docs", n)));
       return readFile(path, "utf8");

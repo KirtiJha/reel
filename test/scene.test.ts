@@ -1,11 +1,11 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildScene, isTemplate } from "../src/scene/scene.js";
 import { esc, escapeCss, renderTemplate, TEMPLATES } from "../src/scene/templates.js";
 import { specSchema } from "../src/spec/schema.js";
+import { tempDir } from "./tmp.js";
 
 const style = { accent: "#6d8bff", background: "#0b0b0f", theme: "dark" };
 
@@ -111,7 +111,7 @@ describe("buildScene", () => {
   });
 
   test("reads a composition of your own", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-scene-"));
+    const dir = await tempDir("reel-scene");
     await writeFile(join(dir, "own.html"), "<h1>Mine</h1>");
     const html = await buildScene({ file: "own.html", fields: {}, style }, dir);
     assert.ok(html.includes("<h1>Mine</h1>"));
@@ -126,7 +126,7 @@ describe("buildScene", () => {
   });
 
   test("says which composition is missing, and where it looked", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-scene-"));
+    const dir = await tempDir("reel-scene");
     await assert.rejects(() => buildScene({ file: "nope.html", fields: {}, style }, dir), /was not found/);
   });
 });

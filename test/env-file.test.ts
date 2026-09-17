@@ -1,9 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdtemp, writeFile, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { applyEnvEdits, writeEnvFile } from "../src/ui/env-file.js";
+import { tempDir } from "./tmp.js";
 
 describe("applyEnvEdits", () => {
   test("updates an existing key in place", () => {
@@ -79,7 +79,7 @@ describe("applyEnvEdits", () => {
 
 describe("writeEnvFile", () => {
   async function tmpEnv(contents = ""): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "reel-env-"));
+    const dir = await tempDir("reel-env");
     const p = join(dir, ".env");
     await writeFile(p, contents);
     return p;
@@ -111,7 +111,7 @@ describe("writeEnvFile", () => {
   });
 
   test("creates the file when none exists", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-env-"));
+    const dir = await tempDir("reel-env");
     const p = join(dir, ".env");
     await writeEnvFile(p, { REEL_TEST_NEW: "1" });
     assert.match(await readFile(p, "utf8"), /REEL_TEST_NEW=1/);

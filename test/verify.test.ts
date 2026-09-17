@@ -1,9 +1,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { writeFile, mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { assertGifComplete, countGifFrames } from "../src/encode/verify.js";
+import { tempDir } from "./tmp.js";
 
 /** A GIF byte stream with `n` Graphic Control Extension blocks. */
 function gifWith(n: number): Buffer {
@@ -25,7 +25,7 @@ describe("countGifFrames", () => {
 
 describe("assertGifComplete", () => {
   async function write(name: string, buf: Buffer): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "reel-verify-"));
+    const dir = await tempDir("reel-verify");
     const p = join(dir, name);
     await writeFile(p, buf);
     return p;

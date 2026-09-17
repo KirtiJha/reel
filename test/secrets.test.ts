@@ -1,14 +1,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { isGitIgnored } from "../src/util/secrets.js";
+import { tempDir } from "./tmp.js";
 
 /** A throwaway git repo with the given .gitignore. */
 async function repo(ignore: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "reel-secrets-"));
+  const dir = await tempDir("reel-secrets");
   execFileSync("git", ["init", "-q"], { cwd: dir });
   await writeFile(join(dir, ".gitignore"), ignore, "utf8");
   return dir;
@@ -45,7 +45,7 @@ describe("spotting an unprotected credential file", () => {
   test("says 'unknown' outside a repository rather than guessing", async () => {
     // null, not false: there is nothing to be committed to, so warning about
     // an exposed file would be wrong.
-    const dir = await mkdtemp(join(tmpdir(), "reel-nogit-"));
+    const dir = await tempDir("reel-nogit");
     const f = join(dir, "auth.json");
     await writeFile(f, "{}");
     assert.equal(isGitIgnored(f), null);

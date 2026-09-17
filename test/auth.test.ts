@@ -1,7 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   applyStorageState,
@@ -12,12 +11,13 @@ import {
 } from "../src/driver/auth.js";
 import { signInStates } from "../src/spec/fingerprint.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
+import { tempDir } from "./tmp.js";
 
 const HOUR = 3_600_000;
 const NOW = 1_760_000_000_000;
 
 async function stateFile(contents: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "reel-auth-"));
+  const dir = await tempDir("reel-auth");
   const file = join(dir, "auth.json");
   await writeFile(file, contents, "utf8");
   return file;

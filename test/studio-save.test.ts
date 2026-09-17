@@ -1,9 +1,9 @@
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startApiServer } from "../src/ui/server.js";
+import { tempDir } from "./tmp.js";
 
 const SPEC = `name: A demo
 url: http://localhost:1/
@@ -19,7 +19,7 @@ let close: (() => void) | undefined;
 const prevCwd = process.cwd();
 
 before(async () => {
-  dir = await mkdtemp(join(tmpdir(), "reel-studio-save-"));
+  dir = await tempDir("reel-studio-save");
   process.chdir(dir);
   port = 4700 + Math.floor(process.pid % 200);
   const srv = (await startApiServer(port)) as unknown as { close?: () => void } | undefined;

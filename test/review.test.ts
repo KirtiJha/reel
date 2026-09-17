@@ -1,7 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   atLeast,
@@ -18,6 +17,7 @@ import {
 import { markdownReview, tally, type ReviewOutcome } from "../src/commands/review.js";
 import { messageText, type ChatResult, type LlmConfig, type OaiMessage } from "../src/ai/llm.js";
 import { toAnthropicRequest } from "../src/ai/anthropic-wire.js";
+import { tempDir } from "./tmp.js";
 import type { Range } from "../src/diff/compare.js";
 
 const range = (startMs: number, endMs: number, extra: Partial<Range> = {}): Range => ({
@@ -161,7 +161,7 @@ describe("what the model is shown", () => {
 
 describe("the review pass", () => {
   test("judges every range and keeps the beats and captions with it", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-review-"));
+    const dir = await tempDir("reel-review");
     const ranges = [range(0, 1000, { beats: ["Open"] }), range(4000, 5000)];
     const strips = [await strip(dir, "a.png"), await strip(dir, "b.png")];
     const cues = cuesFor([{ t: 0, text: "Open the app" }], 6000);
@@ -200,7 +200,7 @@ describe("the review pass", () => {
   });
 
   test("one failed call does not lose the verdicts that succeeded", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-review-"));
+    const dir = await tempDir("reel-review");
     const strips = [await strip(dir, "a.png"), await strip(dir, "b.png")];
     const report = await review({
       ranges: [range(0, 1000), range(2000, 3000)],
@@ -218,7 +218,7 @@ describe("the review pass", () => {
   });
 
   test("ranges beyond the budget are counted, not dropped in silence", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "reel-review-"));
+    const dir = await tempDir("reel-review");
     const one = await strip(dir, "s.png");
     const n = MAX_REVIEWED + 3;
     const report = await review({

@@ -1,7 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import {
   encodeOutputs,
@@ -16,6 +15,7 @@ import {
   type CiReport,
   type CiSpecResult,
 } from "../src/commands/ci.js";
+import { tempDir } from "./tmp.js";
 
 const spec = (over: Partial<CiSpecResult> = {}): CiSpecResult => ({
   spec: "demo.reel.yaml",
@@ -73,7 +73,7 @@ describe("glob matching", () => {
 
 describe("finding specs", () => {
   async function tree(): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "reel-ci-"));
+    const dir = await tempDir("reel-ci");
     for (const p of ["demo.reel.yaml", "examples/one.reel.yaml", "examples/deep/two.reel.yaml"]) {
       await mkdir(join(dir, p, ".."), { recursive: true });
       await writeFile(join(dir, p), "name: x\n");

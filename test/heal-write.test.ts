@@ -1,13 +1,13 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { applyFixes } from "../src/heal/heal.js";
+import { tempDir } from "./tmp.js";
 
 async function healed(spec: string, before: string, after: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "reel-heal-write-"));
+  const dir = await tempDir("reel-heal-write");
   const path = join(dir, "d.reel.yaml");
   await writeFile(path, spec, "utf8");
   await applyFixes(path, [{ index: 1, before, after, label: "step" }]);

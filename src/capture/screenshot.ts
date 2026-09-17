@@ -149,45 +149,17 @@ export class ScreenshotCapture {
     try {
       await writeFile(join(this.framesDir, file), buf);
     } catch (err) {
-      this.failure = this.writeError(err as NodeJS.ErrnoException);
+      this.failure = frameWriteError(err as NodeJS.ErrnoException, {
+        framesDir: this.framesDir,
+        frames: this.index,
+        written: this.written,
+      });
       this.running = false; // stop the loop rather than fail once per tick
       return false;
     }
     this.written += buf.length;
     this.frames.push({ file, t });
     return true;
-  }
-
-  /**
-   * Turn an errno into something worth acting on.
-   *
-   * "ENOSPC: no space left on device" names neither the volume that filled nor
-   * how much the render had already put there, and the volume is very rarely
-   * the one the author is looking at — frames go to TMPDIR, while the spec and
-   * its outputs are in the repository. Both facts are known here.
-   */
-  private writeError(err: NodeJS.ErrnoException): ReelError {
-    const root = process.env.TMPDIR || tmpdir();
-    const soFar = `${this.index} frames (${bytes(this.written)})`;
-    if (err.code === "ENOSPC") {
-      return new ReelError(
-        `Ran out of disk space capturing frame ${this.index} — ${soFar} written to ${this.framesDir}.`,
-        `Frames are staged under ${root}, not next to the spec. Free space there, or set ` +
-          `TMPDIR to a volume with room for a few times ${bytes(this.written)} and record again. ` +
-          `A shorter demo, a lower \`output.fps\` or \`--draft\` all cost less space.`,
-      );
-    }
-    if (err.code === "ENOENT") {
-      return new ReelError(
-        `Reel's frame directory disappeared while recording: ${this.framesDir}.`,
-        `Something outside Reel removed it mid-capture — a temp-file reaper over ${root} ` +
-          "(systemd-tmpfiles, tmpwatch) is the usual cause, as is a second `reel` run cleaning up.",
-      );
-    }
-    return new ReelError(
-      `Could not write capture frame ${this.index} to ${this.framesDir}: ${err.message}`,
-      `${soFar} had been written. Check that ${root} is writable and has space.`,
-    );
   }
 
   /**
@@ -284,6 +256,43 @@ export class ScreenshotCapture {
     this.forgetCleanup?.();
     this.forgetCleanup = null;
   }
+}
+
+/**
+ * Turn a failed frame write into something worth acting on.
+ *
+ * "ENOSPC: no space left on device" names neither the volume that filled nor
+ * how much the render had already put there — and the volume is very rarely the
+ * one the author is looking at, because frames are staged under TMPDIR while
+ * the spec and its outputs live in the repository. Both facts are known here,
+ * and at minute eight of a long recording they are the whole answer.
+ */
+export function frameWriteError(
+  err: NodeJS.ErrnoException,
+  at: { framesDir: string; frames: number; written: number },
+): ReelError {
+  const root = process.env.TMPDIR || tmpdir();
+  const soFar = `${at.frames} frames (${bytes(at.written)})`;
+  if (err.code === "ENOSPC") {
+    return new ReelError(
+      `Ran out of disk space recording this demo — ${soFar} written to ${at.framesDir}.`,
+      `Frames are staged under ${root}, not next to the spec, so that is the volume that ` +
+        `filled. Free space there, or set TMPDIR to one with room for several times ` +
+        `${bytes(at.written)} and record again. A shorter demo, a lower \`output.fps\` or ` +
+        "`--draft` all cost less space.",
+    );
+  }
+  if (err.code === "ENOENT") {
+    return new ReelError(
+      `Reel's frame directory disappeared while recording: ${at.framesDir}.`,
+      `Something outside Reel removed it mid-capture — a temp-file reaper over ${root} ` +
+        "(systemd-tmpfiles, tmpwatch) is the usual cause, as is a second `reel` run cleaning up.",
+    );
+  }
+  return new ReelError(
+    `Could not write capture frame ${at.frames} to ${at.framesDir}: ${err.message}`,
+    `${soFar} had been written. Check that ${root} is writable and has space.`,
+  );
 }
 
 /** Sizes in a message a human reads, not in bytes. */

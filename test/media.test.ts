@@ -1,7 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { loadImage } from "../src/media/image.js";
 import {
@@ -13,6 +12,7 @@ import {
 } from "../src/media/diagram.js";
 import { specSchema, type Step } from "../src/spec/schema.js";
 import { imageFiles } from "../src/spec/fingerprint.js";
+import { tempDir } from "./tmp.js";
 
 const PNG = Buffer.from(
   "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6360000002000100" +
@@ -21,7 +21,7 @@ const PNG = Buffer.from(
 );
 
 async function dir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "reel-media-"));
+  return tempDir("reel-media");
 }
 
 describe("loadImage", () => {

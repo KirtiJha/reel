@@ -16,8 +16,19 @@ import { jsonEnabled } from "./report.js";
  * go and do something else".
  */
 
-/** How often a running stage is allowed to say something. */
-const TICK_MS = 2_000;
+/**
+ * How often a running stage is allowed to say something.
+ *
+ * The interval widens as the stage runs, because what the line is for changes.
+ * In the first seconds it is establishing a rate and an estimate, and that is
+ * worth saying often. An hour in, the estimate is settled and the only question
+ * left is whether the thing is still alive — so a line every fifteen seconds
+ * answers it without turning a CI log into a flip-book.
+ */
+const MIN_TICK_MS = 2_000;
+const MAX_TICK_MS = 15_000;
+const tickFor = (elapsed: number): number =>
+  Math.min(MAX_TICK_MS, Math.max(MIN_TICK_MS, elapsed / 10));
 
 export interface Progress {
   /** Advance by `n` units of work (default 1). Safe to call from a worker pool. */
@@ -50,10 +61,10 @@ export function progress(label: string, total: number, opts: ProgressOptions = {
 
   const report = (): void => {
     const now = Date.now();
-    if (now - lastAt < TICK_MS) return;
+    const elapsed = now - started;
+    if (now - lastAt < tickFor(elapsed)) return;
     lastAt = now;
     if (quiet || done <= 0 || total <= 0) return;
-    const elapsed = now - started;
     const pct = Math.min(100, Math.round((done / total) * 100));
     const left = total > done ? Math.round((elapsed / done) * (total - done)) : 0;
     const parts =

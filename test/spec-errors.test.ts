@@ -1,13 +1,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadSpec } from "../src/spec/load.js";
 import { stepKinds } from "../src/spec/schema.js";
+import { tempDir } from "./tmp.js";
 
 async function specFile(steps: string): Promise<string> {
-  const d = await mkdtemp(join(tmpdir(), "reel-spec-"));
+  const d = await tempDir("reel-spec");
   const f = join(d, "demo.reel.yaml");
   await writeFile(
     f,
