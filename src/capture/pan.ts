@@ -51,6 +51,24 @@ export async function panScroll(
   // The overlay is position:fixed, so it would be baked into the top of the
   // tall image and then scroll away with the content. Hide it for the grab.
   await setOverlayVisible(page, false);
+  try {
+    return await pan(page, capture, opts, sharp);
+  } catch (err) {
+    // A hidden overlay is invisible in the failure and permanent in the demo:
+    // every frame after this one would be missing its cursor and captions. On
+    // a `catch` rather than a `finally` so the success path — which restores it
+    // itself, in the order the capture loop needs — pays nothing for it.
+    await setOverlayVisible(page, true);
+    throw err;
+  }
+}
+
+async function pan(
+  page: Page,
+  capture: ScreenshotCapture,
+  opts: PanOptions,
+  sharp: typeof import("sharp"),
+): Promise<number> {
   await page.evaluate((y) => window.scrollTo(0, y), opts.fromY);
   await page.waitForTimeout(120); // let the jump settle before the grab
 
@@ -80,26 +98,37 @@ export async function panScroll(
   const step = opts.ms / (count - 1);
 
   capture.pause();
-  const raw = await image.raw().toBuffer({ resolveWithObject: true });
+  try {
+    const raw = await image.raw().toBuffer({ resolveWithObject: true });
 
-  for (let i = 0; i < count; i++) {
-    const p = i / (count - 1);
-    const y = opts.fromY + (opts.toY - opts.fromY) * easeInOutCubic(p);
-    const top = clamp(Math.round(y * scale), 0, maxTop);
-    const frame = await sharp(raw.data, {
-      raw: { width: raw.info.width, height: raw.info.height, channels: raw.info.channels },
-    })
-      .extract({ left: 0, top, width: fullW, height: winH })
-      .jpeg({ quality: 92 })
-      .toBuffer();
-    await capture.pushFrame(frame, startT + i * step);
+    for (let i = 0; i < count; i++) {
+      const p = i / (count - 1);
+      const y = opts.fromY + (opts.toY - opts.fromY) * easeInOutCubic(p);
+      const top = clamp(Math.round(y * scale), 0, maxTop);
+      const frame = await sharp(raw.data, {
+        raw: { width: raw.info.width, height: raw.info.height, channels: raw.info.channels },
+      })
+        .extract({ left: 0, top, width: fullW, height: winH })
+        .jpeg({ quality: 92 })
+        .toBuffer();
+      await capture.pushFrame(frame, startT + i * step);
+    }
+
+    // Leave the real page where the pan ended, so subsequent steps line up.
+    await page.evaluate((y) => window.scrollTo(0, y), opts.toY);
+  } finally {
+    // Everything between `pause()` and `resume()` used to be on the success
+    // path alone, so a throw in the middle of it — a sharp `extract` off the
+    // edge of the image, a frame that could not be written — left the overlay
+    // hidden and the capture loop paused for the rest of the demo: no cursor,
+    // no captions, and in live mode no frames at all, all with no error to
+    // connect it to. The order matters too. Restoring the overlay before
+    // resuming is what stops the live loop sampling a frame with nothing drawn
+    // on it.
+    await setOverlayVisible(page, true);
+    await page.waitForTimeout(100);
+    capture.resume();
   }
-
-  // Leave the real page where the pan ended, so subsequent steps line up.
-  await page.evaluate((y) => window.scrollTo(0, y), opts.toY);
-  await setOverlayVisible(page, true);
-  await page.waitForTimeout(100);
-  capture.resume();
 
   log.debug(`panned ${count} synthetic frames (${opts.fromY} → ${opts.toY})`);
   return count;

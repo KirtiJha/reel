@@ -2,7 +2,7 @@ import { mkdir, readdir, rm, writeFile, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { cpus } from "node:os";
 import type { CapturedFrame } from "../capture/frames.js";
-import { ffmpeg } from "../encode/ffmpeg.js";
+import { ffmpeg, type FfmpegProgress } from "../encode/ffmpeg.js";
 import { assertGifComplete } from "../encode/verify.js";
 import {
   BITEXACT,
@@ -35,6 +35,7 @@ import {
 import type { OverlayOptions } from "sharp";
 import type { Polish } from "../spec/schema.js";
 import { log } from "../util/log.js";
+import { progress } from "../util/progress.js";
 
 export interface ZoomRenderInput {
   timeline: ZoomKey[];
@@ -87,9 +88,15 @@ export async function renderWithZoom(
   // produces a video longer than the recording it came from.
   await rm(cfrDir, { recursive: true, force: true });
   await mkdir(cfrDir, { recursive: true });
-  await ffmpeg(
-    ["-y", "-f", "concat", "-safe", "0", "-i", "frames.concat", "-vf", `fps=${opts.fps}`, "cfr/%06d.png"],
-    framesDir,
+  // The recording's own length, which is what every pass below is measured
+  // against: the expansion walks it once, and the encodes each walk it again.
+  const timelineMs = opts.endMs ?? (frames[frames.length - 1]?.t ?? 0) + opts.tailMs;
+  await withProgress("Expanding", timelineMs, (p) =>
+    ffmpeg(
+      ["-y", "-f", "concat", "-safe", "0", "-i", "frames.concat", "-vf", `fps=${opts.fps}`, "cfr/%06d.png"],
+      framesDir,
+      p,
+    ),
   );
   const cfrFiles = (await readdir(cfrDir)).filter((f) => f.endsWith(".png")).sort();
   if (cfrFiles.length === 0) throw new Error("Constant-fps expansion produced no frames.");
@@ -152,6 +159,11 @@ export async function renderWithZoom(
 
   const label = framed ? `polish (${zoom.polish.frame} frame)` : "auto-zoom";
   log.step(`Rendering ${cfrFiles.length} frames — ${label} (${seqW}×${seqH})`);
+  // ~190ms a frame: a ten-minute demo is twenty minutes in this loop alone.
+  // Without a count coming out of it there is no way to tell a render that is
+  // slow from one that has hung, which is the difference between waiting and
+  // reaching for Ctrl-C.
+  const framePass = progress("Rendering", cfrFiles.length);
   const captions = zoom.captions ?? [];
   const marks = zoom.highlights ?? [];
   const fades = zoom.fades ?? [];
@@ -212,30 +224,39 @@ export async function renderWithZoom(
     } else {
       await content.png({ compressionLevel: 3 }).toFile(join(procDir, file));
     }
+    framePass.tick();
   });
+  framePass.done();
 
   // 3) Encode the processed constant-fps sequence.
   const seqInput = ["-framerate", String(opts.fps), "-i", "proc/%06d.png"];
+  const seqMs = (cfrFiles.length / opts.fps) * 1000;
 
   if (targets.mp4) {
     await ensureOutDir(targets.mp4);
-    await ffmpeg(
-      [
-        "-y", ...seqInput,
-        "-vf", "format=yuv420p",
-        ...H264, ...BITEXACT,
-        outPath(targets.mp4),
-      ],
-      framesDir,
+    await withProgress("mp4", seqMs, (p) =>
+      ffmpeg(
+        [
+          "-y", ...seqInput,
+          "-vf", "format=yuv420p",
+          ...H264, ...BITEXACT,
+          outPath(targets.mp4!),
+        ],
+        framesDir,
+        p,
+      ),
     );
     log.ok(`mp4  → ${targets.mp4}`);
   }
 
   if (targets.webm) {
     await ensureOutDir(targets.webm);
-    await ffmpeg(
-      ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT, outPath(targets.webm)],
-      framesDir,
+    await withProgress("webm", seqMs, (p) =>
+      ffmpeg(
+        ["-y", ...seqInput, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1", ...BITEXACT, outPath(targets.webm!)],
+        framesDir,
+        p,
+      ),
     );
     log.ok(`webm → ${targets.webm}`);
   }
@@ -261,17 +282,22 @@ export async function renderWithZoom(
     // deterministic, which BITEXACT keeps. It lives in the temp frames dir and
     // goes away with it.
     const mid = "gif-source.mkv";
-    await ffmpeg(["-y", ...seqInput, "-c:v", "ffv1", "-level", "3", ...BITEXACT, mid], framesDir);
-    await ffmpeg(
-      [
-        "-y", "-i", mid,
-        "-vf",
-        `fps=${gifFps},scale=${gifW}:-2:flags=lanczos,split[a][b];` +
-          `[a]palettegen=stats_mode=diff:max_colors=${opts.gif.colors}[p];` +
-          `[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
-        outPath(targets.gif),
-      ],
-      framesDir,
+    await withProgress("gif (lossless pass)", seqMs, (p) =>
+      ffmpeg(["-y", ...seqInput, "-c:v", "ffv1", "-level", "3", ...BITEXACT, mid], framesDir, p),
+    );
+    await withProgress("gif", seqMs, (p) =>
+      ffmpeg(
+        [
+          "-y", "-i", mid,
+          "-vf",
+          `fps=${gifFps},scale=${gifW}:-2:flags=lanczos,split[a][b];` +
+            `[a]palettegen=stats_mode=diff:max_colors=${opts.gif.colors}[p];` +
+            `[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+          outPath(targets.gif!),
+        ],
+        framesDir,
+        p,
+      ),
     );
     // ffmpeg can finish this filtergraph early and still exit 0, leaving a GIF
     // that holds a fraction of the demo. Catch it here rather than letting a
@@ -322,6 +348,27 @@ export function storyboardFrame(
   const latest = next - 1000 / fps;
   const at = Math.max(beat.t, Math.min(beat.t + settleMs, latest));
   return Math.min(frameCount - 1, Math.max(0, Math.round((at / 1000) * fps)));
+}
+
+/**
+ * Run one ffmpeg pass under a progress reporter.
+ *
+ * ffmpeg reports where it is on the output timeline rather than how many frames
+ * it has left, so the estimate is derived from position against the recording's
+ * known length — which is the same number the author sees in the summary line.
+ */
+async function withProgress(
+  label: string,
+  totalMs: number,
+  run: (p: FfmpegProgress | undefined) => Promise<void>,
+): Promise<void> {
+  if (!(totalMs > 0)) return run(undefined);
+  const p = progress(label, totalMs, { kind: "ms" });
+  try {
+    await run({ totalMs, onProgress: (positionMs) => p.at(positionMs) });
+  } finally {
+    p.done();
+  }
 }
 
 /** Load sharp lazily so a missing native binary degrades gracefully. */

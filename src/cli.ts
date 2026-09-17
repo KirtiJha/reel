@@ -28,11 +28,25 @@ import { runDirect } from "./commands/direct.js";
 import { authorSpec } from "./ai/author.js";
 import { log, setVerbose, ReelError } from "./util/log.js";
 import { emit, useJson } from "./util/report.js";
+import { runCleanup } from "./util/dispose.js";
 import { StepFailure } from "./driver/run.js";
 import { stripAnsi } from "./driver/failure.js";
 import { TERMINAL_THEMES, THEME_NAMES } from "./terminal/themes.js";
 import { VERSION } from "./version.js";
 
+/**
+ * Nothing below this line gets to leave a mess behind.
+ *
+ * A recording holds three things the OS will not reclaim: a temp directory that
+ * grows to tens of gigabytes, a headless Chromium, and the app's own detached
+ * process group — which keeps its port bound and so breaks the *next* run too.
+ * `record()` releases all three in a `finally`, and there are two ordinary ways
+ * for a run to end without ever reaching it.
+ *
+ * Both are handled here, together, because the answer to both is the same: say
+ * what happened in Reel's own voice, run the disposers, exit non-zero.
+ */
+installProcessGuards();
 
 const program = new Command();
 
@@ -487,38 +501,98 @@ program
 
 program.parseAsync(process.argv);
 
+/**
+ * How long to wait for Playwright to close the browser before exiting anyway.
+ * Long enough for a healthy shutdown, short enough that Ctrl-C still feels like
+ * Ctrl-C when it isn't.
+ */
+const SHUTDOWN_GRACE_MS = 5_000;
+
+function installProcessGuards(): void {
+  let leaving = false;
+
+  const teardown = (code: number, signal?: NodeJS.Signals): void => {
+    if (leaving) return; // a second Ctrl-C is impatience, not a new event
+    leaving = true;
+    runCleanup();
+    process.exitCode = code;
+    // Playwright installs its own SIGINT/SIGTERM handler while a browser is
+    // open: it closes Chromium and then exits the process itself. Calling
+    // `process.exit` here would pre-empt that and orphan the browser, so hand
+    // over when it is listening — with a bounded backstop, because its SIGTERM
+    // handler closes the browser without ever exiting.
+    if (signal && process.listenerCount(signal) > 0) {
+      setTimeout(() => process.exit(code), SHUTDOWN_GRACE_MS).unref();
+      return;
+    }
+    process.exit(code);
+  };
+
+  // `once`, so the handler unregisters itself: a second Ctrl-C then reaches
+  // Playwright's handler, which kills the browser outright instead of asking.
+  process.once("SIGINT", () => {
+    log.warn("Interrupted — cleaning up.");
+    teardown(130, "SIGINT"); // 128 + SIGINT, the shell convention
+  });
+  process.once("SIGTERM", () => {
+    log.warn("Terminated — cleaning up.");
+    teardown(143, "SIGTERM");
+  });
+
+  // The other way out of `record()`'s try: a promise nobody is awaiting. The
+  // capture loop is one (`this.loop = this.run()`), and a rejection from it
+  // used to print a raw Node stack and exit before any `finally` ran. Whatever
+  // the cause, it is a Reel failure and it reports like one.
+  process.once("unhandledRejection", (reason: unknown) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    report(err, "reel");
+    if (!(err instanceof ReelError)) {
+      console.error(
+        pc.dim("  This is a bug in Reel — please report it with REEL_DEBUG=1 output."),
+      );
+      if (process.env.REEL_DEBUG) console.error(err);
+    }
+    teardown(1);
+  });
+}
+
+/** The error half of a command's output: message, hint, and the JSON envelope. */
+function report(err: unknown, command: string): void {
+  if (err instanceof ReelError) {
+    log.error(err.message);
+    if (err.hint) console.error(pc.dim(`  ${err.hint}`));
+  } else {
+    log.error((err as Error).message);
+    if (process.env.REEL_DEBUG) console.error(err);
+  }
+  // A failed step already wrote its diagnostics; naming them here is what
+  // lets a CI job surface them without knowing where Reel puts things.
+  const failure = err instanceof StepFailure ? err : null;
+  emit(command, false, {
+    error: {
+      // Same reasoning as the failure report: colour codes are for a terminal,
+      // not for whatever parses this.
+      message: stripAnsi((err as Error).message),
+      hint: err instanceof ReelError ? err.hint : undefined,
+      step: failure?.step,
+      artifacts: failure?.artifacts
+        ? {
+            dir: failure.artifacts.dir,
+            screenshot: failure.artifacts.screenshot,
+            clip: failure.artifacts.clip,
+            html: failure.artifacts.html,
+            report: failure.artifacts.report,
+          }
+        : undefined,
+    },
+  });
+}
+
 async function withErrors(fn: () => void | Promise<void>, command = "reel"): Promise<void> {
   try {
     await fn();
   } catch (err) {
-    if (err instanceof ReelError) {
-      log.error(err.message);
-      if (err.hint) console.error(pc.dim(`  ${err.hint}`));
-    } else {
-      log.error((err as Error).message);
-      if (process.env.REEL_DEBUG) console.error(err);
-    }
-    // A failed step already wrote its diagnostics; naming them here is what
-    // lets a CI job surface them without knowing where Reel puts things.
-    const failure = err instanceof StepFailure ? err : null;
-    emit(command, false, {
-      error: {
-        // Same reasoning as the failure report: colour codes are for a terminal,
-        // not for whatever parses this.
-        message: stripAnsi((err as Error).message),
-        hint: err instanceof ReelError ? err.hint : undefined,
-        step: failure?.step,
-        artifacts: failure?.artifacts
-          ? {
-              dir: failure.artifacts.dir,
-              screenshot: failure.artifacts.screenshot,
-              clip: failure.artifacts.clip,
-              html: failure.artifacts.html,
-              report: failure.artifacts.report,
-            }
-          : undefined,
-      },
-    });
+    report(err, command);
     process.exitCode = 1;
   }
 }
