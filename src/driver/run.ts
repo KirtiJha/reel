@@ -1,5 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
@@ -39,6 +39,7 @@ import { buildAudioRetime, buildFlowRetime, buildRetime, parseDuration } from ".
 import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
 import { measureContent, unionRect } from "../capture/content.js";
+import { onCleanup } from "../util/dispose.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
@@ -122,6 +123,14 @@ export async function record(
   let browser: Browser | null = null;
   const workDir = await mkdtemp(join(tmpdir(), "reel-"));
   const framesDir = join(workDir, "frames");
+  // The `finally` below releases this on every ordinary exit, and never on a
+  // Ctrl-C. The intermediates under here run to tens of gigabytes on a long
+  // demo, so the signal path needs its own claim on it — synchronous, because
+  // Playwright's own SIGINT handler calls `process.exit()` once the browser is
+  // closed and would cut an async `rm` off mid-directory.
+  const releaseWorkDir = onCleanup(() => {
+    if (!process.env.REEL_KEEP_FRAMES) rmSync(workDir, { recursive: true, force: true });
+  });
 
   if (preview.only) {
     const known = beatLabels(spec.steps);
@@ -988,6 +997,9 @@ export async function record(
     // are deleted by the time the failure is read.
     if (process.env.REEL_KEEP_FRAMES) log.warn(`Keeping frames: ${workDir}`);
     else await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    // Released last: until the directory is actually gone, the signal path is
+    // still the only thing that would reclaim it.
+    releaseWorkDir();
   }
 }
 

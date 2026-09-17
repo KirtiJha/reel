@@ -1,6 +1,8 @@
-import { copyFile, mkdir, mkdtemp, readdir, readFile, stat, appendFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, appendFile } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
+import { onCleanup } from "../util/dispose.js";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { loadSpec } from "../spec/load.js";
 import { declaredOutputs } from "../spec/fingerprint.js";
@@ -247,6 +249,11 @@ export async function ci(dir: string, patterns: string[], opts: CiOptions): Prom
   for (const s of specs) log.info(relative(dir, s));
 
   const work = await mkdtemp(join(tmpdir(), "reel-ci-"));
+  // This used to be created and never removed — not only on a Ctrl-C, but on
+  // every ordinary run, one snapshot directory per spec left behind for good.
+  // On a CI runner with a fixed disk allowance that is a build that eventually
+  // fails for a reason nothing in the log explains.
+  const releaseWork = onCleanup(() => rmSync(work, { recursive: true, force: true }));
   const results: CiSpecResult[] = [];
 
   for (const spec of specs) {

@@ -1,6 +1,7 @@
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { constants, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { onCleanup } from "../util/dispose.js";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -181,6 +182,11 @@ async function sharpNative(): Promise<CheckResult> {
 /** Recording writes every frame to a temp directory before encoding. */
 async function tempWritable(): Promise<CheckResult> {
   let dir: string | undefined;
+  // Reclaimed by the `finally` on an ordinary exit and by the signal path on a
+  // Ctrl-C, which is the one that used to leak.
+  const releaseDir = onCleanup(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
   try {
     dir = await mkdtemp(join(tmpdir(), "reel-doctor-"));
     await writeFile(join(dir, "probe"), "ok");
@@ -194,6 +200,7 @@ async function tempWritable(): Promise<CheckResult> {
     };
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    releaseDir();
   }
 }
 

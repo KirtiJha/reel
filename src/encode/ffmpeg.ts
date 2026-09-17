@@ -69,6 +69,14 @@ export function ffmpeg(args: string[], cwd?: string, progress?: FfmpegProgress):
       // failure stays readable instead of being buried under a thousand
       // `frame=…/fps=…` lines.
       pending += text;
+      // The line buffer is bounded for the same reason as the log above: a
+      // stream that never emits a newline must not become the memory leak that
+      // capping the log was meant to close.
+      if (pending.length > STDERR_LIMIT) {
+        note(pending);
+        pending = "";
+        return;
+      }
       const lines = pending.split("\n");
       pending = lines.pop() ?? "";
       for (const line of lines) {

@@ -1,5 +1,7 @@
 import { mkdtemp, mkdir, rm, stat } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { onCleanup } from "../util/dispose.js";
 import { dirname, join, resolve } from "node:path";
 import pc from "picocolors";
 import {
@@ -61,6 +63,7 @@ export async function diff(
   }
 
   const work = await mkdtemp(join(tmpdir(), "reel-diff-"));
+  const releaseWork = onCleanup(() => rmSync(work, { recursive: true, force: true }));
   try {
     log.phase("Decoding");
     const [a, b] = await Promise.all([
@@ -98,6 +101,7 @@ export async function diff(
     return { ...report, strips };
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => {});
+    releaseWork();
   }
 }
 

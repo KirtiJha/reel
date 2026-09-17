@@ -547,10 +547,10 @@ function installProcessGuards(): void {
     const err = reason instanceof Error ? reason : new Error(String(reason));
     report(err, "reel");
     if (!(err instanceof ReelError)) {
-      console.error(
-        pc.dim("  This is a bug in Reel — please report it with REEL_DEBUG=1 output."),
-      );
-      if (process.env.REEL_DEBUG) console.error(err);
+      // `report` has already printed the message, and the stack under
+      // REEL_DEBUG. What it cannot say is that reaching here at all is a bug:
+      // every failure Reel knows about travels as a ReelError.
+      console.error(pc.dim("  This is a bug in Reel — please report it, with REEL_DEBUG=1 output."));
     }
     teardown(1);
   });

@@ -51,14 +51,14 @@ export async function startApp(run: RunConfig): Promise<RunningApp> {
   // "command not found" and a missing build all say exactly what is wrong, and
   // all of it went to `log.debug`, where nobody not already running -v sees it.
   const output: string[] = [];
-  const record = (d: Buffer): void => {
+  const noteOutput = (d: Buffer): void => {
     const text = d.toString().trimEnd();
     log.debug(`[app] ${text}`);
     output.push(...text.split("\n"));
     if (output.length > OUTPUT_LINES) output.splice(0, output.length - OUTPUT_LINES);
   };
-  child.stdout?.on("data", record);
-  child.stderr?.on("data", record);
+  child.stdout?.on("data", noteOutput);
+  child.stderr?.on("data", noteOutput);
 
   let exited = false;
   let exitCode: number | null = null;

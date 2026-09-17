@@ -1,5 +1,7 @@
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { onCleanup } from "../util/dispose.js";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 import type { LoadedSpec } from "../spec/load.js";
@@ -53,6 +55,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
   let app: RunningApp | null = null;
   let browser: Browser | null = null;
   const workDir = await mkdtemp(join(tmpdir(), "reel-heal-"));
+  const releaseWorkDir = onCleanup(() => rmSync(workDir, { recursive: true, force: true }));
 
   const fixes: Fix[] = [];
   const unresolved: HealResult["unresolved"] = [];
@@ -162,6 +165,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
     await browser?.close().catch(() => {});
     await app?.stop().catch(() => {});
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    releaseWorkDir();
   }
 }
 
