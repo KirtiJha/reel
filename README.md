@@ -499,6 +499,33 @@ video), `storyboard` (a PNG per beat), and `html` (the interactive click-through
 above). The MP4 is the highest-quality artifact; the GIF is intentionally the
 lightweight one. An `html`-only spec skips video encoding entirely, so it's fast.
 
+## Publishing — from rendered to a link
+
+Rendering leaves you with file paths. `reel publish` turns the whole repository's
+demos into one folder with an index page:
+
+```bash
+reel publish docs               # every rendered demo → docs/, ready to serve
+npx serve docs                  # look at it first
+```
+
+Each demo gets a directory and a card: the interactive build in an iframe where
+there is one, otherwise the animation or the video, with links to every format
+underneath and a contact sheet for the storyboard. The index is a single file —
+no build step, no framework, no fetch — so it works from a static host, a
+subdirectory, or a filesystem with no server at all.
+
+Two things it deliberately doesn't do:
+
+- **It never renders.** It collects what is already on disk and names the specs
+  that have nothing yet, so what you publish is what you reviewed.
+- **It never touches git.** Nothing is committed, no branch is created, no
+  remote is contacted. It writes a directory and tells you what to do with it.
+
+For GitHub Pages without a workflow, publish into the repository root or `docs/`
+— the only two folders "Deploy from a branch" offers — commit it, and point Pages
+at that folder. On a project site served from a sub-path, add `--base /<repo>/`.
+
 ## Subtitles & localization
 
 Your captions can also become **subtitles** — opt in from the output block:
@@ -772,6 +799,7 @@ at one width and not another, and that's exactly the drift worth catching.
 | `reel diff <before> <after>` | Compare two renders and report **which parts of the demo changed**. |
 | `reel review <before> <after>` | Say **what** changed and whether the demo is still true — including captions the UI no longer matches. |
 | `reel ci [specs...]` | Run **every demo in the repository**, one exit code — what the GitHub Action calls. |
+| `reel publish [out]` | Gather what's already rendered into **one folder you can serve**, with an index page. |
 | `reel heal <spec> [--write]` | Re-run; when a step breaks (UI drift), an agent re-resolves it, verifies the fix, and repairs the spec. |
 | `reel schema [--out <file>]` | Print the JSON Schema for a spec (editor autocomplete). |
 | `reel ui` | Launch **Reel Studio**, the local web UI. |

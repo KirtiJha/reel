@@ -18,6 +18,7 @@ import { diff, printDiff, DIFF_DEFAULTS } from "./commands/diff.js";
 import { SAME_FORMAT_THRESHOLD, sameFormat } from "./diff/compare.js";
 import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
 import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
+import { publish, printPublish } from "./commands/publish.js";
 import { recordOne } from "./commands/record.js";
 import { embedSnippets, formatEmbeds } from "./encode/embed.js";
 import type { Verdict } from "./review/review.js";
@@ -415,6 +416,34 @@ program
       }, "review");
     },
   );
+
+program
+  .command("publish")
+  .argument("[out]", "directory to write the site into", "site")
+  .description("Gather rendered demos into a folder you can serve or commit to Pages.")
+  .option("--specs <glob...>", "which specs to include", ["**/*.reel.yaml"])
+  .option("--base <path>", "sub-path the site is served from, e.g. /my-repo/")
+  .option("--title <text>", "heading for the index page")
+  .action(async (out: string, opts: { specs: string[]; base?: string; title?: string }) => {
+    await withErrors(async () => {
+      const cfg = {
+        out,
+        specs: opts.specs,
+        ...(opts.base ? { base: opts.base } : {}),
+        ...(opts.title ? { title: opts.title } : {}),
+      };
+      const res = await publish(process.cwd(), cfg);
+      printPublish(res, cfg);
+      emit("publish", true, {
+        result: {
+          dir: res.dir,
+          index: res.index,
+          demos: res.demos.map((d) => ({ name: d.name, spec: d.spec, slug: d.slug, files: d.files })),
+          unrendered: res.unrendered,
+        },
+      });
+    }, "publish");
+  });
 
 program
   .command("themes")

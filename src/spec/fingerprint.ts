@@ -229,7 +229,11 @@ export async function isUpToDate(
 /** Absolute paths of everything a spec declares it will write. */
 export function declaredOutputs(loaded: LoadedSpec): string[] {
   const o = loaded.spec.output;
-  const paths = [o.gif, o.mp4, o.webm, o.html, o.storyboard].filter(
+  // Every deliverable, or the ones left out are invisible to everything built
+  // on this: `--if-changed` never notices a missing file it does not know
+  // about, `ci --review` never snapshots it, and `publish` would not collect
+  // it. `player` was missing from the start and `webp` is new.
+  const paths = [o.gif, o.webp, o.mp4, o.webm, o.html, o.player, o.storyboard].filter(
     (p): p is string => typeof p === "string",
   );
   return paths.map((p) => (isAbsolute(p) ? p : resolveOutput(loaded, p)));
