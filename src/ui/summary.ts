@@ -1,4 +1,4 @@
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, parseDocument, type Document } from "yaml";
 import {
   defaultPath,
   isBranch,
@@ -38,6 +38,22 @@ export interface OutlineStep {
   };
 }
 
+/**
+ * One schema complaint, with somewhere to go and look.
+ *
+ * `errors` says `steps.3.click: Required`, which is true and unhelpful: the
+ * reader still has to count steps in a file they are looking at. The line is
+ * what turns the message into a destination, and it is optional because it has
+ * to be — see `locateIssue`.
+ */
+export interface SpecIssue {
+  /** The zod path, dotted: `steps.3.click`. Empty at the document root. */
+  path: string;
+  message: string;
+  /** 1-based line in the YAML source, when the path maps onto one. */
+  line?: number;
+}
+
 export interface SpecSummary {
   name: string;
   url: string;
@@ -45,6 +61,8 @@ export interface SpecSummary {
   kind: "web" | "terminal";
   valid: boolean;
   errors: string[];
+  /** The same errors, addressed. `errors` stays the readable one-liner. */
+  issues: SpecIssue[];
   stepCount: number;
   outline: OutlineStep[];
   branchCount: number;
@@ -225,6 +243,43 @@ function optionsOf(spec: Spec): SpecSummary["options"] {
   };
 }
 
+/**
+ * The line a schema error sits on, if it sits on one.
+ *
+ * zod reports a path — `steps.3.click` — and an editor needs a line. The
+ * mapping walks the parsed *document*, so it follows the file's own structure
+ * rather than guessing from the text: the fourth entry of `steps:` is wherever
+ * the parser found it, comments, blank lines, flow style and all.
+ *
+ * The answer is optional on purpose. The commonest schema error is a key that
+ * is *missing*, which has no line anywhere — so the walk falls back to the
+ * nearest ancestor that does exist (the step, then the list) and gives up
+ * rather than inventing a position. Jumping confidently to the wrong line is
+ * worse than not jumping: it tells the reader the error is somewhere it isn't.
+ */
+export function locateIssue(raw: string, path: (string | number)[]): number | undefined {
+  try {
+    return lineOf(parseDocument(raw), raw, path);
+  } catch {
+    return undefined;
+  }
+}
+
+function lineOf(doc: Document, raw: string, path: (string | number)[]): number | undefined {
+  for (let i = path.length; i >= 0; i--) {
+    const at = path.slice(0, i);
+    // `true` keeps scalars as nodes — a plain `doc.getIn` unwraps them to
+    // strings, which carry no position at all.
+    const node = at.length ? doc.getIn(at, true) : doc.contents;
+    const range = (node as { range?: [number, number, number] } | undefined)?.range;
+    if (!range) continue;
+    // Offsets are into the same string the editor is showing, so counting
+    // newlines is the whole conversion.
+    return raw.slice(0, range[0]).split("\n").length;
+  }
+  return undefined;
+}
+
 /** Parse a spec's YAML into the shape the Studio renders. */
 export function summarize(raw: string): SpecSummary {
   const empty: SpecSummary = {
@@ -233,6 +288,7 @@ export function summarize(raw: string): SpecSummary {
     kind: "web",
     valid: false,
     errors: [],
+    issues: [],
     stepCount: 0,
     outline: [],
     branchCount: 0,
@@ -263,14 +319,24 @@ export function summarize(raw: string): SpecSummary {
   try {
     data = parseYaml(raw);
   } catch (err) {
-    return { ...empty, errors: [(err as Error).message] };
+    // A YAML syntax error is not a path into a document — there is no document
+    // — so it gets the message and no destination.
+    return { ...empty, errors: [(err as Error).message], issues: [{ path: "", message: (err as Error).message }] };
   }
 
   const parsed = specSchema.safeParse(data);
   if (!parsed.success) {
+    // One document for every issue rather than one per issue: `summarize` runs
+    // on each keystroke, and a broken spec can report dozens.
+    const doc = parseDocument(raw);
     return {
       ...empty,
       errors: parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join("."),
+        message: i.message,
+        line: lineOf(doc, raw, i.path),
+      })),
     };
   }
 
@@ -285,6 +351,7 @@ export function summarize(raw: string): SpecSummary {
     kind: spec.terminal ? "terminal" : "web",
     valid: true,
     errors: [],
+    issues: [],
     stepCount: spec.steps.length,
     outline: outlineOf(spec.steps),
     branchCount: spec.steps.filter((s) => isBranch(s)).length,

@@ -1,11 +1,12 @@
 import http from "node:http";
-import { readFile, writeFile, stat, readdir } from "node:fs/promises";
-import { createReadStream } from "node:fs";
-import { extname, join, dirname, resolve, relative, isAbsolute } from "node:path";
+import { readFile, writeFile, stat, readdir, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { createReadStream, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join, basename, dirname, resolve, relative, isAbsolute } from "node:path";
 import { parse as parseYaml, parseDocument } from "yaml";
-import { loadSpec } from "../spec/load.js";
+import { loadSpec, type LoadedSpec } from "../spec/load.js";
 import { specSchema } from "../spec/schema.js";
-import { record, check } from "../driver/run.js";
+import { record, check, Cancelled } from "../driver/run.js";
 import { heal } from "../heal/heal.js";
 import { authorSpec } from "../ai/author.js";
 import { addLogSink, log, ReelError } from "../util/log.js";
@@ -22,7 +23,14 @@ import { say } from "../commands/say.js";
 import { runDirect } from "../commands/direct.js";
 import { moveStep, verifyReorder } from "../direct/apply.js";
 import { addAsset, addAssetFromUrl } from "../media/assets.js";
-import { readStamp, stampPath } from "../spec/fingerprint.js";
+import { readStamp, stampPath, declaredOutputs } from "../spec/fingerprint.js";
+import { beatLabels } from "../polish/preview.js";
+import { diff, DIFF_DEFAULTS } from "../commands/diff.js";
+import { runReview, REVIEW_DEFAULTS } from "../commands/review.js";
+import { reviewable } from "../commands/ci.js";
+import { sameFormat, SAME_FORMAT_THRESHOLD } from "../diff/compare.js";
+import { silentMoments, applySay } from "./says.js";
+import { onCleanup } from "../util/dispose.js";
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -45,7 +53,28 @@ const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
 };
 
-let busy = false; // one in-process job at a time keeps the log stream clean
+/**
+ * The one job this server will run at a time, or null.
+ *
+ * It used to be a bare boolean, which was enough to refuse a second job and not
+ * enough to do anything about the first: a render started by mistake ran its
+ * full two minutes and the only way out was to kill `reel ui`. The slot now
+ * carries the handle that stops it.
+ */
+interface Job {
+  /** The verb, for saying what is being stopped. */
+  label: string;
+  controller: AbortController;
+  /**
+   * Whether aborting actually stops the work.
+   *
+   * Only `record` and `check` thread the signal down into the driver. For
+   * everything else this is false, and the UI offers no button — a Cancel that
+   * closes the log while the work carries on is worse than none.
+   */
+  stoppable: boolean;
+}
+let current: Job | null = null;
 
 /**
  * Start the in-process API + media server (the Next.js UI proxies to it).
@@ -147,17 +176,115 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   if (path === "/api/spec" && req.method === "POST") return saveSpec(req, res, cwd);
   if (path === "/api/record" && req.method === "POST") {
     const body = await readBody(req);
-    return streamJob(res, async () => {
-      const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
-      // The preview button is `record --draft`, not a second render path. A
-      // Studio that previewed differently from the command line would be a
-      // second implementation to keep honest.
-      const r = await record(loaded, "record", {
-        draft: Boolean(body.draft),
-        only: body.only ? String(body.only) : undefined,
+    const draft = Boolean(body.draft);
+    const only = body.only ? String(body.only) : undefined;
+    const specPath = safePathOrThrow(cwd, body.path);
+    return streamJob(
+      res,
+      async (signal) => {
+        const loaded = await loadSpec(specPath);
+        // Neither preview writes over the master — both land on `.preview.*` —
+        // so neither rotates the copy "what changed?" compares against.
+        const keeping = draft || only ? null : await keepPrevious(loaded);
+        // The preview button is `record --draft`, not a second render path. A
+        // Studio that previewed differently from the command line would be a
+        // second implementation to keep honest.
+        const r = await record(loaded, "record", { draft, only }, signal).catch(async (err) => {
+          await discardSnapshot(keeping);
+          throw err;
+        });
+        if (keeping) rememberPrevious(specPath, keeping);
+        return {
+          outputs: r.outputs.map((o) => rel(cwd, o)),
+          frames: r.frames,
+          durationMs: r.durationMs,
+          // What this render actually was, so the preview panel can say so
+          // rather than let a one-beat clip pass for the finished demo.
+          draft,
+          only,
+        };
+      },
+      { label: only ? "beat preview" : draft ? "preview" : "render", stoppable: true },
+    );
+  }
+
+  /**
+   * What the last render replaced, and whether there is anything to compare.
+   *
+   * Studio keeps a copy of the media each render overwrites, for as long as the
+   * server is up. Before there are two renders there is nothing honest to say
+   * about what changed, and this endpoint says that rather than offering a
+   * button that cannot work.
+   */
+  if (path === "/api/changed" && req.method === "GET") {
+    const p = safePath(cwd, u.searchParams.get("path") ?? "");
+    if (!p) return sendJson(res, 400, { error: "bad path" });
+    return sendJson(res, 200, await comparable(p, cwd));
+  }
+
+  /**
+   * The pixel pass, and the judgement on top of it.
+   *
+   * Both wrap the commands `reel diff` and `reel review` run, including how the
+   * threshold is chosen — Studio compares a render with the previous render of
+   * the same spec, so the formats always match and the noise floor is the
+   * same-format one. A Studio that picked its own threshold would give a
+   * different answer to the same question than the command line does.
+   */
+  if ((path === "/api/diff" || path === "/api/review") && req.method === "POST") {
+    const body = await readBody(req);
+    const p = safePathOrThrow(cwd, body.path);
+    const reviewing = path === "/api/review";
+    return streamJob(
+      res,
+      async () => {
+        const pair = await comparable(p, cwd);
+        if (!pair.before || !pair.after) throw new ReelError(pair.why ?? "Nothing to compare yet.");
+        const before = pair.before;
+        const after = pair.after;
+        const out = join(dirname(after), ".reel-diff");
+        const threshold = sameFormat(before, after) ? SAME_FORMAT_THRESHOLD : DIFF_DEFAULTS.threshold;
+        if (!reviewing) {
+          const report = await diff(before, after, { fps: DIFF_DEFAULTS.fps, threshold, out });
+          return { ...report, strips: report.strips.map((s) => (s ? rel(cwd, s) : "")) };
+        }
+        const outcome = await runReview(before, after, {
+          ...REVIEW_DEFAULTS,
+          threshold,
+          out,
+          // The verdict is shown, not enforced: Studio has no exit code, and
+          // failing a button is not a thing a button can do.
+          failOn: "never",
+        });
+        return {
+          ...outcome,
+          diff: { ...outcome.diff, strips: outcome.diff.strips.map((s) => (s ? rel(cwd, s) : "")) },
+        };
+      },
+      { label: reviewing ? "review" : "comparison" },
+    );
+  }
+
+  /**
+   * Stop the running job.
+   *
+   * Only `record` and `check` can really be stopped — they are the two that
+   * take the signal all the way down to the step loop. For anything else this
+   * refuses and says why, because the alternative is a button that closes the
+   * log and leaves the work running.
+   */
+  if (path === "/api/cancel" && req.method === "POST") {
+    const job = current;
+    if (!job) return sendJson(res, 200, { ok: false, error: "Nothing is running." });
+    if (!job.stoppable) {
+      return sendJson(res, 200, {
+        ok: false,
+        error: `A ${job.label} cannot be stopped part-way.`,
+        hint: "It will finish on its own; nothing it writes is left half-done.",
       });
-      return { outputs: r.outputs.map((o) => rel(cwd, o)), frames: r.frames, durationMs: r.durationMs };
-    });
+    }
+    job.controller.abort();
+    return sendJson(res, 200, { ok: true, label: job.label });
   }
 
   // Reading the script is fast and offline, so it answers directly rather than
@@ -180,7 +307,64 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
       beats: stamp?.beats ?? [],
       durationMs: stamp?.durationMs ?? 0,
       rendered: Boolean(stamp?.beats?.length),
+      // What `--only` will accept, enumerated by the function `record` itself
+      // validates against — so a beat the UI offers is a beat the driver knows.
+      labels: beatLabels(loaded.spec.steps),
     });
+  }
+
+  /**
+   * The moments a draft line can be written to, addressed.
+   *
+   * `/api/narrate` returns sentences in the order `reel narrate` proposes them
+   * and nothing that identifies the step each belongs to. This is that list:
+   * same walk, same order, plus the path in the document to write under.
+   */
+  if (path === "/api/silent" && req.method === "POST") {
+    const body = await readBody(req);
+    const loaded = await loadSpec(safePathOrThrow(cwd, body.path));
+    return sendJson(res, 200, { moments: silentMoments(loaded.spec.steps) });
+  }
+
+  /**
+   * Accept one proposed line.
+   *
+   * Writes to the file the same way `reel direct --write` does, rather than
+   * handing the YAML back for the editor to hold: the Script tab is not the
+   * editor, and a line accepted in one panel that only exists in another is how
+   * work gets lost. The response carries the rewritten spec so the editor can
+   * catch up without a round trip.
+   */
+  if (path === "/api/accept-say" && req.method === "POST") {
+    const body = await readBody(req);
+    const file = safePathOrThrow(cwd, body.path);
+    try {
+      const loaded = await loadSpec(file);
+      const moments = silentMoments(loaded.spec.steps);
+      const moment = moments[Number(body.index)];
+      // Named as well as numbered. Accepting a line changes the list it was
+      // numbered against — the moment just filled drops out of it — so the
+      // label is what proves the index still points at what the user read.
+      if (!moment || (body.where && moment.where !== String(body.where))) {
+        throw new ReelError(
+          "That moment has moved — re-read the script and draft again.",
+          "The spec changed since these lines were proposed.",
+        );
+      }
+      const next = applySay(await readFile(file, "utf8"), moment, String(body.text ?? ""));
+      // Parsed before it goes near disk, exactly as a reorder is: a line is
+      // never worth writing an unloadable spec for.
+      if (!specSchema.safeParse(parseYaml(next)).success) {
+        throw new ReelError(
+          "Writing that line would leave the spec invalid, so nothing was written.",
+          "Try a shorter line, or add it in the YAML tab.",
+        );
+      }
+      await writeFile(file, next, "utf8");
+      return sendJson(res, 200, { ok: true, raw: next, summary: summarize(next), where: moment.where });
+    } catch (err) {
+      return sendJson(res, 200, { ok: false, error: (err as Error).message });
+    }
   }
 
   // Reordering writes the steps in the spec; the file is what changed.
@@ -248,10 +432,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   }
   if (path === "/api/check" && req.method === "POST") {
     const body = await readBody(req);
-    return streamJob(res, async () => {
-      await check(await loadSpec(safePathOrThrow(cwd, body.path)));
-      return { passed: true };
-    });
+    return streamJob(
+      res,
+      async (signal) => {
+        await check(await loadSpec(safePathOrThrow(cwd, body.path)), signal);
+        return { passed: true };
+      },
+      { label: "drift check", stoppable: true },
+    );
   }
   if (path === "/api/heal" && req.method === "POST") {
     const body = await readBody(req);
@@ -318,6 +506,98 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse, cwd: 
   }
 
   sendJson(res, 404, { error: "not found" });
+}
+
+/* --------------------------- what changed --------------------------- */
+
+/**
+ * The media a spec rendered *last time*, kept so Studio can say what changed.
+ *
+ * Reel's loudest claim is that it tells you what a change did to your demo, and
+ * the comparison needs two files. A render overwrites the only copy of the
+ * first one, so the copy has to be taken before it — which is exactly what
+ * `reel ci --review` does, one directory per spec, before it re-renders.
+ *
+ * In memory and for this process only. A snapshot is a review aid, not an
+ * artifact: persisting it would leave copies of every render in someone's
+ * working tree, and a stale one from last week would answer a question nobody
+ * asked. Two renders in one session is the case this serves.
+ */
+const previousRender = new Map<string, { file: string; at: number; source: string }>();
+
+let snapshotDir: string | null = null;
+
+async function snapshotRoot(): Promise<string> {
+  if (snapshotDir) return snapshotDir;
+  const dir = await mkdtemp(join(tmpdir(), "reel-studio-"));
+  // Synchronous, and registered the way every other temp directory in Reel is:
+  // a Ctrl-C on `reel ui` must not leave copies of rendered video behind.
+  onCleanup(() => rmSync(dir, { recursive: true, force: true }));
+  snapshotDir = dir;
+  return dir;
+}
+
+interface Snapshot {
+  file: string;
+  source: string;
+}
+
+/** Copy what a render is about to replace, or null when there is nothing yet. */
+async function keepPrevious(loaded: LoadedSpec): Promise<Snapshot | null> {
+  const target = reviewable(declaredOutputs(loaded));
+  if (!target) return null; // a spec that renders only a storyboard or a page
+  try {
+    if (!(await stat(target)).isFile()) return null;
+  } catch {
+    return null; // never rendered — this run is the baseline
+  }
+  const dir = await snapshotRoot();
+  // The extension is carried over deliberately: it is what decides the noise
+  // floor the comparison is held to.
+  const file = join(dir, `${Date.now().toString(36)}-${basename(target)}`);
+  await copyFile(target, file);
+  return { file, source: target };
+}
+
+function rememberPrevious(specPath: string, snap: Snapshot): void {
+  const old = previousRender.get(specPath);
+  previousRender.set(specPath, { ...snap, at: Date.now() });
+  // One copy per spec. Anything older has been superseded as "the previous
+  // render" and is only taking up disk.
+  if (old) void rm(old.file, { force: true }).catch(() => {});
+}
+
+async function discardSnapshot(snap: Snapshot | null): Promise<void> {
+  if (snap) await rm(snap.file, { force: true }).catch(() => {});
+}
+
+/** The two files a comparison would run on, or why there aren't two. */
+async function comparable(
+  specPath: string,
+  cwd: string,
+): Promise<{ before?: string; after?: string; at?: number; file?: string; why?: string }> {
+  let loaded;
+  try {
+    loaded = await loadSpec(specPath);
+  } catch (err) {
+    return { why: (err as Error).message };
+  }
+  const after = reviewable(declaredOutputs(loaded));
+  if (!after) {
+    return { why: "This spec renders no video, so there is nothing to compare frame by frame." };
+  }
+  const kept = previousRender.get(specPath);
+  if (!kept) {
+    return {
+      why: "Studio keeps the media each render replaces, so a comparison needs two renders in this session. Record once to set the baseline.",
+    };
+  }
+  try {
+    await stat(after);
+  } catch {
+    return { why: "The current render is gone from disk — record again." };
+  }
+  return { before: kept.file, after, at: kept.at, file: rel(cwd, after) };
 }
 
 /* ------------------------------ helpers ------------------------------ */
@@ -706,6 +986,9 @@ async function saveSpec(req: http.IncomingMessage, res: http.ServerResponse, cwd
     return sendJson(res, 200, {
       ok: true,
       warnings: check.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      // The same list, addressed, so the editor can offer to go there. Derived
+      // from the summary rather than located a second time here.
+      issues: summarize(raw).issues,
     });
   }
   sendJson(res, 200, { ok: true });
@@ -725,9 +1008,21 @@ async function saveSpec(req: http.IncomingMessage, res: http.ServerResponse, cwd
 const KEEPALIVE_MS = 5_000;
 
 /** Run a job in-process, streaming logs + a final result as NDJSON. */
-function streamJob(res: http.ServerResponse, run: () => Promise<unknown>): void {
-  if (busy) return void sendJson(res, 409, { error: "A job is already running. Wait for it to finish." });
-  busy = true;
+function streamJob(
+  res: http.ServerResponse,
+  run: (signal: AbortSignal) => Promise<unknown>,
+  opts: { label: string; stoppable?: boolean } = { label: "job" },
+): void {
+  if (current) {
+    return void sendJson(res, 409, {
+      error: `A ${current.label} is already running. Wait for it to finish.`,
+      // So the UI can offer to stop the job in its way rather than telling the
+      // user to wait for something they no longer want.
+      stoppable: current.stoppable,
+    });
+  }
+  const job: Job = { label: opts.label, controller: new AbortController(), stoppable: Boolean(opts.stoppable) };
+  current = job;
   res.writeHead(200, {
     "content-type": "application/x-ndjson; charset=utf-8",
     // `no-transform` asks intermediaries not to buffer this up for compression;
@@ -741,16 +1036,24 @@ function streamJob(res: http.ServerResponse, run: () => Promise<unknown>): void 
   // Unref'd: a heartbeat must never be the reason the process stays alive.
   const beat = setInterval(() => write({ type: "ping" }), KEEPALIVE_MS);
   beat.unref();
-  run()
+  run(job.controller.signal)
     .then((result) => write({ type: "done", ok: true, result }))
     .catch((err) => {
       const e = err as ReelError;
-      write({ type: "done", ok: false, error: e.message, hint: e.hint });
+      // A cancelled job is flagged rather than described, so the UI can report
+      // "you stopped this" without matching on the wording of a message.
+      write({
+        type: "done",
+        ok: false,
+        error: e.message,
+        hint: e.hint,
+        ...(err instanceof Cancelled ? { cancelled: true } : {}),
+      });
     })
     .finally(() => {
       clearInterval(beat);
       unsub();
-      busy = false;
+      if (current === job) current = null;
       res.end();
     });
 }

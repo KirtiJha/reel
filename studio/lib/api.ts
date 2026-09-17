@@ -68,12 +68,27 @@ export interface OutlineStep {
  * options form shows what the spec actually says instead of defaults that
  * would silently overwrite it.
  */
+/**
+ * One schema complaint, with somewhere to go and look.
+ *
+ * `errors` is the readable one-liner; this is the same thing addressed. The
+ * line is optional because a missing key has no line of its own — see
+ * `locateIssue` in src/ui/summary.ts.
+ */
+export interface SpecIssue {
+  path: string;
+  message: string;
+  /** 1-based line in the YAML, when the path maps onto one. */
+  line?: number;
+}
+
 export interface SpecSummary {
   name: string;
   url: string;
   kind: "web" | "terminal";
   valid: boolean;
   errors: string[];
+  issues: SpecIssue[];
   stepCount: number;
   outline: OutlineStep[];
   branchCount: number;
@@ -137,6 +152,67 @@ export interface Script {
   silent: string[];
 }
 
+/** A moment with nothing to say, and where in the spec to write a line. */
+export interface SilentMoment {
+  path: (string | number)[];
+  kind: string;
+  where: string;
+}
+
+/** What `/api/changed` knows about the pair a comparison would run on. */
+export interface Comparable {
+  /** Present when there are two renders to compare. */
+  before?: string;
+  after?: string;
+  /** When the baseline copy was taken. */
+  at?: number;
+  /** The newer render, relative to the workspace. */
+  file?: string;
+  /** Why there is nothing to compare, when there isn't. */
+  why?: string;
+}
+
+/** One stretch of the demo that differs, as `reel diff` reports it. */
+export interface DiffRange {
+  startMs: number;
+  endMs: number;
+  mean: number;
+  beats: string[];
+  truncated?: boolean;
+}
+
+export interface DiffResult {
+  identical: boolean;
+  samples: number;
+  changedSamples: number;
+  changedFraction: number;
+  durationBeforeMs: number;
+  durationAfterMs: number;
+  ranges: DiffRange[];
+  /** Before / after / difference images, one per range; "" where there is none. */
+  strips: string[];
+}
+
+export type Verdict = "cosmetic" | "content" | "stale-caption" | "unreviewed";
+
+export interface ReviewFinding {
+  startMs: number;
+  endMs: number;
+  verdict: Verdict;
+  summary: string;
+  beats: string[];
+  captions: string[];
+}
+
+export interface ReviewResult {
+  findings: ReviewFinding[];
+  model: string | null;
+  skipped: number;
+  diff: DiffResult;
+  /** Set when no model was configured and only the pixel pass ran. */
+  unconfigured?: string;
+}
+
 /** A proposal from `reel direct`, with the reason it was made. */
 export interface Direction {
   index: number;
@@ -164,6 +240,18 @@ export interface JobDone {
   result?: any;
   error?: string;
   hint?: string;
+  /** The job stopped because it was asked to — a decision, not a failure. */
+  cancelled?: boolean;
+}
+
+/**
+ * Ask the server to stop the running job.
+ *
+ * Only a render and a drift check can actually be stopped; the server says so
+ * rather than pretending, and the UI only offers the button for those.
+ */
+export async function cancelJob(): Promise<{ ok: boolean; error?: string; hint?: string }> {
+  return postJSON("/api/cancel", {});
 }
 
 /**
@@ -181,7 +269,12 @@ export async function runJob(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (res.status === 409) return { ok: false, error: "A job is already running. Wait for it to finish." };
+  if (res.status === 409) {
+    // The server names the job that holds the slot, which is the difference
+    // between "wait" and "stop the render you started by mistake".
+    const busy = await res.json().catch(() => ({}) as { error?: string });
+    return { ok: false, error: busy.error ?? "A job is already running. Wait for it to finish." };
+  }
   if (!res.body) return { ok: false, error: "No response stream." };
 
   const reader = res.body.getReader();

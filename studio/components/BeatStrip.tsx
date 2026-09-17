@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Spinner } from "@/components/bits";
 import { postJSON, type OutlineStep } from "@/lib/api";
 
 /**
@@ -11,6 +12,10 @@ import { postJSON, type OutlineStep } from "@/lib/api";
  *
  * Reordering writes the steps in the spec. The file is what changed, which is
  * the whole point: a demo rearranged by dragging still diffs in a pull request.
+ *
+ * It is also where one beat gets rendered on its own. A full render of a modest
+ * demo is minutes; `record --only <beat>` is seconds, and the strip is the only
+ * place in Studio that already knows the beats by name.
  */
 
 export interface Beat {
@@ -22,18 +27,26 @@ export function BeatStrip({
   path,
   steps,
   beats,
+  labels,
   durationMs,
   rendered,
   busy,
+  rendering,
+  onRenderBeat,
   onChanged,
   onError,
 }: {
   path: string;
   steps: OutlineStep[];
   beats: Beat[];
+  /** Every beat `--only` will accept, enumerated by the driver's own function. */
+  labels: string[];
   durationMs: number;
   rendered: boolean;
   busy: boolean;
+  /** The beat being rendered right now, if any. */
+  rendering: string | null;
+  onRenderBeat: (beat: string) => void;
   onChanged: () => void;
   onError: (message: string) => void;
 }) {
@@ -59,6 +72,7 @@ export function BeatStrip({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs leading-relaxed text-faint">
           Drag to reorder — it rewrites the steps in the spec, so the change shows up in a diff.
+          Each beat can be rendered on its own, which takes seconds rather than minutes.
         </p>
         {rendered && (
           <span className="whitespace-nowrap rounded-lg border border-line bg-bg2 px-2.5 py-1 text-xs text-muted">
@@ -77,6 +91,14 @@ export function BeatStrip({
       <ol className="space-y-1.5">
         {steps.map((step, i) => {
           const beat = step.kind === "beat" || step.kind === "card";
+          const name = beat ? beatName(step) : null;
+          // Offered only for a name the driver would resolve to *this* beat.
+          // `--only` takes the first match, so a duplicated label would render
+          // a different moment than the row that was clicked — and a button
+          // that renders somebody else's beat is worse than no button.
+          const known = name !== null && labels.some((l) => l.toLowerCase() === name.toLowerCase());
+          const ambiguous =
+            known && labels.filter((l) => l.toLowerCase() === name!.toLowerCase()).length > 1;
           return (
             <li
               key={step.index}
@@ -96,7 +118,7 @@ export function BeatStrip({
                 setDragging(null);
                 setOver(null);
               }}
-              className={`flex cursor-grab items-center gap-3 rounded-lg border px-3 py-2 transition ${
+              className={`group flex cursor-grab items-center gap-3 rounded-lg border px-3 py-2 transition ${
                 over === i && dragging !== null && dragging !== i
                   ? "border-brand bg-brand/[0.08]"
                   : beat
@@ -120,12 +142,41 @@ export function BeatStrip({
                   {(beatTimeFor(step, beats)! / 1000).toFixed(1)}s
                 </span>
               )}
+              {known && (
+                <button
+                  className={`btn btn-sm btn-ghost shrink-0 ${
+                    rendering === name ? "" : "max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
+                  }`}
+                  disabled={busy || moving || ambiguous}
+                  onClick={() => onRenderBeat(name!)}
+                  title={
+                    ambiguous
+                      ? `More than one beat is called “${name}”, so rendering by name would pick the first — rename one to preview this moment on its own.`
+                      : `Render only this beat — a short clip beside the demo, not the demo itself`
+                  }
+                  aria-label={`Render only the beat “${name}” — a preview clip, not the whole demo`}
+                >
+                  {rendering === name ? <Spinner /> : <span aria-hidden>▶</span>}
+                  <span className="max-sm:sr-only">{rendering === name ? "Rendering…" : "This beat"}</span>
+                </button>
+              )}
             </li>
           );
         })}
       </ol>
     </div>
   );
+}
+
+/**
+ * The name a beat or card goes by — what the stamp records and what `--only`
+ * takes. The outline labels it `beat X` / `card “X”`, so this is the label with
+ * the kind and the quotes taken back off.
+ */
+function beatName(step: OutlineStep): string | null {
+  if (step.kind !== "beat" && step.kind !== "card") return null;
+  const name = step.label.replace(/^(beat|card)\s+/, "").replace(/^[“"]|[”"]$/g, "").trim();
+  return name || null;
 }
 
 /**
@@ -136,7 +187,7 @@ export function BeatStrip({
  * those up by index would put confident, wrong numbers next to every step.
  */
 function beatTimeFor(step: OutlineStep, beats: Beat[]): number | null {
-  if (step.kind !== "beat" && step.kind !== "card") return null;
-  const name = step.label.replace(/^(beat|card)\s+/, "").replace(/^[“"]|[”"]$/g, "");
+  const name = beatName(step);
+  if (name === null) return null;
   return beats.find((b) => b.label === name)?.t ?? null;
 }

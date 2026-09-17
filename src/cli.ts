@@ -343,8 +343,9 @@ program
   .option("--fps <n>", "samples per second to compare at", String(REVIEW_DEFAULTS.fps))
   .option(
     "--threshold <pct>",
-    "percentage of changed pixels before a moment counts as changed",
-    String(REVIEW_DEFAULTS.threshold * 100),
+    "percentage of changed pixels before a moment counts as changed " +
+      `(default: ${SAME_FORMAT_THRESHOLD * 100} comparing one format with itself, ` +
+      `${REVIEW_DEFAULTS.threshold * 100} across formats)`,
   )
   .option("-o, --out <dir>", "where to write before/after/difference strips", ".reel-diff")
   .option(
@@ -359,7 +360,7 @@ program
       after: string,
       opts: {
         fps: string;
-        threshold: string;
+        threshold?: string;
         out: string | false;
         failOn: string;
         model?: string;
@@ -375,7 +376,20 @@ program
         }
         const outcome = await runReview(before, after, {
           fps: Number(opts.fps),
-          threshold: Number(opts.threshold) / 100,
+          // The same choice `reel diff` and `reel ci` make, and for the same
+          // reason: two renders in one format have a noise floor of zero, so
+          // holding them to a threshold sized for GIF palette quantisation they
+          // cannot contain throws away real detections — a two-digit price edit
+          // moves 0.02% of pixels, above the same-format floor and below the
+          // cross-format one. This command was the last one still hard-wired to
+          // the cross-format number, which meant `reel review` and `reel diff`
+          // gave different answers about the same pair of files.
+          threshold:
+            opts.threshold !== undefined
+              ? Number(opts.threshold) / 100
+              : sameFormat(before, after)
+                ? SAME_FORMAT_THRESHOLD
+                : REVIEW_DEFAULTS.threshold,
           out: opts.out,
           failOn,
           model: opts.model,

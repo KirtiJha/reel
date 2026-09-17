@@ -1,7 +1,15 @@
 "use client";
 import { useState } from "react";
-import { Spinner } from "@/components/bits";
-import { mediaUrl, runJob, type Direction, type LogLine, type Script } from "@/lib/api";
+import { Banner, Spinner } from "@/components/bits";
+import {
+  mediaUrl,
+  postJSON,
+  runJob,
+  type Direction,
+  type LogLine,
+  type Script,
+  type SilentMoment,
+} from "@/lib/api";
 
 /**
  * The script, as a document.
@@ -17,6 +25,36 @@ import { mediaUrl, runJob, type Direction, type LogLine, type Script } from "@/l
 
 /** Past this, a single line is a paragraph and the picture waits for it. */
 const LONG_LINE_MS = 9_000;
+
+/** A drafted line, and the moment it was drafted for. */
+interface Proposal {
+  where: string;
+  text: string;
+  /** Length, once something has said or counted it. */
+  ms?: number;
+  /** True when `ms` is a word-count estimate rather than a synthesized length. */
+  estimated?: boolean;
+}
+
+/**
+ * Line the pending proposals back up with the spec's silent moments.
+ *
+ * Accepting one line rewrites the spec, so the list it was numbered against is
+ * a list short of an entry — and for a beat, a step longer as well. Walking
+ * both in order and matching the label is exact, because the proposals were
+ * made from that same walk and accepting only ever removes from it.
+ */
+function align(moments: SilentMoment[], proposals: Proposal[]): { index: number; p: Proposal }[] {
+  const out: { index: number; p: Proposal }[] = [];
+  let cursor = 0;
+  for (const p of proposals) {
+    const i = moments.findIndex((m, at) => at >= cursor && m.where === p.where);
+    if (i < 0) continue; // filled, or gone from the spec — nothing left to do
+    cursor = i + 1;
+    out.push({ index: i, p });
+  }
+  return out;
+}
 
 export function ScriptPanel({
   path,
@@ -36,13 +74,18 @@ export function ScriptPanel({
   // null means "not asked yet", which reads differently from "asked, and there
   // is nothing to propose". An empty list would say the same thing for both.
   const [directions, setDirections] = useState<Direction[] | null>(null);
-  const [playing, setPlaying] = useState<number | null>(null);
-  const [heard, setHeard] = useState<Record<number, number>>({});
+  const [playing, setPlaying] = useState<string | null>(null);
+  const [heard, setHeard] = useState<Record<number, { ms: number; cached: boolean }>>({});
   const [note, setNote] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  /** Drafted lines waiting to be accepted, and where each belongs. */
+  const [proposals, setProposals] = useState<Proposal[] | null>(null);
+  const [moments, setMoments] = useState<SilentMoment[]>([]);
+  const [accepting, setAccepting] = useState<string | null>(null);
 
   /** Speak one line. The cache makes a second listen instant. */
   async function speak(index: number, text: string) {
-    setPlaying(index);
+    setPlaying(`line-${index}`);
     setNote(null);
     const done = await runJob("/api/say", { path, text }, onLog);
     setPlaying(null);
@@ -51,14 +94,70 @@ export function ScriptPanel({
       return;
     }
     const ms = done.result?.durationMs as number | undefined;
-    if (ms) setHeard((p) => ({ ...p, [index]: ms }));
+    if (ms) setHeard((p) => ({ ...p, [index]: { ms, cached: Boolean(done.result?.cached) } }));
     const file = done.result?.file as string | undefined;
     if (file) void new Audio(mediaUrl(file)).play().catch(() => {});
+  }
+
+  /**
+   * How long a proposed line runs.
+   *
+   * `dryRun` counts words and needs no key, no network and no spend — which is
+   * the right default for a sentence you are still editing. Hearing it is the
+   * other button, and it is the one that costs something.
+   */
+  async function measure(where: string, text: string, dryRun: boolean) {
+    setPlaying(`${dryRun ? "est" : "say"}-${where}`);
+    setNote(null);
+    const done = await runJob("/api/say", { path, text, dryRun }, onLog);
+    setPlaying(null);
+    if (!done.ok) {
+      setNote(done.hint ? `${done.error} — ${done.hint}` : (done.error ?? "failed"));
+      return;
+    }
+    const ms = done.result?.durationMs as number | undefined;
+    setProposals((list) =>
+      (list ?? []).map((p) =>
+        p.where === where ? { ...p, ms, estimated: Boolean(done.result?.estimated) } : p,
+      ),
+    );
+    const file = done.result?.file as string | undefined;
+    if (file) void new Audio(mediaUrl(file)).play().catch(() => {});
+  }
+
+  /** Write one accepted line into the spec, under the moment it was drafted for. */
+  async function accept(index: number, p: Proposal) {
+    setAccepting(p.where);
+    setNote(null);
+    try {
+      const r = await postJSON<{ ok: boolean; error?: string; where?: string }>("/api/accept-say", {
+        path,
+        index,
+        where: p.where,
+        text: p.text,
+      });
+      if (!r.ok) {
+        setNote(r.error ?? "Could not write that line.");
+        return;
+      }
+      setProposals((list) => (list ?? []).filter((x) => x.where !== p.where));
+      // The spec on disk moved, so both the moment list this panel numbers
+      // against and the editor above it are now behind the file.
+      const fresh = await postJSON<{ moments: SilentMoment[] }>("/api/silent", { path });
+      setMoments(fresh.moments ?? []);
+      setOk(`Written under ${p.where}.`);
+      onReload();
+    } catch (err) {
+      setNote((err as Error).message);
+    } finally {
+      setAccepting(null);
+    }
   }
 
   async function run(kind: "narrate" | "direct", extra: Record<string, unknown> = {}) {
     onBusy(kind);
     setNote(null);
+    setOk(null);
     const done = await runJob(`/api/${kind}`, { path, ...extra }, onLog);
     onBusy(null);
     if (!done.ok) {
@@ -72,7 +171,19 @@ export function ScriptPanel({
       if (extra.write) onReload();
     }
     if (kind === "narrate") {
-      setNote("Proposed lines are in the log — paste the ones you want.");
+      // `draftNarration` returns sentences in the order the silent moments were
+      // walked and nothing else identifying them, so the moments are fetched
+      // here to give each line somewhere to go.
+      const lines = (done.result?.proposed as string[]) ?? [];
+      const found = await postJSON<{ moments: SilentMoment[] }>("/api/silent", { path }).catch(
+        () => ({ moments: [] as SilentMoment[] }),
+      );
+      setMoments(found.moments ?? []);
+      setProposals(
+        (found.moments ?? [])
+          .map((m, i) => ({ where: m.where, text: (lines[i] ?? "").trim() }))
+          .filter((p) => p.text),
+      );
     }
   }
 
@@ -104,7 +215,8 @@ export function ScriptPanel({
 
       <ol className="space-y-2">
         {script.lines.map((line) => {
-          const ms = heard[line.index] ?? line.estimatedMs;
+          const spoken = heard[line.index];
+          const ms = spoken?.ms ?? line.estimatedMs;
           const long = ms > LONG_LINE_MS;
           return (
             <li
@@ -116,8 +228,13 @@ export function ScriptPanel({
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <span className="text-xs text-faint">{line.where}</span>
                 <span className="flex items-center gap-2">
+                  {spoken?.cached && (
+                    <span className="tag" title="Already in .reel-cache/voice — this cost nothing">
+                      cached
+                    </span>
+                  )}
                   <span className={`text-xs ${long ? "text-warn" : "text-muted"}`}>
-                    {heard[line.index] ? "" : "~"}
+                    {spoken ? "" : "~"}
                     {(ms / 1000).toFixed(1)}s
                   </span>
                   <button
@@ -125,8 +242,9 @@ export function ScriptPanel({
                     disabled={busy || playing !== null}
                     onClick={() => speak(line.index, line.text)}
                     title="Speak this line"
+                    aria-label={`Speak line ${line.index}`}
                   >
-                    {playing === line.index ? <Spinner /> : "▶"}
+                    {playing === `line-${line.index}` ? <Spinner /> : <span aria-hidden>▶</span>}
                   </button>
                 </span>
               </div>
@@ -154,8 +272,108 @@ export function ScriptPanel({
             disabled={busy}
             onClick={() => run("narrate")}
           >
-            Draft a line for each
+            {proposals ? "Draft again" : "Draft a line for each"}
           </button>
+        </div>
+      )}
+
+      {/* ---- proposed lines ----
+          Editable and accepted one at a time. A draft is a first guess at
+          someone else's voice: the useful unit is "that one, with a word
+          changed", which is neither "apply all" nor a log to copy out of. */}
+      {proposals !== null && (
+        <div className="rounded-xl border border-line bg-bg2 p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[13px] font-medium text-ink">
+              Proposed lines
+              {proposals.length > 0 && <span className="ml-1.5 text-faint">{proposals.length}</span>}
+            </p>
+            <p className="text-xs text-faint">Accepting writes <code>say:</code> into the spec.</p>
+          </div>
+
+          {proposals.length === 0 ? (
+            <p className="text-xs text-faint">
+              Nothing pending — every drafted line has been accepted or dropped.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {align(moments, proposals).map(({ index, p }) => (
+                <li key={p.where} className="rounded-lg border border-line bg-bg p-2.5">
+                  <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-faint">{p.where}</span>
+                    <span className="flex items-center gap-2">
+                      {p.ms !== undefined && (
+                        <span
+                          className={`text-xs ${p.ms > LONG_LINE_MS ? "text-warn" : "text-muted"}`}
+                          title={
+                            p.estimated
+                              ? "Estimated from the word count — no key, no network, no spend"
+                              : "Measured from the synthesized audio"
+                          }
+                        >
+                          {p.estimated ? "~" : ""}
+                          {(p.ms / 1000).toFixed(1)}s
+                        </span>
+                      )}
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        disabled={busy || playing !== null || accepting !== null}
+                        onClick={() => measure(p.where, p.text, true)}
+                        title="How long this runs, counted from the words — needs no API key"
+                      >
+                        {playing === `est-${p.where}` ? <Spinner /> : "Length"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        disabled={busy || playing !== null || accepting !== null}
+                        onClick={() => measure(p.where, p.text, false)}
+                        title="Speak it in this demo's voice"
+                        aria-label={`Speak the proposed line for ${p.where}`}
+                      >
+                        {playing === `say-${p.where}` ? <Spinner /> : <span aria-hidden>▶</span>}
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        disabled={busy || accepting !== null || !p.text.trim()}
+                        onClick={() => accept(index, p)}
+                        title={`Write this line into the spec under ${p.where}`}
+                      >
+                        {accepting === p.where ? <Spinner /> : "Accept"}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        disabled={busy || accepting !== null}
+                        onClick={() =>
+                          setProposals((list) => (list ?? []).filter((x) => x.where !== p.where))
+                        }
+                        title="Drop this proposal"
+                        aria-label={`Drop the proposed line for ${p.where}`}
+                      >
+                        <span aria-hidden>✕</span>
+                      </button>
+                    </span>
+                  </div>
+                  <label>
+                    <span className="sr-only">Proposed line for {p.where}</span>
+                    <textarea
+                      className="input !py-1.5 text-[13px] leading-relaxed"
+                      rows={2}
+                      value={p.text}
+                      onChange={(e) =>
+                        setProposals((list) =>
+                          (list ?? []).map((x) =>
+                            x.where === p.where
+                              ? { ...x, text: e.target.value, ms: undefined, estimated: undefined }
+                              : x,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -201,6 +419,7 @@ export function ScriptPanel({
         )}
       </div>
 
+      {ok && <Banner tone="ok">{ok}</Banner>}
       {note && (
         <p role="alert" aria-live="assertive" className="text-[13px] text-err">
           {note}

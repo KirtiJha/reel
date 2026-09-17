@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Banner,
   Check,
@@ -12,14 +13,17 @@ import {
   Toggle,
   type TabDef,
 } from "@/components/bits";
+import { ChangePanel } from "@/components/ChangePanel";
+import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { DoctorCard } from "@/components/DoctorCard";
 import { LogConsole } from "@/components/LogConsole";
 import { MediaPreview } from "@/components/MediaPreview";
-import { SpecChips, SpecOutline } from "@/components/SpecOutline";
+import { IssueList, SpecChips, SpecOutline } from "@/components/SpecOutline";
 import { ScriptPanel } from "@/components/ScriptPanel";
 import { BeatStrip, type Beat } from "@/components/BeatStrip";
 import { MediaLibrary } from "@/components/MediaLibrary";
 import {
+  cancelJob,
   getJSON,
   postJSON,
   runJob,
@@ -27,6 +31,7 @@ import {
   type LogLine,
   type OutlineStep,
   type Script,
+  type SpecIssue,
   type SpecSummary,
 } from "@/lib/api";
 
@@ -202,15 +207,44 @@ function patchOf(form: OptionsForm, summary: SpecSummary | null, path: string): 
 
 type Tab = "yaml" | "steps" | "beats" | "script" | "output";
 
+/** The beat strip's data: what the spec declares, and what the last render did. */
+interface BeatInfo {
+  beats: Beat[];
+  durationMs: number;
+  rendered: boolean;
+  /** Every beat `record --only` accepts, named by the driver's own enumerator. */
+  labels: string[];
+}
+
 /** How long to wait after the last keystroke before rewriting the YAML. */
 const SYNC_MS = 400;
 
+/**
+ * Jobs that can actually be stopped part-way.
+ *
+ * `record` and `check` thread an abort signal into the driver, which checks it
+ * between steps. Nothing else does, and a Cancel button on a job that keeps
+ * running is worse than no button — so the rest are simply not offered one.
+ * A beat preview is a record, under an id of its own.
+ */
+const STOPPABLE = new Set(["record", "preview", "check"]);
+
+/** The editor's panels. One list, so the tab strip and the palette agree. */
+const TAB_LIST: { id: Tab; label: string }[] = [
+  { id: "yaml", label: "YAML" },
+  { id: "steps", label: "Steps" },
+  { id: "beats", label: "Beats & media" },
+  { id: "script", label: "Script" },
+  { id: "output", label: "Output & polish" },
+];
+
 export default function StudioPage() {
+  const router = useRouter();
   const [specs, setSpecs] = useState<string[]>([]);
   const [path, setPath] = useState("");
   const [raw, setRaw] = useState("");
   const [summary, setSummary] = useState<SpecSummary | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<SpecIssue[]>([]);
   const [dirty, setDirty] = useState(false);
   const [cfg, setCfg] = useState<ConfigInfo | null>(null);
 
@@ -225,6 +259,14 @@ export default function StudioPage() {
   const editedBy = useRef<"form" | "yaml" | "load">("load");
   const rawRef = useRef("");
   const [syncing, setSyncing] = useState(false);
+  /* The keyboard handler is bound once, to the window. These are how it sees
+     the current state instead of whatever was true when it was bound — the
+     alternative is rebinding the listener on every keystroke in the editor. */
+  const pathRef = useRef("");
+  const runningRef = useRef<string | null>(null);
+  const jobRef = useRef<(kind: "record" | "check" | "heal", extra?: Record<string, unknown>, id?: string) => void>(
+    () => {},
+  );
 
   // job
   const [logs, setLogs] = useState<LogLine[]>([]);
@@ -235,20 +277,37 @@ export default function StudioPage() {
   const [noteTone, setNoteTone] = useState<"ok" | "err">("ok");
   /** True when the preview is a previous render rather than this session's. */
   const [stale, setStale] = useState(false);
+  /**
+   * What the media in the preview actually is, when it isn't the demo.
+   *
+   * A one-beat render and a draft are both `record`, and both land beside the
+   * master rather than on it. Nothing in the panel said so, and a clip of one
+   * beat looks exactly like a finished demo that lost most of itself.
+   */
+  const [partial, setPartial] = useState<{ kind: "draft" | "beat"; beat?: string } | null>(null);
+  /** Bumped by every completed render, so "what changed?" re-reads its pair. */
+  const [renders, setRenders] = useState(0);
+  const [palette, setPalette] = useState(false);
   const editor = useRef<HTMLTextAreaElement>(null);
   /* Output settings live beside the spec rather than below it: stacked, they
      doubled the page height for controls you touch once per demo. */
   const [tab, setTab] = useState<Tab>("yaml");
   const [script, setScript] = useState<Script | null>(null);
-  const [beats, setBeats] = useState<{ beats: Beat[]; durationMs: number; rendered: boolean }>({
+  const [beats, setBeats] = useState<BeatInfo>({
     beats: [],
     durationMs: 0,
     rendered: false,
+    labels: [],
   });
 
   useEffect(() => {
     rawRef.current = raw;
   }, [raw]);
+
+  useEffect(() => {
+    pathRef.current = path;
+    runningRef.current = running;
+  }, [path, running]);
 
   /** Fill the form from what the spec says, and mark that as the synced state. */
   const hydrate = useCallback((s: SpecSummary | null) => {
@@ -265,6 +324,7 @@ export default function StudioPage() {
       setOutputs([]);
       setNote(null);
       setStale(false);
+      setPartial(null);
       setDirty(false);
       if (!p) {
         setRaw("");
@@ -283,9 +343,9 @@ export default function StudioPage() {
         .catch(() => setScript(null));
       // Beat times come from the last render's stamp, so this costs a file read
       // rather than a recording.
-      postJSON<{ beats: Beat[]; durationMs: number; rendered: boolean }>("/api/beats", { path: p })
-        .then(setBeats)
-        .catch(() => setBeats({ beats: [], durationMs: 0, rendered: false }));
+      postJSON<BeatInfo>("/api/beats", { path: p })
+        .then((b) => setBeats({ ...b, labels: b.labels ?? [] }))
+        .catch(() => setBeats({ beats: [], durationMs: 0, rendered: false, labels: [] }));
       // Show whatever this spec last rendered, so opening a demo from the
       // gallery isn't a blank panel until you record it again.
       const prior = await getJSON<{ outputs: { path: string }[] }>(
@@ -398,15 +458,19 @@ export default function StudioPage() {
       setNote("Still loading this spec — nothing was saved.");
       return false;
     }
-    const r = await postJSON<{ ok: boolean; error?: string; warnings?: string[] }>("/api/spec", {
-      path,
-      raw: rawRef.current,
-    });
+    const r = await postJSON<{
+      ok: boolean;
+      error?: string;
+      warnings?: string[];
+      issues?: SpecIssue[];
+    }>("/api/spec", { path, raw: rawRef.current });
     if (r.error) {
-      setWarnings([r.error]);
+      setWarnings([{ path: "", message: r.error }]);
       return false;
     }
-    setWarnings(r.warnings ?? []);
+    // The addressed form when the server sent one — a warning you can click is
+    // a warning you can act on.
+    setWarnings(r.issues ?? (r.warnings ?? []).map((w) => ({ path: "", message: w })));
     setNoteTone("ok");
     setNote("Saved.");
     setDirty(false);
@@ -419,12 +483,29 @@ export default function StudioPage() {
     return true;
   }, [path, hydrate, flush]);
 
-  // ⌘S / Ctrl+S saves, the way every editor behaves.
+  /**
+   * The shortcuts.
+   *
+   * Every one of them is a modifier combination, and the handler returns before
+   * it looks at anything else if no modifier is held. That is deliberate rather
+   * than incidental: this listens on the window, the YAML textarea is the most
+   * important control on the page, and a palette that opened on a bare "k"
+   * would make the editor unusable. ⌘S, ⌘↵ and ⌘K mean the same thing inside
+   * the textarea as outside it, which is why they are safe to take there.
+   */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
         e.preventDefault();
         void save();
+      } else if (key === "k") {
+        e.preventDefault();
+        setPalette((open) => !open);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (pathRef.current && !runningRef.current) void jobRef.current("record");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -464,6 +545,35 @@ export default function StudioPage() {
     }
   }
 
+  /**
+   * Take the editor to a line and select it.
+   *
+   * The textarea ref was attached and never read, so an error that named
+   * `steps.3.click` left you counting steps in your own file. Selecting the
+   * line rather than only scrolling to it is what makes the destination
+   * obvious on arrival — and it is the line the *server* mapped from the
+   * schema path, so it is never a guess made here.
+   */
+  const jumpToLine = useCallback((line: number) => {
+    setTab("yaml");
+    // After the tab renders: the textarea does not exist while another panel
+    // is showing, and neither does anything to scroll.
+    requestAnimationFrame(() => {
+      const el = editor.current;
+      if (!el) return;
+      const lines = el.value.split("\n");
+      const at = Math.min(Math.max(line, 1), lines.length);
+      const start = lines.slice(0, at - 1).reduce((n, l) => n + l.length + 1, 0);
+      el.focus();
+      el.setSelectionRange(start, start + (lines[at - 1]?.length ?? 0));
+      // Roughly centred. The row height comes from the element rather than a
+      // constant, so a browser zoom or a different font doesn't send it to the
+      // wrong part of the file.
+      const rowPx = parseFloat(getComputedStyle(el).lineHeight) || 18;
+      el.scrollTop = Math.max(0, (at - 1) * rowPx - el.clientHeight / 2);
+    });
+  }, []);
+
   async function job(
     kind: "record" | "check" | "heal",
     extra: Record<string, unknown> = {},
@@ -482,15 +592,29 @@ export default function StudioPage() {
     const done = await runJob(`/api/${kind}`, { path, ...extra }, (l) => setLogs((p) => [...p, l]));
     setRunning(null);
     if (!done.ok) {
-      setNoteTone("err");
+      // Stopping something on purpose is not a failure, and colouring it red
+      // teaches people to ignore the colour.
+      setNoteTone(done.cancelled ? "ok" : "err");
       setNote(done.hint ? `${done.error} — ${done.hint}` : done.error ?? "failed");
       return;
     }
     if (kind === "record") {
       setOutputs(done.result?.outputs ?? []);
+      const only = typeof extra.only === "string" ? extra.only : undefined;
       // A preview does not replace the master and deliberately writes no
       // fingerprint stamp, so it cannot make the real render current.
-      if (!extra.draft) setStale(false);
+      if (!extra.draft && !only) {
+        setStale(false);
+        setPartial(null);
+        // Only a full render moves the baseline "what changed?" compares to.
+        setRenders((n) => n + 1);
+      } else {
+        setPartial(only ? { kind: "beat", beat: only } : { kind: "draft" });
+      }
+      if (only) {
+        setNoteTone("ok");
+        setNote(`Rendered the beat “${only}” on its own — a preview clip, not the whole demo.`);
+      }
     }
     if (kind === "check") {
       setNoteTone("ok");
@@ -513,8 +637,36 @@ export default function StudioPage() {
     }
   }
 
+  // Re-pointed every render, so ⌘↵ runs this render's `job` rather than the
+  // one that existed when the listener was bound.
+  useEffect(() => {
+    jobRef.current = (kind, extra = {}, id = kind) => void job(kind, extra, id);
+  });
+
+  /**
+   * Stop the running job.
+   *
+   * The server aborts the work — the driver checks between steps and its
+   * teardown closes the browser, the app and the frame directory — so this is a
+   * stop rather than a way to stop watching. Only a render and a drift check
+   * can do it, which is why the button is only offered for those.
+   */
+  async function stop() {
+    const r = await cancelJob();
+    setNoteTone(r.ok ? "ok" : "err");
+    setNote(
+      r.ok
+        ? "Stopping — the run ends at the next step boundary and cleans up after itself."
+        : r.hint
+          ? `${r.error} — ${r.hint}`
+          : (r.error ?? "Nothing to stop."),
+    );
+  }
+
   const lineCount = Math.max(raw.split("\n").length, 1);
   const busy = !!running;
+  /** The jobs that take the abort signal all the way down into the driver. */
+  const stoppable = running !== null && (STOPPABLE.has(running) || running.startsWith("beat:"));
   const invalid = Boolean(summary && !summary.valid && path);
   const themes = cfg?.terminalThemes ?? [];
   /**
@@ -571,19 +723,86 @@ export default function StudioPage() {
     },
   ];
 
+  /**
+   * Everything the palette offers — which is also the only list of shortcuts
+   * this app has. Keeping them one list means a command cannot acquire a
+   * shortcut nobody can find, or a shortcut nobody documented.
+   */
+  const COMMANDS: Command[] = useMemo(() => {
+    const cmds: Command[] = [];
+    for (const a of ACTIONS) {
+      cmds.push({
+        id: `run-${a.id}`,
+        group: "Run",
+        label: a.label,
+        hint: a.title,
+        keys: a.id === "record" ? "⌘↵" : undefined,
+        disabled: !path || busy,
+        run: () => job(a.kind, a.extra, a.id),
+      });
+    }
+    cmds.push({
+      id: "run-save",
+      group: "Run",
+      label: "Save the spec",
+      keys: "⌘S",
+      disabled: !path,
+      run: () => void save(),
+    });
+    if (stoppable) {
+      cmds.push({
+        id: "run-stop",
+        group: "Run",
+        label: `Stop the ${running === "check" ? "drift check" : "render"}`,
+        hint: "Ends at the next step boundary",
+        run: () => void stop(),
+      });
+    }
+    for (const t of TAB_LIST) {
+      cmds.push({
+        id: `tab-${t.id}`,
+        group: "Go to",
+        label: t.label,
+        disabled: !path,
+        run: () => setTab(t.id),
+      });
+    }
+    cmds.push(
+      { id: "go-gallery", group: "Go to", label: "Gallery", run: () => router.push("/gallery") },
+      { id: "go-new", group: "Go to", label: "New demo", run: () => router.push("/new") },
+      { id: "go-settings", group: "Go to", label: "Settings", run: () => router.push("/settings") },
+    );
+    for (const s of specs) {
+      cmds.push({
+        id: `spec-${s}`,
+        group: "Open spec",
+        label: s.split("/").pop() ?? s,
+        hint: s,
+        disabled: s === path,
+        run: () => void loadSpec(s),
+      });
+    }
+    return cmds;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ACTIONS, path, busy, specs, stoppable, running, save, loadSpec, router]);
+
   const TABS: TabDef<Tab>[] = useMemo(
-    () => [
-      { id: "yaml", label: "YAML" },
-      { id: "steps", label: `Steps${summary?.valid ? ` · ${summary.stepCount}` : ""}` },
-      { id: "beats", label: "Beats & media" },
-      { id: "script", label: `Script${script ? ` · ${script.lines.length}` : ""}` },
-      { id: "output", label: "Output & polish" },
-    ],
+    () =>
+      TAB_LIST.map((t) => ({
+        ...t,
+        label:
+          t.id === "steps" && summary?.valid
+            ? `Steps · ${summary.stepCount}`
+            : t.id === "script" && script
+              ? `Script · ${script.lines.length}`
+              : t.label,
+      })),
     [summary?.valid, summary?.stepCount, script],
   );
 
   return (
     <div>
+      <CommandPalette open={palette} commands={COMMANDS} onClose={() => setPalette(false)} />
       <PageHead
         eyebrow="Studio"
         title="Edit, render, and preview"
@@ -634,6 +853,14 @@ export default function StudioPage() {
               Save
             </button>
             <kbd className="kbd">⌘S</kbd>
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => setPalette(true)}
+              title="Every command, and every shortcut there is"
+            >
+              <span aria-hidden>⌘K</span>
+              <span className="max-sm:sr-only">Commands</span>
+            </button>
             {dirty && (
               <span className="tag !border-warn/40 !text-warn" role="status">
                 unsaved
@@ -648,12 +875,24 @@ export default function StudioPage() {
                 className={`btn btn-sm ${a.primary ? "btn-brand" : ""}`}
                 onClick={() => job(a.kind, a.extra, a.id)}
                 disabled={!path || busy}
-                title={a.title}
+                title={a.id === "record" ? `${a.title} (⌘↵)` : a.title}
               >
                 {running === a.id && <Spinner />}
                 {a.label}
               </button>
             ))}
+            {/* Offered only for the jobs the driver can actually be stopped
+                in. The others finish; saying otherwise would be a lie with a
+                button on it. */}
+            {stoppable && (
+              <button
+                className="btn btn-sm !border-err/40 !text-err"
+                onClick={stop}
+                title="Stop at the next step boundary and clean up"
+              >
+                Stop
+              </button>
+            )}
           </div>
         </div>
 
@@ -702,13 +941,25 @@ export default function StudioPage() {
               </div>
 
               {invalid && (
-                <button
-                  onClick={() => setTab("steps")}
-                  className="mb-3 flex w-full items-center gap-2 rounded-lg border border-err/30 bg-err/[0.07] px-3 py-2 text-left text-[13px] text-err"
-                >
-                  {summary!.errors.length} error{summary!.errors.length > 1 ? "s" : ""} in this spec
-                  — see what&apos;s wrong →
-                </button>
+                <div className="mb-3 rounded-lg border border-err/30 bg-err/[0.07] px-3 py-2 text-[13px] text-err">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <span>
+                      {summary!.errors.length} error{summary!.errors.length > 1 ? "s" : ""} in this
+                      spec
+                    </span>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setTab("steps")}>
+                      See all →
+                    </button>
+                  </div>
+                  {/* The first few, each a way into the file rather than a
+                      path to go and count out by hand. */}
+                  <IssueList
+                    issues={summary!.issues}
+                    errors={summary!.errors}
+                    onJump={jumpToLine}
+                    max={3}
+                  />
+                </div>
               )}
 
               <TabPanel idBase="spec" active={tab}>
@@ -721,9 +972,12 @@ export default function StudioPage() {
                       path={path}
                       steps={summary?.outline ?? []}
                       beats={beats.beats}
+                      labels={beats.labels}
                       durationMs={beats.durationMs}
                       rendered={beats.rendered}
                       busy={busy}
+                      rendering={running?.startsWith("beat:") ? running.slice(5) : null}
+                      onRenderBeat={(b) => job("record", { only: b }, `beat:${b}`)}
                       onChanged={() => loadSpec(path)}
                       onError={(m) => {
                         setNoteTone("err");
@@ -759,7 +1013,11 @@ export default function StudioPage() {
                       The shape of the demo. A branch shows both paths — only the one marked
                       <span className="mx-1 text-brand">in video</span> reaches the GIF.
                     </p>
-                    <SpecOutline summary={summary} onToggleHidden={toggleHidden} />
+                    <SpecOutline
+                      summary={summary}
+                      onToggleHidden={toggleHidden}
+                      onJump={jumpToLine}
+                    />
                   </div>
                 ) : tab === "output" ? (
                   <div className="space-y-4">
@@ -1165,15 +1423,18 @@ export default function StudioPage() {
               </TabPanel>
 
               {warnings.length > 0 && (
-                <ul
+                <div
                   role="status"
                   aria-live="polite"
-                  className="mt-3 space-y-1 rounded-lg border border-warn/25 bg-warn/[0.06] p-3 text-[12.5px] text-warn"
+                  className="mt-3 rounded-lg border border-warn/25 bg-warn/[0.06] p-3 text-warn"
                 >
-                  {warnings.map((w, i) => (
-                    <li key={i}>{w}</li>
-                  ))}
-                </ul>
+                  <IssueList
+                    issues={warnings}
+                    errors={[]}
+                    onJump={jumpToLine}
+                    max={warnings.length}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -1187,14 +1448,45 @@ export default function StudioPage() {
               stack it is no longer beside. */}
           <div className="flex min-w-0 flex-col gap-5 max-lg:contents">
             <div className="card min-w-0 lg:sticky lg:top-[92px]">
-              <div className="mb-3 flex items-center gap-2.5">
+              <div className="mb-3 flex flex-wrap items-center gap-2.5">
                 <h2 className="text-[15px] font-semibold">Preview</h2>
                 {stale && (
                   <span className="tag" title="Rendered by an earlier run — record to refresh">
                     last render
                   </span>
                 )}
+                {partial && (
+                  <span
+                    className="tag !border-warn/40 !bg-warn/10 !text-warn"
+                    title={
+                      partial.kind === "beat"
+                        ? "One beat, rendered on its own beside the demo"
+                        : "The whole demo, rendered small and fast"
+                    }
+                  >
+                    {partial.kind === "beat" ? `one beat · ${partial.beat}` : "draft"}
+                  </span>
+                )}
               </div>
+              {/* A clip of one beat looks exactly like a finished demo that
+                  lost most of itself, so the panel says which it is holding
+                  rather than leaving the file name to imply it. */}
+              {partial && outputs.length > 0 && (
+                <Banner tone="warn" className="mb-3">
+                  {partial.kind === "beat" ? (
+                    <>
+                      This is the beat <strong>“{partial.beat}”</strong> only — the run-up to it and
+                      the beat itself, not the demo. It was written beside the real output, which is
+                      untouched. Record to render the whole thing.
+                    </>
+                  ) : (
+                    <>
+                      This is a draft: small, low frame rate, video only, and narrated only with
+                      lines already in the cache. It was written beside the real output.
+                    </>
+                  )}
+                </Banner>
+              )}
               {outputs.length > 0 ? (
                 <MediaPreview outputs={outputs} />
               ) : (
@@ -1208,6 +1500,17 @@ export default function StudioPage() {
                   }
                 />
               )}
+
+              {/* What this render did to the demo — the question a re-render
+                  raises and the one Studio could not answer. */}
+              <ChangePanel
+                path={path}
+                busy={busy}
+                modelConfigured={Boolean(cfg?.llm.configured)}
+                renders={renders}
+                onLog={(l) => setLogs((p) => [...p, l])}
+                onBusy={setRunning}
+              />
             </div>
 
             <div className="card min-w-0">

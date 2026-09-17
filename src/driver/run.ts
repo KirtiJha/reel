@@ -109,14 +109,50 @@ export class StepFailure extends ReelError {
 }
 
 /**
+ * A run that was asked to stop, as opposed to one that broke.
+ *
+ * Its own type so a caller can tell the two apart without reading the message:
+ * a cancelled render is a decision, and reporting it in red beside a broken
+ * selector would teach people to ignore the colour.
+ */
+export class Cancelled extends ReelError {
+  constructor(message: string, hint?: string) {
+    super(message, hint);
+    this.name = "Cancelled";
+  }
+}
+
+/**
+ * Stop, if stopping was asked for.
+ *
+ * Between steps rather than inside them: a step owns a browser action that
+ * Playwright is in the middle of, and tearing that down mid-flight is how a
+ * process is left holding a page it can no longer close. The `finally` below
+ * does the real work — browser, app and the frames directory all go — so
+ * throwing here is genuinely the end of the work, not just the end of the log.
+ */
+function stopIfCancelled(signal: AbortSignal | undefined, what: string): void {
+  if (!signal?.aborted) return;
+  throw new Cancelled(
+    `Cancelled — stopped ${what}.`,
+    "Nothing was written. The browser and the app have been shut down.",
+  );
+}
+
+/**
  * Full record pipeline: boot app → launch browser → apply determinism →
  * install overlay → screencast → run steps → encode. `mode: "check"` runs the
  * same steps headlessly and skips capture/encode — that's the CI drift test.
+ *
+ * `signal` aborts at the next checkpoint: between steps while driving, and
+ * between phases after that. A render is minutes of work nobody can take back
+ * once it has started, and Studio is where a mis-started one is most likely.
  */
 export async function record(
   loaded: LoadedSpec,
   mode: Mode = "record",
   preview: Preview = {},
+  signal?: AbortSignal,
 ): Promise<RunResult> {
   const { spec } = loaded;
   let app: RunningApp | null = null;
@@ -157,6 +193,9 @@ export async function record(
   }
 
   try {
+    // Before the app is booted and the browser launched. A job cancelled while
+    // it was still queueing should cost nothing at all.
+    stopIfCancelled(signal, "before the run started");
     if (spec.run) {
       // Resolve the app's working directory relative to the spec file, so specs
       // are portable regardless of where `reel` is invoked from.
@@ -322,6 +361,7 @@ export async function record(
     );
     const branchPoints: BranchPoint[] = [];
     for (let i = 0; i < total; i++) {
+      stopIfCancelled(signal, i ? `after step ${i} of ${total}` : "before the first step");
       const step = spec.steps[i]!;
 
       if (isBranch(step)) {
@@ -440,6 +480,9 @@ export async function record(
     // endpoint, and nothing here can change what the demo *did* — only how long
     // the picture waits for the voice.
     let spoken: SpokenLine[] = [];
+    // The drive is done and nothing is written yet; narration and the encode
+    // are the expensive half, so this is the other checkpoint worth having.
+    stopIfCancelled(signal, "after the drive, before anything was encoded");
     // Every language stretches the timeline by a different amount, because
     // translated speech is a different length. Each therefore renders from the
     // recording as it stood before *any* narration was fitted, not from the
@@ -624,6 +667,7 @@ export async function record(
     // Skip the whole encode phase for an HTML-only build — it needs frames, not
     // a video, and the CFR expansion is the most expensive step in the pipeline.
     const needsEncode = Boolean(targets.gif || targets.mp4 || targets.webm || storyboardDir);
+    if (needsEncode) stopIfCancelled(signal, "before encoding");
     if (needsEncode) log.phase("Encoding");
 
     if (needsEncode) {
@@ -1148,10 +1192,13 @@ async function createContext(browser: Browser, loaded: LoadedSpec): Promise<Brow
 }
 
 /** Convenience wrapper for `reel check`. */
-export async function check(loaded: LoadedSpec): Promise<void> {
+export async function check(loaded: LoadedSpec, signal?: AbortSignal): Promise<void> {
   try {
-    await record(loaded, "check");
+    await record(loaded, "check", {}, signal);
   } catch (err) {
+    // Cancelling is not drift. Dressing it up as "your demo no longer matches
+    // the app" would report a failure nobody has.
+    if (err instanceof Cancelled) throw err;
     // A StepFailure already carries the artifacts and the step it broke on;
     // re-wrapping it would lose both.
     if (err instanceof StepFailure) {

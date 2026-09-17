@@ -1,5 +1,5 @@
 "use client";
-import type { OutlineStep, SpecSummary } from "@/lib/api";
+import type { OutlineStep, SpecIssue, SpecSummary } from "@/lib/api";
 
 /**
  * The spec as a storyboard.
@@ -163,9 +163,12 @@ function Row({
 export function SpecOutline({
   summary,
   onToggleHidden,
+  onJump,
 }: {
   summary: SpecSummary | null;
   onToggleHidden?: (step: OutlineStep) => void;
+  /** Take the editor to a line. Absent where there is no editor to take. */
+  onJump?: (line: number) => void;
 }) {
   if (!summary) {
     return <p className="text-sm text-faint">Select a spec to see its shape.</p>;
@@ -174,13 +177,7 @@ export function SpecOutline({
     return (
       <div>
         <p className="mb-2 text-sm font-medium text-warn">This spec doesn&apos;t parse yet.</p>
-        <ul className="list-disc space-y-1 pl-5 text-[12.5px] text-muted">
-          {summary.errors.slice(0, 6).map((e, i) => (
-            <li key={i} className="font-mono">
-              {e}
-            </li>
-          ))}
-        </ul>
+        <IssueList issues={summary.issues} errors={summary.errors} onJump={onJump} />
       </div>
     );
   }
@@ -194,6 +191,61 @@ export function SpecOutline({
       {summary.outline.map((s) => (
         <Row key={s.index} step={s} onToggleHidden={onToggleHidden} />
       ))}
+    </ul>
+  );
+}
+
+/**
+ * Schema errors as destinations.
+ *
+ * `steps.3.click: Required` is a path, and a path in a file you are looking at
+ * is an instruction to go and count. Each one that maps onto a line is a
+ * button that takes the editor there and selects it. The ones that don't map —
+ * a key that is missing has no line of its own — stay exactly as they were,
+ * because scrolling confidently to the wrong line is worse than not scrolling.
+ */
+export function IssueList({
+  issues,
+  errors,
+  onJump,
+  max = 6,
+}: {
+  issues: SpecIssue[];
+  /** The one-line form, for a server that sent no structured issues. */
+  errors: string[];
+  onJump?: (line: number) => void;
+  max?: number;
+}) {
+  const rows: SpecIssue[] = issues.length
+    ? issues
+    : errors.map((e) => ({ path: "", message: e }));
+  return (
+    <ul className="space-y-1 text-[12.5px] text-muted">
+      {rows.slice(0, max).map((issue, i) => {
+        const text = issue.path ? `${issue.path}: ${issue.message}` : issue.message;
+        if (!issue.line || !onJump) {
+          return (
+            <li key={i} className="px-1 font-mono">
+              {text}
+            </li>
+          );
+        }
+        return (
+          <li key={i}>
+            <button
+              onClick={() => onJump(issue.line!)}
+              className="w-full rounded px-1 text-left font-mono hover:bg-elev hover:text-ink"
+              title={`Go to line ${issue.line}`}
+            >
+              <span className="mr-1.5 tabular-nums text-brand">{issue.line}</span>
+              {text}
+            </button>
+          </li>
+        );
+      })}
+      {rows.length > max && (
+        <li className="px-1 text-faint">{rows.length - max} more…</li>
+      )}
     </ul>
   );
 }
