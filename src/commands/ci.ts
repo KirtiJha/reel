@@ -1,4 +1,5 @@
-import { copyFile, mkdir, mkdtemp, readdir, stat, appendFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, stat, appendFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { loadSpec } from "../spec/load.js";
@@ -181,6 +182,32 @@ export function reviewable(outputs: string[]): string | null {
 }
 
 /** Copy what already exists, so a re-render can be compared with what it replaced. */
+/**
+ * Content hashes of whatever the declared outputs are right now.
+ *
+ * A missing file is simply absent from the map, which is what makes a first
+ * render register as a change: nothing before, something after.
+ */
+async function hashOutputs(outputs: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const o of outputs) {
+    try {
+      if (!(await stat(o)).isFile()) continue;
+      out.set(o, createHash("sha256").update(await readFile(o)).digest("hex"));
+    } catch {
+      continue; // not rendered yet
+    }
+  }
+  return out;
+}
+
+/** Did the render write anything different — including for the first time? */
+function differs(before: Map<string, string>, after: Map<string, string>): boolean {
+  if (before.size !== after.size) return true;
+  for (const [file, hash] of after) if (before.get(file) !== hash) return true;
+  return false;
+}
+
 async function snapshot(outputs: string[], dir: string): Promise<Map<string, string>> {
   const saved = new Map<string, string>();
   for (const out of outputs) {
@@ -237,13 +264,26 @@ export async function ci(dir: string, patterns: string[], opts: CiOptions): Prom
         continue;
       }
 
+      const declared = declaredOutputs(loaded);
+      // What the media was before this render. Hashed unconditionally, because
+      // "did this render change anything" is the question `commit:` turns on,
+      // and it has nothing to do with whether an LLM reviewed the result.
+      const wasHashed = await hashOutputs(declared);
       const before = opts.review
-        ? await snapshot(declaredOutputs(loaded), await mkdtemp(join(work, "before-")))
+        ? await snapshot(declared, await mkdtemp(join(work, "before-")))
         : new Map<string, string>();
 
       const rendered = await recordOne(loaded, opts);
       result.ok = true;
       result.outputs = rendered.outputs.map((o) => relative(dir, o));
+      // Set here rather than in the review branch below. It used to live there,
+      // which meant `commit: true` without `review: true` — the documented
+      // default — rendered the media, reported `changed=false`, and committed
+      // nothing. The flagship "CI keeps your README honest" loop silently did
+      // nothing for anyone who had not also configured a model, and a first
+      // render (no previous to compare) never committed either.
+      const nowHashed = await hashOutputs(declared);
+      result.changed = differs(wasHashed, nowHashed);
       if (rendered.skipped) {
         result.skipped = rendered.skipped;
         results.push(result);
@@ -266,7 +306,8 @@ export async function ci(dir: string, patterns: string[], opts: CiOptions): Prom
         failOn: "never",
         out: false,
       });
-      result.changed = !outcome.diff.identical && outcome.diff.ranges.length > 0;
+      result.changed =
+        result.changed || (!outcome.diff.identical && outcome.diff.ranges.length > 0);
       result.review = {
         verdict: worstVerdict(outcome),
         model: outcome.model,
@@ -287,8 +328,16 @@ export async function ci(dir: string, patterns: string[], opts: CiOptions): Prom
   }
 
   const verdict = worstOverall(results);
+  // A verdict only means something if something was actually reviewed.
+  //
+  // `worstOverall` floors at `cosmetic`, so a run that reviewed nothing still
+  // reported `cosmetic` — and `fail-on: cosmetic`, a documented value, then
+  // failed every green build with no finding attached to explain why. Anyone
+  // who reasoned "tell me about everything" got a permanently red CI.
+  const reviewed = results.some((r) => r.review !== undefined);
   const failed =
-    results.some((r) => !r.ok) || (opts.failOn !== "never" && atLeast(verdict, opts.failOn));
+    results.some((r) => !r.ok) ||
+    (opts.failOn !== "never" && reviewed && atLeast(verdict, opts.failOn));
 
   if (opts.comment) {
     await mkdir(dirOf(opts.comment), { recursive: true }).catch(() => {});

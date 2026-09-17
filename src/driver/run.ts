@@ -158,7 +158,22 @@ export async function record(
         : null;
 
     // Navigate to the base URL first so the overlay has a document to attach to.
-    await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch(() => {});
+    //
+    // This used to swallow the error, which made the most common first run any
+    // newcomer has — `reel init && reel record`, against a dev server that is
+    // not up — fail one line later inside `installOverlay` with "Execution
+    // context was destroyed". That names neither the URL, nor the step, nor the
+    // cause, and it is the first thing a new user ever sees. The real error
+    // says exactly what is wrong, so let it.
+    await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch((err: Error) => {
+      const refused = /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_CONNECTION_RESET/.test(err.message);
+      throw new ReelError(
+        refused ? `Nothing is serving ${spec.url}.` : `Could not open ${spec.url} — ${err.message}`,
+        refused
+          ? "Start your app first, or let Reel start it: uncomment the `run:` block in your spec."
+          : "Check the `url:` in your spec, and that the app is reachable from here.",
+      );
+    });
     if (mode === "record") {
       await installOverlay(page, {
         cursor: spec.polish.cursor !== "none",

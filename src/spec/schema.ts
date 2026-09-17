@@ -579,7 +579,7 @@ const baseStepSchema = z.union([
         to: z.union([selector, z.object({ x: z.number(), y: z.number() })]),
         /** How long the travel takes on camera. */
         ms: durationMs.default(900),
-      }),
+      }).strict(),
     })
     .strict(),
   /** Move the cursor onto an element without clicking — for menus and tooltips. */
@@ -592,13 +592,13 @@ const baseStepSchema = z.union([
         text: z.string(),
         /** Per-character delay (ms) so typing reads naturally on camera. */
         delay: durationMs.default(60),
-      }),
+      }).strict(),
     })
     .strict(),
   /** Press a key (`Enter`, `Escape`, `Control+K`). Targets an element, or the page. */
-  z.object({ press: z.object({ selector: selector.optional(), key: z.string() }) }).strict(),
+  z.object({ press: z.object({ selector: selector.optional(), key: z.string() }).strict() }).strict(),
   /** Set a field's value in one go. Use `type` when the typing is the point. */
-  z.object({ fill: z.object({ selector, text: z.string() }) }).strict(),
+  z.object({ fill: z.object({ selector, text: z.string() }).strict() }).strict(),
   /** Scroll an element into view. Use `scroll` for a filmed, cinematic pan. */
   z.object({ scrollTo: selector }).strict(),
   /** State-based wait — the reliability moat. Never a raw sleep by default. */
@@ -690,7 +690,7 @@ const baseStepSchema = z.union([
       selector,
       text: z.string().optional(),
       ms: durationMs.default(1500),
-    }),
+    }).strict(),
   }).strict(),
   /**
    * Bring in something the app cannot show: a logo, an architecture diagram, a
@@ -844,14 +844,14 @@ const baseStepSchema = z.union([
        * leaves the mark up until the demo ends.
        */
       until: z.string().min(1).optional(),
-    }),
+    }).strict(),
   }).strict(),
   /** Cinematic eased scroll — to an element, or to an absolute Y offset. */
   z.object({
     scroll: z.object({
       to: z.union([selector, z.number()]),
       ms: durationMs.default(900),
-    }),
+    }).strict(),
   }).strict(),
   /**
    * Explicit camera control, for when auto-zoom's choice isn't the story you're
@@ -888,7 +888,7 @@ const baseStepSchema = z.union([
       count: z.number().int().nonnegative().optional(),
       /** Whether the element must be visible (default true). */
       visible: z.boolean().default(true),
-    }),
+    }).strict(),
   }).strict(),
   /** Explicit pause — discouraged, but sometimes you want a deliberate hold. */
   z.object({ hold: durationMs }).strict(),
@@ -923,7 +923,7 @@ const baseStepSchema = z.union([
          * does not carry into later ones. Set `terminal.cwd` for that.
          */
         hidden: z.boolean().default(false),
-      }),
+      }).strict(),
     ]),
   }).strict(),
   /** Assert the terminal screen contains this text. */
@@ -970,6 +970,29 @@ export const stepSchema = z.union([
   z.object({ branch: branchSchema }).strict(),
 ]);
 export type Step = z.infer<typeof stepSchema>;
+
+/**
+ * Every branch of the step union, so a loader can re-parse one step against the
+ * branch it actually meant. A union reports whichever branch lost, which for a
+ * step with the right kind and a wrong option names the kind — the one part
+ * that was correct.
+ */
+export function stepBranches(): z.ZodTypeAny[] {
+  return [...baseStepSchema.options, ...stepSchema.options.slice(1)] as z.ZodTypeAny[];
+}
+
+/**
+ * The name of every step kind — `click`, `type`, `expect`, … — for error
+ * messages that can say "did you mean" instead of only "no".
+ */
+export function stepKinds(): string[] {
+  const names = new Set<string>();
+  for (const branch of stepBranches()) {
+    const shape = (branch as { _def?: { shape?: () => Record<string, unknown> } })._def?.shape?.();
+    for (const k of Object.keys(shape ?? {})) names.add(k);
+  }
+  return [...names].sort();
+}
 /**
  * A step as a person writes it, before defaults are filled in.
  *
