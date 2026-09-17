@@ -204,7 +204,16 @@ export async function isUpToDate(
 ): Promise<{ upToDate: boolean; reason: string }> {
   if (!stamp) return { upToDate: false, reason: "no previous render recorded" };
   if (stamp.epoch !== fp.epoch) return { upToDate: false, reason: "Reel's renderer changed" };
-  if (stamp.version !== fp.version) return { upToDate: false, reason: `Reel version changed (${stamp.version} → ${fp.version})` };
+  // Deliberately *not* compared against the package version. `RENDER_EPOCH`
+  // above is the lever that means "Reel renders differently now", and it is
+  // bumped by hand when that is true. Checking the version on top of it meant a
+  // patch release touching only CLI help text invalidated every stamp in every
+  // repo — so with `if-changed` and `commit` on, a Dependabot bump rewrote every
+  // GIF and MP4 in the tree. That is exactly the media churn CLAUDE.md calls a
+  // real regression, caused by the tool rather than by the demo.
+  //
+  // The version still travels in the stamp, because knowing which Reel produced
+  // a file is worth having when something looks wrong.
   if (stamp.hash !== fp.hash) return { upToDate: false, reason: "the spec or its inputs changed" };
 
   for (const out of expectedOutputs) {

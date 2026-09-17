@@ -1113,8 +1113,16 @@ const specObject = z.object({
    * a slow response). Only steps that provably didn't act are retried — a
    * timed-out click never clicked — so a retry can't double-submit a form or
    * type the same text twice.
+   *
+   * Defaults to 2 rather than 0. The retry gate above is what makes that safe,
+   * and the alternative was worse: a newcomer's first CI flake — a cold runner
+   * where the first render, a font fetch and an API call stack up past the
+   * timeout — was a red build with no obvious remedy, and the remedy was
+   * documented a thousand lines into the README. A demo that needed one more
+   * second is not drift, and reporting it as drift is how a team learns to
+   * ignore the check.
    */
-  retries: z.number().int().nonnegative().max(5).default(0),
+  retries: z.number().int().nonnegative().max(5).default(2),
   /** Render this one spec at several viewports and/or themes. */
   matrix: matrixSchema.optional(),
   /** Enable terminal steps, and configure how the terminal looks and behaves. */

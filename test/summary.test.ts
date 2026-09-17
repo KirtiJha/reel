@@ -143,7 +143,10 @@ output: { preset: hq, gif: g.gif, targetDuration: 30s, subtitles: true, language
     const s = summarize(base);
     assert.equal(s.options.speed, 1);
     assert.equal(s.options.timeline, true, "deterministic timeline is the default");
-    assert.equal(s.options.retries, 0);
+    // Two, not zero. A cold CI runner where the first render, a font fetch and
+    // an API call stack up past the timeout is a flake, not drift, and the
+    // retry gate only retries steps that provably did not act.
+    assert.equal(s.options.retries, 2, "a transient flake should not read as drift");
     assert.equal(s.options.trimIdle, undefined);
   });
 });

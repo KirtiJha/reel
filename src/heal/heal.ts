@@ -5,6 +5,7 @@ import { chromium, type Browser } from "playwright-core";
 import type { LoadedSpec } from "../spec/load.js";
 import { resolveOutput } from "../spec/load.js";
 import type { Step } from "../spec/schema.js";
+import { checkTimeoutMs } from "../driver/run.js";
 import { applyDeterminism, DETERMINISTIC_LAUNCH_ARGS } from "../driver/determinism.js";
 import { startApp, type RunningApp } from "../driver/app.js";
 import { runStep, type StepContext } from "../driver/steps.js";
@@ -72,7 +73,7 @@ export async function heal(loaded: LoadedSpec, opts: { write: boolean }): Promis
     await applyDeterminism(context, spec.deterministic);
     if (spec.mock) await applyMocks(context, spec.mock, loaded);
     const page = await context.newPage();
-    page.setDefaultTimeout(8_000);
+    page.setDefaultTimeout(checkTimeoutMs());
     await page.goto(spec.url, { waitUntil: "domcontentloaded" }).catch(() => {});
 
     const timeline = new Timeline(spec.polish.speed);

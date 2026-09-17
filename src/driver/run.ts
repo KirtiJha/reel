@@ -48,6 +48,22 @@ import { diagramSources, missingDiagrams } from "../media/diagram.js";
 import { beatLabels, draftProfile, driveThrough, previewRange, type Preview } from "../polish/preview.js";
 import { log, ReelError } from "../util/log.js";
 
+/**
+ * How long a `check` waits for an element before calling it drift.
+ *
+ * Eight seconds is fine on a warm laptop and marginal on a cold shared runner,
+ * where the first React render, a font fetch and a cold API call stack up. A
+ * demo that needed one more second is not drift, and a check that cries wolf is
+ * one a team learns to ignore — which costs more than the flake did.
+ *
+ * `REEL_CHECK_TIMEOUT` overrides it outright, for a runner that is slower still.
+ */
+export function checkTimeoutMs(): number {
+  const raw = Number(process.env.REEL_CHECK_TIMEOUT);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return process.env.CI ? 20_000 : 8_000;
+}
+
 export interface RunResult {
   frames: number;
   beats: number;
@@ -145,7 +161,7 @@ export async function record(
     const context = await prepareContext(browser, loaded);
     const page = await context.newPage();
     // In CI drift mode, fail fast: a gone selector shouldn't cost 30s.
-    if (mode === "check") page.setDefaultTimeout(8_000);
+    if (mode === "check") page.setDefaultTimeout(checkTimeoutMs());
 
     // A virtual timeline makes the output a function of the spec rather than of
     // machine speed; see driver/timeline.ts.

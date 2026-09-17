@@ -9,7 +9,7 @@ import { recordOne } from "./record.js";
 import { runReview, tally, type ReviewOutcome } from "./review.js";
 import { atLeast, worstVerdict, type Verdict } from "../review/review.js";
 import { REVIEW_DEFAULTS } from "./review.js";
-import { formatRange } from "../diff/compare.js";
+import { formatRange, sameFormat, SAME_FORMAT_THRESHOLD } from "../diff/compare.js";
 import { log, ReelError } from "../util/log.js";
 
 /**
@@ -301,6 +301,18 @@ export async function ci(dir: string, patterns: string[], opts: CiOptions): Prom
 
       const outcome = await runReview(previous, target, {
         ...REVIEW_DEFAULTS,
+        // CI always compares a render against the previous render of the same
+        // spec, so the formats always match and the noise floor is literally
+        // zero — two renders of one spec are byte-identical. `reel review` on
+        // the command line already picks the threshold this way; CI inherited
+        // the cross-format one, which is set by GIF palette noise it cannot
+        // contain. That made the same comparison give two different answers
+        // depending on which command you ran, and the CI answer missed real
+        // changes: a two-digit price edit moves 0.02% of pixels, far above the
+        // same-format floor and far below the cross-format one.
+        threshold: sameFormat(previous, target)
+          ? SAME_FORMAT_THRESHOLD
+          : REVIEW_DEFAULTS.threshold,
         // The exit code is decided once, at the end, across every spec — a
         // per-spec one would stop the run before the later demos were seen.
         failOn: "never",

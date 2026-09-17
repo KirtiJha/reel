@@ -448,8 +448,8 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 5,
-      "default": 0,
-      "description": "Retry a step that fails for a transient reason (an element not ready yet,\na slow response). Only steps that provably didn't act are retried — a\ntimed-out click never clicked — so a retry can't double-submit a form or\ntype the same text twice."
+      "default": 2,
+      "description": "Retry a step that fails for a transient reason (an element not ready yet,\na slow response). Only steps that provably didn't act are retried — a\ntimed-out click never clicked — so a retry can't double-submit a form or\ntype the same text twice.\n\nDefaults to 2 rather than 0. The retry gate above is what makes that safe,\nand the alternative was worse: a newcomer's first CI flake — a cold runner\nwhere the first render, a font fetch and an API call stack up past the\ntimeout — was a red build with no obvious remedy, and the remedy was\ndocumented a thousand lines into the README. A demo that needed one more\nsecond is not drift, and reporting it as drift is how a team learns to\nignore the check."
     },
     "matrix": {
       "type": "object",
