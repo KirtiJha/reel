@@ -604,11 +604,15 @@ export async function record(
     const targets = previewing
       ? {
           gif: undefined,
+          // A preview is one video, deliberately: the point is to see the cut
+          // quickly, and encoding every deliverable defeats that.
+          webp: undefined,
           mp4: video ? previewPath(resolveOutput(loaded, video)) : undefined,
           webm: undefined,
         }
       : {
           gif: spec.output.gif ? resolveOutput(loaded, spec.output.gif) : undefined,
+          webp: spec.output.webp ? resolveOutput(loaded, spec.output.webp) : undefined,
           mp4: spec.output.mp4 ? resolveOutput(loaded, spec.output.mp4) : undefined,
           webm: spec.output.webm ? resolveOutput(loaded, spec.output.webm) : undefined,
         };
@@ -621,6 +625,7 @@ export async function record(
       tailMs: parseDuration(spec.output.targetDuration) ? 0 : 900,
       endMs: durationMs,
       gif: profile.gif,
+      webp: profile.webp,
     };
     // One render, used for the master and for every cut taken out of it. The
     // sharp render path handles auto-zoom AND the presentation layer (device
@@ -666,7 +671,9 @@ export async function record(
 
     // Skip the whole encode phase for an HTML-only build — it needs frames, not
     // a video, and the CFR expansion is the most expensive step in the pipeline.
-    const needsEncode = Boolean(targets.gif || targets.mp4 || targets.webm || storyboardDir);
+    const needsEncode = Boolean(
+      targets.gif || targets.webp || targets.mp4 || targets.webm || storyboardDir,
+    );
     if (needsEncode) stopIfCancelled(signal, "before encoding");
     if (needsEncode) log.phase("Encoding");
 
@@ -695,7 +702,9 @@ export async function record(
       } else {
         await renderTo(frames, targets, storyboardDir, encodeOpts, captions, zoom, beats, highlights, fades);
       }
-      for (const t of [targets.gif, targets.mp4, targets.webm, storyboardDir]) if (t) outputs.push(t);
+      for (const t of [targets.gif, targets.webp, targets.mp4, targets.webm, storyboardDir]) {
+        if (t) outputs.push(t);
+      }
     }
 
     // The bed is named relative to the spec, like every other path a spec
@@ -857,11 +866,12 @@ export async function record(
 
         const base = targets.mp4.replace(/\.mp4$/i, "");
         const langMp4 = `${base}.${lang}.mp4`;
-        // Only the mp4: a GIF and a storyboard carry no audio, so a language
-        // variant of them would be a byte-identical duplicate of the master.
+        // Only the mp4: a GIF, a WebP and a storyboard carry no audio, so a
+        // language variant of them would be a byte-identical duplicate of the
+        // master — a second copy of the same file under a different name.
         await renderTo(
           lf,
-          { gif: undefined, mp4: langMp4, webm: undefined },
+          { gif: undefined, webp: undefined, mp4: langMp4, webm: undefined },
           undefined,
           { ...encodeOpts, endMs: total },
           lc,
@@ -902,6 +912,7 @@ export async function record(
         const cutSb = cut.output.storyboard ? resolveOutput(loaded, cut.output.storyboard) : undefined;
         const cutTargets = {
           gif: cut.output.gif ? resolveOutput(loaded, cut.output.gif) : undefined,
+          webp: cut.output.webp ? resolveOutput(loaded, cut.output.webp) : undefined,
           mp4: cut.output.mp4 ? resolveOutput(loaded, cut.output.mp4) : undefined,
           webm: cut.output.webm ? resolveOutput(loaded, cut.output.webm) : undefined,
         };
@@ -914,6 +925,7 @@ export async function record(
             fps: cutProfile.fps,
             maxWidth: cutProfile.maxWidth,
             gif: cutProfile.gif,
+            webp: cutProfile.webp,
             endMs: cutDuration(range),
           },
           // Captions and zooms carry in: whatever was on screen when the cut
@@ -951,7 +963,7 @@ export async function record(
             `(${(cutDuration(range) / 1000).toFixed(1)}s)` +
             (cutLines.length ? ` · ${cutLines.length} spoken` : ""),
         );
-        for (const t of [cutTargets.gif, cutTargets.mp4, cutTargets.webm, cutSb]) {
+        for (const t of [cutTargets.gif, cutTargets.webp, cutTargets.mp4, cutTargets.webm, cutSb]) {
           if (t) outputs.push(t);
         }
       }
@@ -1014,7 +1026,7 @@ export async function record(
     if (out.subtitles || out.languages?.length) {
       let subtitleBase: string | undefined;
       if (out.subtitles === true) {
-        const src = targets.mp4 ?? targets.webm ?? targets.gif;
+        const src = targets.mp4 ?? targets.webm ?? targets.gif ?? targets.webp;
         subtitleBase = src ? src.replace(/\.[^.]+$/, "") : undefined;
       } else if (typeof out.subtitles === "string") {
         subtitleBase = resolveOutput(loaded, out.subtitles).replace(/\.(srt|vtt)$/i, "");

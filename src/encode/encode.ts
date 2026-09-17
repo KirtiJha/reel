@@ -6,6 +6,20 @@ import { log, ReelError } from "../util/log.js";
 
 export interface EncodeTargets {
   gif?: string;
+  /**
+   * Animated WebP — the same picture as the GIF at a fraction of the weight.
+   *
+   * A GIF carries 256 colours and a per-frame palette, which is why a fifteen
+   * second demo of a dark UI lands around 2.7 MB: gradients become dither
+   * noise, and dither noise is expensive to store. WebP has real colour and
+   * inter-frame compression, so the same frames come out several times smaller
+   * *and* without the banding.
+   *
+   * It matters here more than it would elsewhere because the flagship artifact
+   * of this tool is a README animation, GitHub renders WebP in Markdown, and a
+   * README that takes a moment to load is one people scroll past.
+   */
+  webp?: string;
   mp4?: string;
   webm?: string;
   storyboard?: string;
@@ -25,6 +39,12 @@ export interface EncodeOptions {
   endMs?: number;
   /** Resolved GIF params (from the output preset). */
   gif: { fps: number; maxWidth: number; colors: number };
+  /**
+   * Resolved WebP params. Shares the GIF's frame rate and width so the two
+   * deliverables are the same cut rather than two different ones — quality is
+   * the only knob that is WebP's own.
+   */
+  webp?: { fps: number; maxWidth: number; quality: number };
 }
 
 /**
@@ -105,6 +125,35 @@ export async function encode(
       framesDir,
     );
     log.ok(`gif  → ${targets.gif}`);
+  }
+
+  if (targets.webp) {
+    await ensureOutDir(targets.webp);
+    const w = opts.webp ?? { fps: opts.gif.fps, maxWidth: opts.gif.maxWidth, quality: 80 };
+    await ffmpeg(
+      [
+        "-y",
+        "-f", "concat", "-safe", "0", "-i", "frames.concat",
+        "-vf", `fps=${w.fps},${scaleFilter(w.maxWidth)}:flags=lanczos`,
+        // `-loop 0` is forever, matching what a GIF in a README does. Without
+        // it libwebp writes a single-play animation and the demo stops dead on
+        // its last frame, which reads as a broken image rather than a choice.
+        "-loop", "0",
+        "-c:v", "libwebp_anim",
+        "-lossless", "0",
+        "-q:v", String(w.quality),
+        // Slowest search. This runs once and the file is committed and served
+        // for years, so the trade is not close.
+        "-compression_level", "6",
+        // No alpha to preserve: the frames are composited onto the look's own
+        // background long before this, and carrying an alpha channel costs size
+        // for nothing.
+        "-pix_fmt", "yuv420p",
+        outPath(targets.webp),
+      ],
+      framesDir,
+    );
+    log.ok(`webp → ${targets.webp}`);
   }
 }
 

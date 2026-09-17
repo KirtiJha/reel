@@ -70,6 +70,14 @@ describe("resolveOutputProfile", () => {
       fps: PRESETS.readme.fps,
       maxWidth: PRESETS.readme.maxWidth,
       gif: { ...PRESETS.readme.gif },
+      // WebP deliberately inherits the GIF's rate and width: two animated
+      // deliverables from one recording that disagreed about how fast the demo
+      // ran would be a bug nobody would think to look for.
+      webp: {
+        fps: PRESETS.readme.gif.fps,
+        maxWidth: PRESETS.readme.gif.maxWidth,
+        quality: 80,
+      },
     });
   });
 

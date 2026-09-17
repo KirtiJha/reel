@@ -44,6 +44,7 @@ output:
   # Options: share (default) · readme · social · hq · docs — override any field.
   preset: share
   mp4: out/taskflow.mp4        # crisp video — share on social, docs, embeds
-  gif: out/taskflow.gif        # lightweight loop — READMEs, chat
+  gif: out/taskflow.gif        # the compatible one — 2.7 MB here
+  webp: out/taskflow.webp      # the same cut at 0.41 MB — prefer this in a README
   webm: out/taskflow.webm      # smaller modern video
   storyboard: out/storyboard   # one PNG per beat

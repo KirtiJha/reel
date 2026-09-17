@@ -17,7 +17,12 @@ describe("draftProfile", () => {
   test("never scales a small preset up", () => {
     // A draft is a cheaper render, never a more expensive one. A preset already
     // below the draft ceiling should stay where it is.
-    const tiny = { fps: 8, maxWidth: 400, gif: { fps: 6, maxWidth: 300, colors: 64 } };
+    const tiny = {
+      fps: 8,
+      maxWidth: 400,
+      gif: { fps: 6, maxWidth: 300, colors: 64 },
+      webp: { fps: 6, maxWidth: 300, quality: 70 },
+    };
     const d = draftProfile(tiny);
     assert.equal(d.fps, 8);
     assert.equal(d.maxWidth, 400);

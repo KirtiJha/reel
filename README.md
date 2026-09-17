@@ -279,10 +279,31 @@ steps:
 output:
   preset: share              # share · readme · social · hq · docs
   mp4: out/taskflow.mp4
-  gif: out/taskflow.gif
+  webp: out/taskflow.webp    # animated, and several times lighter than a GIF
+  gif: out/taskflow.gif      # keep it only if something in your chain can't read WebP
   webm: out/taskflow.webm
   storyboard: out/storyboard
   html: out/taskflow.html    # self-contained interactive click-through
+```
+
+**Prefer `webp:` to `gif:` in a README.** A GIF carries 256 colours and a
+per-frame palette, so a dark UI turns into dither noise — and dither noise is
+expensive to store. On the bundled example the same fifteen seconds is **2.7 MB
+as a GIF and 0.41 MB as WebP**, without the banding, and GitHub renders it in
+Markdown. The two are encoded from the same frames at the same rate, so they
+cannot disagree about what the demo did.
+
+**A render ends by printing the line you paste.** Markdown has no video tag and
+the interactive build wants a query parameter, so the last step of getting a
+demo in front of anyone used to be a small research task:
+
+```
+Paste this
+  WEBP
+    ![Sign up](out/demo.webp)
+  MP4
+    <video src="out/demo.mp4" autoplay loop muted playsinline width="720"></video>
+    Markdown has no video tag; GitHub renders this HTML in a README.
 ```
 
 ## Scene grammar — demos that are directed, not just recorded

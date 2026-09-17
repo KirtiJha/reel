@@ -19,6 +19,7 @@ import { SAME_FORMAT_THRESHOLD, sameFormat } from "./diff/compare.js";
 import { runReview, printReview, REVIEW_DEFAULTS } from "./commands/review.js";
 import { ci, printCi, writeGithubOutputs, CI_DEFAULTS } from "./commands/ci.js";
 import { recordOne } from "./commands/record.js";
+import { embedSnippets, formatEmbeds } from "./encode/embed.js";
 import type { Verdict } from "./review/review.js";
 import { exportSchema, SCHEMA_FILE } from "./commands/schema.js";
 import { capture } from "./commands/capture.js";
@@ -104,9 +105,22 @@ program
     await withErrors(async () => {
       const loaded = await loadSpec(specPath);
       const res = await recordOne(loaded, { ...opts, version: VERSION });
+      const embeds = res.skipped ? [] : embedSnippets(res.outputs, {
+        from: process.cwd(),
+        title: loaded.spec.name,
+      });
       if (!res.skipped) {
         log.phase("Done");
         for (const o of res.outputs) log.info(o);
+        // The last step of getting a demo in front of anyone is pasting it
+        // somewhere, and that step is different for every format — Markdown has
+        // no video tag, and the interactive build wants a query parameter you
+        // would have to go and read about. Printing the line costs nothing and
+        // is the difference between finishing and almost finishing.
+        if (embeds.length > 0) {
+          log.phase("Paste this");
+          for (const line of formatEmbeds(embeds)) log.info(line);
+        }
       }
       emit("record", true, {
         result: {
@@ -117,6 +131,7 @@ program
           fingerprint: res.fingerprint,
           variants: res.variants,
           outputs: res.outputs,
+          embeds,
         },
       });
     }, "record");

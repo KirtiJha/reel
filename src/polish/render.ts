@@ -310,6 +310,40 @@ export async function renderWithZoom(
     log.ok(`gif  → ${targets.gif}`);
   }
 
+  if (targets.webp) {
+    await ensureOutDir(targets.webp);
+    const w = opts.webp ?? { fps: opts.gif.fps, maxWidth: opts.gif.maxWidth, quality: 80 };
+    // Same rate and width as the GIF, so the two deliverables are the same cut.
+    const webpFps = Math.min(w.fps, opts.fps);
+    const webpW = even(Math.min(w.maxWidth, seqW));
+    // Straight from the PNG sequence: the lossless intermediate above exists
+    // only because palettegen and the image2 demuxer disagree, and WebP has no
+    // palette to generate.
+    await withProgress("webp", seqMs, (p) =>
+      ffmpeg(
+        [
+          "-y", ...seqInput,
+          "-vf", `fps=${webpFps},scale=${webpW}:-2:flags=lanczos`,
+          // Forever, matching what a GIF does in a README. Without it libwebp
+          // writes a single-play animation, and a demo that stops dead on its
+          // last frame reads as a broken image rather than as a choice.
+          "-loop", "0",
+          "-c:v", "libwebp_anim",
+          "-lossless", "0",
+          "-q:v", String(w.quality),
+          // Slowest search: this runs once and the file is then served for
+          // years, so the trade is not close.
+          "-compression_level", "6",
+          ...BITEXACT,
+          outPath(targets.webp!),
+        ],
+        framesDir,
+        p,
+      ),
+    );
+    log.ok(`webp → ${targets.webp}`);
+  }
+
   if (targets.storyboard) {
     await mkdir(outPath(targets.storyboard), { recursive: true });
     let n = 0;

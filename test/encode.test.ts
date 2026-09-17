@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { isAbsolute, resolve } from "node:path";
 import { buildConcatManifest, outPath } from "../src/encode/encode.js";
+import { outputSchema, resolveOutputProfile } from "../src/spec/schema.js";
 import type { CapturedFrame } from "../src/capture/frames.js";
 
 /** Sum every `duration` directive — the playback length ffmpeg will produce. */
@@ -117,5 +118,37 @@ describe("outPath", () => {
       assert.ok(isAbsolute(got), `${p} stayed relative`);
       assert.equal(got, resolve(process.cwd(), p));
     }
+  });
+});
+
+describe("webp output", () => {
+  // The flagship artifact of this tool is a README animation, and a GIF is
+  // 256 colours with a per-frame palette — which on a dark UI becomes dither
+  // noise, and dither noise is expensive to store. Measured on the bundled
+  // example: 2.71 MB as a GIF, 0.41 MB as WebP, same cut.
+  test("shares the GIF's rate and width, so the two are the same cut", () => {
+    const p = resolveOutputProfile(outputSchema.parse({ preset: "readme", gif: "a.gif", webp: "a.webp" }));
+    assert.equal(p.webp.fps, p.gif.fps);
+    assert.equal(p.webp.maxWidth, p.gif.maxWidth);
+  });
+
+  test("an override moves both, for the same reason", () => {
+    const p = resolveOutputProfile(
+      outputSchema.parse({ gif: "a.gif", webp: "a.webp", gifFps: 12, gifMaxWidth: 500 }),
+    );
+    assert.equal(p.webp.fps, 12);
+    assert.equal(p.webp.maxWidth, 500);
+  });
+
+  test("quality is WebP's own knob", () => {
+    assert.equal(resolveOutputProfile(outputSchema.parse({ webp: "a.webp" })).webp.quality, 80);
+    assert.equal(
+      resolveOutputProfile(outputSchema.parse({ webp: "a.webp", webpQuality: 95 })).webp.quality,
+      95,
+    );
+  });
+
+  test("a spec can ask for webp alone", () => {
+    assert.equal(outputSchema.parse({ webp: "out/demo.webp" }).webp, "out/demo.webp");
   });
 });

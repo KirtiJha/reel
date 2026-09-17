@@ -375,6 +375,19 @@ export const outputSchema = z
     /** Delivery profile; sets defaults for the fields below. */
     preset: z.enum(["share", "readme", "hq", "social", "docs"]).default("share"),
     gif: z.string().optional(),
+    /**
+     * Animated WebP — the same cut as `gif:`, several times lighter.
+     *
+     * A GIF is limited to 256 colours with a per-frame palette, so a dark UI
+     * becomes dither noise and the file lands in megabytes. WebP has real
+     * colour and inter-frame compression: smaller *and* without the banding.
+     * GitHub renders it in Markdown, so for a README it is a straight upgrade.
+     *
+     * Keep `gif:` as well if something in your chain cannot read WebP — the two
+     * are encoded from the same frames at the same rate, so they cannot
+     * disagree about what the demo did.
+     */
+    webp: z.string().optional(),
     mp4: z.string().optional(),
     webm: z.string().optional(),
     /** Directory to drop a PNG storyboard (one image per beat). */
@@ -407,6 +420,11 @@ export const outputSchema = z
     gifFps: z.number().int().positive().max(50).optional(),
     gifMaxWidth: z.number().int().positive().optional(),
     gifColors: z.number().int().min(16).max(256).optional(),
+    /**
+     * WebP quality, 0-100. Shares the GIF's frame rate and width so the two are
+     * the same cut; this is the only knob that is WebP's own.
+     */
+    webpQuality: z.number().int().min(1).max(100).optional(),
     /** Emit sidecar subtitles from the captions. true, or an explicit path base. */
     subtitles: z.union([z.boolean(), z.string()]).optional(),
     /**
@@ -426,8 +444,9 @@ export const outputSchema = z
      */
     targetDuration: z.union([z.number().positive(), z.string()]).optional(),
   })
-  .refine((o) => o.gif || o.mp4 || o.webm || o.storyboard || o.html || o.player, {
-    message: "output must specify at least one of: gif, mp4, webm, storyboard, html, player",
+  .refine((o) => o.gif || o.webp || o.mp4 || o.webm || o.storyboard || o.html || o.player, {
+    message:
+      "output must specify at least one of: gif, webp, mp4, webm, storyboard, html, player",
   });
 export type Output = z.infer<typeof outputSchema>;
 
@@ -436,6 +455,7 @@ export interface OutputProfile {
   fps: number;
   maxWidth: number;
   gif: { fps: number; maxWidth: number; colors: number };
+  webp: { fps: number; maxWidth: number; quality: number };
 }
 
 export function resolveOutputProfile(o: Output): OutputProfile {
@@ -447,6 +467,14 @@ export function resolveOutputProfile(o: Output): OutputProfile {
       fps: o.gifFps ?? base.gif.fps,
       maxWidth: o.gifMaxWidth ?? base.gif.maxWidth,
       colors: o.gifColors ?? base.gif.colors,
+    },
+    // Deliberately the GIF's rate and width. Two animated deliverables from one
+    // recording that disagreed about how fast the demo ran would be a bug
+    // nobody would think to look for.
+    webp: {
+      fps: o.gifFps ?? base.gif.fps,
+      maxWidth: o.gifMaxWidth ?? base.gif.maxWidth,
+      quality: o.webpQuality ?? 80,
     },
   };
 }

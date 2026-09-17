@@ -110,7 +110,13 @@ export async function startApp(run: RunConfig): Promise<RunningApp> {
         [
           run.readyOn
             ? `Something answered at ${run.readyOn} anyway — most likely a server left over from ` +
-              "an earlier run, which Reel would have filmed instead of yours."
+              "an earlier run, which Reel would have filmed instead of yours." +
+              // Naming the remedy, because the diagnosis alone leaves you to
+              // work out which process to find and how. This is the most common
+              // way a local run fails twice in a row, and knowing *why* does not
+              // clear the port.
+              (portOf(run.readyOn) ? ` Free it with: npx kill-port ${portOf(run.readyOn)}` +
+                ` (or: lsof -ti:${portOf(run.readyOn)} | xargs kill)` : "")
             : "",
           output.length ? `Its last output was:\n${output.map((l) => `    ${l}`).join("\n")}` : "",
         ]
@@ -124,6 +130,16 @@ export async function startApp(run: RunConfig): Promise<RunningApp> {
   }
 
   return { stop };
+}
+
+/** The port a `readyOn` URL names, when it names one. */
+function portOf(url: string): string | null {
+  try {
+    const p = new URL(url).port;
+    return p || null;
+  } catch {
+    return null;
+  }
 }
 
 async function waitForReady(
