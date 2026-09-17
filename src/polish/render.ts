@@ -18,6 +18,7 @@ import {
   sampleRect,
   DEFAULT_ZOOM,
   type ZoomKey,
+  type Rect,
   type ZoomConfig,
   withIdleMotion,
 } from "./zoom.js";
@@ -38,6 +39,12 @@ import { log } from "../util/log.js";
 export interface ZoomRenderInput {
   timeline: ZoomKey[];
   viewport: { width: number; height: number; scale: number };
+  /**
+   * Where the app's content sits, so a wide shot frames the app rather than the
+   * page it is centred on. Absent — or when the app already fills its viewport
+   * — the camera behaves exactly as it did.
+   */
+  content?: Rect;
   /** Caption timeline, composited onto the output so zoom can't clip it. */
   captions: CaptionCue[];
   /** Annotation spans, drawn in content space so the camera carries them. */
@@ -98,7 +105,11 @@ export async function renderWithZoom(
   const outW = even(opts.maxWidth ? Math.min(opts.maxWidth, fullW) : fullW);
   const outH = even(Math.round((outW * fullH) / fullW));
 
-  const cfg: ZoomConfig = { viewport: { w: zoom.viewport.width, h: zoom.viewport.height }, ...DEFAULT_ZOOM };
+  const cfg: ZoomConfig = {
+    viewport: { w: zoom.viewport.width, h: zoom.viewport.height },
+    ...DEFAULT_ZOOM,
+    ...(zoom.content ? { content: zoom.content } : {}),
+  };
   // Drift through stretches where nothing changes. Applied to the resolved
   // rects rather than the keyframes, because what should drift is the shot the
   // camera actually settled on, not the element box it was derived from.

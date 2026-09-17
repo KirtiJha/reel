@@ -66,6 +66,18 @@ export type Deterministic = z.infer<typeof deterministicSchema>;
  * frame around the page. None of it changes what the app does.
  */
 export const polishSchema = z.object({
+  /**
+   * What a wide shot frames: the app, or the whole viewport.
+   *
+   * `content` measures where the app actually paints and frames that, so a
+   * centred card or a narrow column fills the picture instead of floating in a
+   * field of page background. It only engages when the content is genuinely
+   * small — an app that already fills its viewport is left alone, so this
+   * cannot quietly crop a dashboard or a terminal.
+   *
+   * `viewport` is the old behaviour: film the whole window, dead space and all.
+   */
+  fit: z.enum(["content", "viewport"]).default("content"),
   /** auto = zoom toward the active element; false = never zoom. */
   zoom: z.union([z.literal("auto"), z.literal(false)]).default("auto"),
   /**

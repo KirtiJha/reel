@@ -4,6 +4,7 @@ import {
   DEFAULT_ZOOM,
   resolveTimeline,
   sampleRect,
+  fullRect,
   toCrop,
   type ZoomConfig,
 } from "../src/polish/zoom.js";
@@ -100,5 +101,70 @@ describe("timeline sampling", () => {
   test("is stable for times before the first keyframe", () => {
     const r = resolveTimeline([{ t: 5000, rect: null }], cfg);
     assert.deepEqual(sampleRect(r, -100, cfg), { x: 0, y: 0, w: 1000, h: 800 });
+  });
+});
+
+describe("the wide shot frames the content, not the empty page", () => {
+  // A wide shot used to mean the whole viewport, which is only right when the
+  // app fills it. Measured on Reel's own example the content box is 16% of the
+  // viewport — filming that is how a demo ends up mostly background.
+  const content = { x: 280, y: 227, w: 440, h: 266 };
+
+  test("with no content measured, nothing changes", () => {
+    assert.deepEqual(fullRect(cfg), { x: 0, y: 0, w: 1000, h: 800 });
+  });
+
+  test("a small content box becomes the wide shot", () => {
+    const r = fullRect({ ...cfg, content });
+    assert.ok(r.w < cfg.viewport.w, `wide shot still full width: ${r.w}`);
+    assert.ok(r.h < cfg.viewport.h, `wide shot still full height: ${r.h}`);
+  });
+
+  test("it keeps the viewport aspect, so the picture never distorts", () => {
+    closeTo(fullRect({ ...cfg, content }).w / fullRect({ ...cfg, content }).h, aspect);
+  });
+
+  test("the content sits fully inside the shot, with margin", () => {
+    // Framing that clipped the thing it was framing would be worse than before.
+    const r = fullRect({ ...cfg, content });
+    assert.ok(r.x <= content.x, `left edge clips content: ${r.x} > ${content.x}`);
+    assert.ok(r.y <= content.y, `top edge clips content: ${r.y} > ${content.y}`);
+    assert.ok(r.x + r.w >= content.x + content.w, "right edge clips content");
+    assert.ok(r.y + r.h >= content.y + content.h, "bottom edge clips content");
+  });
+
+  test("an app that already fills its viewport is left alone", () => {
+    // The threshold is what stops this being a breaking change: a dashboard or
+    // a terminal measures above it and its committed media does not churn.
+    const full = { x: 0, y: 40, w: 1000, h: 700 };
+    assert.deepEqual(fullRect({ ...cfg, content: full }), { x: 0, y: 0, w: 1000, h: 800 });
+  });
+
+  test("a wide shot stays wide — a tiny box does not become a push-in", () => {
+    // Otherwise the close-up that follows has nowhere left to go, and every
+    // shot being the same size is no camera at all.
+    const tiny = { x: 480, y: 390, w: 40, h: 20 };
+    const r = fullRect({ ...cfg, content: tiny });
+    assert.ok(r.w >= cfg.viewport.w * cfg.minCropFraction, `zoomed past the floor: ${r.w}`);
+  });
+
+  test("the shot is clamped inside the viewport", () => {
+    const edge = { x: 900, y: 700, w: 90, h: 90 };
+    const r = fullRect({ ...cfg, content: edge });
+    assert.ok(r.x >= 0 && r.y >= 0, "shot starts off-page");
+    assert.ok(r.x + r.w <= cfg.viewport.w + 0.01, "shot runs past the right edge");
+    assert.ok(r.y + r.h <= cfg.viewport.h + 0.01, "shot runs past the bottom edge");
+  });
+
+  test("degenerate content is ignored rather than trusted", () => {
+    for (const bad of [{ x: 0, y: 0, w: 0, h: 0 }, { x: 0, y: 0, w: -5, h: 10 }]) {
+      assert.deepEqual(fullRect({ ...cfg, content: bad }), { x: 0, y: 0, w: 1000, h: 800 });
+    }
+  });
+
+  test("the timeline's wide keyframes use it too", () => {
+    // `rect: null` means "show the whole thing" — which is now the content.
+    const withContent = resolveTimeline([{ t: 0, rect: null }], { ...cfg, content });
+    assert.ok(withContent[0]!.rect.w < cfg.viewport.w);
   });
 });

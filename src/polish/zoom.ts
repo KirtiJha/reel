@@ -40,6 +40,19 @@ export interface ZoomConfig {
   minCropFraction: number;
   /** Camera move duration between keyframes (ms). */
   transitionMs: number;
+  /**
+   * Where the app's actual content sits, in viewport pixels.
+   *
+   * A wide shot used to mean the whole viewport, which is only the right shot
+   * when the app fills it. Most don't: measured on Reel's own example, the
+   * content box is **16% of the viewport** and the other 84% is page
+   * background. Filming that is how a demo ends up mostly empty — the subject
+   * small and adrift in a field of nothing.
+   *
+   * When this is set and meaningfully tighter than the viewport, the wide shot
+   * becomes the content instead. Absent, everything behaves as it did.
+   */
+  content?: Rect;
 }
 
 export const DEFAULT_ZOOM: Omit<ZoomConfig, "viewport"> = {
@@ -47,6 +60,21 @@ export const DEFAULT_ZOOM: Omit<ZoomConfig, "viewport"> = {
   minCropFraction: 0.62, // never zoom past ~1.6× (keeps upscaled text sharp)
   transitionMs: 480,
 };
+
+/**
+ * Only reframe when the viewport shot is genuinely mostly empty.
+ *
+ * The threshold is what keeps this from being a breaking change for everyone.
+ * An app that already fills its viewport — a dashboard, a full-bleed editor,
+ * any terminal — measures well above this and is left exactly as it was, so its
+ * committed media does not churn. Below it, the wide shot was dead space and
+ * framing the content is strictly better.
+ */
+export const CONTENT_FIT_THRESHOLD = 0.55;
+
+/** Breathing room around the content in a wide shot, as a fraction per side. */
+const CONTENT_MARGIN = 0.12;
+
 
 /**
  * Turn a focused element box into a crop rectangle that (a) shares the
@@ -95,8 +123,44 @@ function centerOn(box: Rect, cw: number, ch: number, vp: { w: number; h: number 
   return { x, y, w: cw, h: ch };
 }
 
+/**
+ * The wide shot: the content when it is worth framing, the viewport otherwise.
+ *
+ * Aspect-corrected and clamped exactly like an interaction crop, so the camera
+ * can ease between a wide shot and a close one without the picture distorting
+ * or sliding off the page.
+ */
 export function fullRect(cfg: ZoomConfig): Rect {
-  return { x: 0, y: 0, w: cfg.viewport.w, h: cfg.viewport.h };
+  const vp = { x: 0, y: 0, w: cfg.viewport.w, h: cfg.viewport.h };
+  const c = cfg.content;
+  if (!c || c.w <= 0 || c.h <= 0) return vp;
+
+  // Already filling the frame? Then the viewport *is* the right wide shot, and
+  // reframing would only crop away context somebody meant to show.
+  const fill = (c.w * c.h) / (cfg.viewport.w * cfg.viewport.h);
+  if (fill >= CONTENT_FIT_THRESHOLD) return vp;
+
+  const aspect = cfg.viewport.w / cfg.viewport.h;
+  // Margin so the content is framed rather than cropped to its own edges.
+  let cw = c.w * (1 + CONTENT_MARGIN * 2);
+  let ch = c.h * (1 + CONTENT_MARGIN * 2);
+
+  // Grow the short axis to the viewport's aspect — never shrink the long one,
+  // or the reframing would cut off the very content it is trying to frame.
+  if (cw / ch > aspect) ch = cw / aspect;
+  else cw = ch * aspect;
+
+  // A wide shot is still a wide shot. Without this floor a small login box
+  // would become a hard push-in, and the following close-up would have nowhere
+  // left to go — every shot in the demo the same size is no camera at all.
+  const minW = cfg.viewport.w * cfg.minCropFraction;
+  if (cw < minW) {
+    cw = minW;
+    ch = cw / aspect;
+  }
+  if (cw > cfg.viewport.w || ch > cfg.viewport.h) return vp;
+
+  return centerOn(c, cw, ch, cfg.viewport);
 }
 
 export interface Resolved {

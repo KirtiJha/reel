@@ -38,6 +38,7 @@ import { mixNarration, muxAudio } from "../encode/audio.js";
 import { buildAudioRetime, buildFlowRetime, buildRetime, parseDuration } from "../polish/retime.js";
 import { applyRedaction } from "../privacy/redact.js";
 import { applyMocks } from "../mock/mock.js";
+import { measureContent, unionRect } from "../capture/content.js";
 import type { ZoomKey } from "../polish/zoom.js";
 import type { CaptionCue } from "../polish/captions.js";
 import { resolveHighlights, type HighlightCue } from "../polish/highlight.js";
@@ -171,6 +172,11 @@ export async function record(
     }
 
     await capture?.start();
+    // Where the app's content sits, so a wide shot can frame the app rather
+    // than the page it is centred on. Measured at the start and again at the
+    // end, and unioned: content grows as a demo runs, and a camera that crops
+    // away the thing being demonstrated is worse than one that sits too wide.
+    let content = spec.polish.fit === "viewport" ? null : await measureContent(page);
     const beats: { label: string; t: number }[] = [];
     const zoom: ZoomKey[] = [];
     const captions: CaptionCue[] = [];
@@ -317,6 +323,9 @@ export async function record(
     }
 
     let durationMs = timeline.now();
+    if (spec.polish.fit !== "viewport") {
+      content = unionRect(content, await measureContent(page));
+    }
     const frames = (await capture?.stop(deterministic ? durationMs : undefined)) ?? [];
     // A highlight's `until:` usually names a beat that had not happened yet when
     // the step ran, so its end is only knowable now. Settled before the retimes
@@ -554,6 +563,7 @@ export async function record(
           {
             timeline: zm,
             viewport: spec.viewport,
+            ...(content ? { content } : {}),
             captions: spec.polish.captions ? caps : [],
             highlights: hls,
             fades: fds,

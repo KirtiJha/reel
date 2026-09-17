@@ -135,6 +135,15 @@
     "polish": {
       "type": "object",
       "properties": {
+        "fit": {
+          "type": "string",
+          "enum": [
+            "content",
+            "viewport"
+          ],
+          "default": "content",
+          "description": "What a wide shot frames: the app, or the whole viewport.\n\n`content` measures where the app actually paints and frames that, so a\ncentred card or a narrow column fills the picture instead of floating in a\nfield of page background. It only engages when the content is genuinely\nsmall — an app that already fills its viewport is left alone, so this\ncannot quietly crop a dashboard or a terminal.\n\n`viewport` is the old behaviour: film the whole window, dead space and all."
+        },
         "zoom": {
           "type": [
             "string",
