@@ -40,7 +40,10 @@ steps:
   - card: { title: "One recording", subtitle: "Every format you need to ship", ms: 2100 }
 
   - caption: { text: "Scroll: the same demo, four ways", ms: 1700, say: false }
-  - scroll: { to: "#how", ms: 1400 }
+  # Scroll to the panels, not to the heading above them. `#how` puts the
+  # section title in the middle of the frame and leaves the input/output
+  # panels — the entire subject of the chapter — hanging off the bottom.
+  - scroll: { to: "#fmt-panel-gif", ms: 1400 }
   - waitFor: "role=tab[name=GIF]"
   - beat: formats
 

@@ -36,7 +36,10 @@ steps:
   - card: { title: "It can talk, too", subtitle: "Narration, music and sound — in the same spec", ms: 2300 }
 
   - caption: { text: "Written beside the step it belongs to", ms: 1900, say: false }
-  - scroll: { to: "#sound", ms: 1500 }
+  # The panel rather than the section, for the reason chapter 3 gives: the
+  # player and the spec beside it are what this chapter is about, and
+  # scrolling to the heading leaves both below the fold.
+  - scroll: { to: "#track-panel-en", ms: 1500 }
   - waitFor: "role=tab[name=English]"
   - beat: sound
 
