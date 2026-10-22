@@ -11,6 +11,11 @@
 # It was verified before it was filmed. If `reel record` on this machine had
 # produced two different GIFs, the honest thing would have been to cut the
 # chapter rather than stage it.
+#
+# The renders are filtered down to the two lines that prove one happened.
+# Unfiltered, `reel record` prints 24 lines, so two of them plus two
+# checksums would not fit a 26-row terminal at once — and the whole point of
+# this chapter is seeing both hashes on screen together.
 name: Reel — byte-identical
 
 terminal:
@@ -49,13 +54,13 @@ steps:
   - card: { title: "Run it again", subtitle: "The same spec renders the same bytes", ms: 2300 }
 
   - caption: { text: "Render it once", ms: 1600, say: false }
-  - run: { cmd: "reel record mini.reel.yaml 2>&1 | tail -3", expectCode: 0 }
+  - run: { cmd: 'reel record mini.reel.yaml 2>&1 | grep -A1 "^Done"', expectCode: 0 }
   - run: md5sum out/mini.gif
   - expectOutput: "out/mini.gif"
   - beat: first
 
   - caption: { text: "Now render it again, from scratch", ms: 1900, say: false }
-  - run: { cmd: "reel record mini.reel.yaml 2>&1 | tail -3", expectCode: 0 }
+  - run: { cmd: 'reel record mini.reel.yaml 2>&1 | grep -A1 "^Done"', expectCode: 0 }
   - run: md5sum out/mini.gif
   - expectOutput: "out/mini.gif"
   - beat: second
