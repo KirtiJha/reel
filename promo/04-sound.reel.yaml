@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 4 — sound, and the same demo in another language.
+#
+# Filmed against the site's own sound section, which is playing a real narrated
+# render with the subtitle sidecar Reel wrote beside it, next to the `audio:`
+# block that produced it. The promo itself has no narration, so this is the one
+# chapter that has to show the feature rather than use it.
+name: Reel — sound and languages
+url: http://localhost:4488/
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: reel.dev
+  background: "linear-gradient(140deg, #1b1430, #0a0812 60%, #221640)"
+  accent: "#c39cff"
+  padding: 50
+  radius: 14
+  fit: viewport
+  # Fixed camera, as in chapter 3: a push toward a 60-pixel tab crops the
+  # layout and magnifies the caption across the panel it is captioning.
+  zoom: false
+  idleMotion: drift
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "It can talk, too", subtitle: "Narration, music and sound — in the same spec", ms: 2300 }
+
+  - caption: { text: "Written beside the step it belongs to", ms: 1900, say: false }
+  - scroll: { to: "#sound", ms: 1500 }
+  - waitFor: "role=tab[name=English]"
+  - beat: sound
+
+  - callout: { selector: "#sound .panel:nth-child(2)", text: "A music bed that ducks under the voice", ms: 2200 }
+  - beat: audio-spec
+
+  - caption: { text: "One recording, a voice per language", ms: 2000, say: false }
+  - click: "role=tab[name=Español]"
+  - waitFor: "#track-panel-es"
+  - beat: spanish
+
+  - caption: { text: "Same frames, re-fitted to however long the Spanish takes", ms: 2300, say: false }
+  - beat: localized
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/04-sound.mp4
