@@ -1,11 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
-#
-# The spec the promo puts on screen in chapter 2.
-#
-# Deliberately the smallest thing that is still a real demo: it boots the app,
-# drives it, asserts, and writes a file. It has to fit an 84-column terminal
-# without scrolling, because the point of that shot is that you can read the
-# whole demo at once.
+# TaskFlow — add a task, complete it, and prove both worked.
 name: TaskFlow
 url: http://localhost:4321
 

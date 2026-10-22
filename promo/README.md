@@ -60,6 +60,12 @@ be built without a few minutes of rendering before any of its own chapters start
 The terminal chapters type `reel`, not `npm run dev --`: `build.mjs` puts
 `promo/bin` first on `PATH`, the same trick `demo/build.mjs` uses.
 
+`mini.reel.yaml` is a prop as well as a spec. Chapter 2 holds it on screen and
+asks the viewer to read it, so it is kept to the smallest thing that is still a
+real demo — boot, drive, assert, render — and to one line of comment. The usual
+explanatory header would be the first seven lines a viewer reads, and they
+would be about this repository rather than about the tool.
+
 ## The score
 
 `node promo/score.mjs out.wav` synthesizes it — a four-and-a-half
