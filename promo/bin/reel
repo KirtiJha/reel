@@ -1,0 +1,9 @@
+#!/bin/sh
+# Run the CLI straight out of this checkout, under the name people install it as.
+#
+# The promo's terminal chapters have to run real commands — a faked prompt would
+# make the film's whole claim worthless — but `npm run dev -- check` is the
+# from-source spelling, not the one anybody types. This is the same binary the
+# published package exposes, reached without a global install.
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+exec "$root/node_modules/.bin/tsx" "$root/src/cli.ts" "$@"

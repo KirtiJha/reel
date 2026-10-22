@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 1 of the promo — the hook.
+#
+# Opens on a demo, not on a pitch. The whole argument of the film is that what
+# you are watching was not screen-recorded by a person, and the fastest way to
+# make that land is to show something polished first and only then say where it
+# came from.
+name: Reel — hook
+url: http://localhost:4321
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+run:
+  cmd: node server.mjs
+  cwd: ../examples/taskflow
+  readyOn: http://localhost:4321
+  env: { PORT: "4321" }
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: taskflow.app
+  background: "linear-gradient(140deg, #101a2e, #080a12 60%, #0d1424)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  zoom: auto
+  idleMotion: drift
+  fadeIn: 500
+  fadeOut: 420
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "Reel", subtitle: "Demos as code", ms: 1900 }
+
+  - caption: { text: "A product demo, start to finish", ms: 1700, say: false }
+  - beat: hook
+
+  - type: { selector: "#task-input", text: "Ship the launch video" }
+  - click: role=button[name=Add]
+  - waitFor: text=Ship the launch video
+  - expect: { selector: "#list li", count: 1 }
+
+  - type: { selector: "#task-input", text: "Write the release notes" }
+  - click: role=button[name=Add]
+  - waitFor: text=Write the release notes
+  - expect: { selector: "#list li", count: 2 }
+  - beat: added
+
+  - caption: { text: "Click one to complete it", ms: 1500, say: false }
+  - click: text=Ship the launch video
+  - highlight: { selector: "#count", shape: box, label: "live count", until: done }
+  - expect: { selector: "#count", text: "1 of 2 open" }
+  - beat: done
+
+  - transition: { kind: fade, ms: 420, color: "#080a12" }
+  - card: { title: "Nobody recorded this", subtitle: "It was written down, then run", ms: 2400 }
+  - beat: outro
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/01-hook.mp4

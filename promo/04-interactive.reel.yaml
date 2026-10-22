@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 4 — the format a GIF cannot be.
+#
+# The page being driven here is itself a Reel output: the self-contained
+# interactive build that `examples/taskflow/branching.reel.yaml` writes, served
+# off disk by demo/serve.mjs. So the film is clicking through a real
+# deliverable rather than through a mock-up of one, which is the only way this
+# chapter is worth anything.
+name: Reel — the interactive build
+url: http://localhost:4597/branching.html
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: branching.html
+  background: "linear-gradient(140deg, #141033, #090712 60%, #16103a)"
+  accent: "#b78cff"
+  padding: 50
+  radius: 14
+  fit: viewport
+  zoom: auto
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 1
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "And one a GIF can't be", subtitle: "One HTML file — no player, no CDN, no network", ms: 2300 }
+
+  - caption: { text: "The same recording, as a click-through", ms: 1800, say: false }
+  - waitFor: "#stage"
+  - scroll: { to: "#play", ms: 1200 }
+  - beat: player
+
+  - click: "#next"
+  - click: "#next"
+  - click: "#next"
+  - beat: stepping
+
+  - caption: { text: "And the viewer picks the path", ms: 1700, say: false }
+  - click: "#next"
+  - waitFor: text=Add a second task
+  - callout: { selector: "#stage", text: "Every branch was recorded against the real app", ms: 2200 }
+  - click: text=Add a second task
+  - beat: branch
+
+  - caption: { text: "Any step is a link you can send", ms: 1700, say: false }
+  - highlight: { selector: "#link", shape: box, label: "deep link", until: outro }
+  - click: "#next"
+  - beat: outro
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/04-interactive.mp4

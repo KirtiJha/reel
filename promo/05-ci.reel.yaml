@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 5 — the part that is not a screen recorder.
+#
+# Everything up to here, a good screen capture could fake. This is the chapter
+# that cannot be faked: the demo is re-run headlessly, and when the app has
+# moved on the command exits non-zero. The failure on screen is a real failure
+# of a real spec against the real app — see broken.reel.yaml.
+name: Reel — it fails your build
+
+terminal:
+  cols: 96
+  rows: 26
+  cwd: .
+  prompt: "~/demos $ "
+  title: "zsh — ci"
+  fontSize: 15
+  require: [node]
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  frame: window
+  background: "linear-gradient(140deg, #2a1220, #0d0810 60%, #241024)"
+  accent: "#ff9d7c"
+  padding: 50
+  radius: 14
+  zoomOutput: true
+  zoomRows: 16
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 1
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "Then someone renames a button", subtitle: "This is the part a screen recorder cannot do", ms: 2400 }
+
+  - caption: { text: "The demo runs again, headlessly", ms: 1800, say: false }
+  - run: { cmd: "reel check broken.reel.yaml", expectCode: 1 }
+  - expectOutput: "Drift check FAILED"
+  - beat: failed
+
+  - caption: { text: "Non-zero — so the build goes red, instead of the GIF going quietly wrong", ms: 2400, say: false }
+  - beat: exit
+
+  - caption: { text: "Every demo in the repo, one exit code", ms: 1900, say: false }
+  - run: { cmd: "reel ci 'mini.reel.yaml' --mode check", expectCode: 0 }
+  - expectOutput: "1 spec"
+  - beat: ci
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/05-ci.mp4

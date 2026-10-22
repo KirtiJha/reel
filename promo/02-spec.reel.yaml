@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 2 — where that demo came from.
+#
+# A terminal demo, so every command on screen is a command that really ran.
+# That matters more here than anywhere else in the film: this is the chapter
+# making the claim that what you just watched was generated rather than
+# recorded, and a faked prompt would make it a claim about nothing.
+name: Reel — the spec
+
+terminal:
+  cols: 96
+  rows: 26
+  cwd: . # this directory, so the paths on screen are the paths that ran
+  prompt: "~/demos $ "
+  title: "zsh — demos"
+  fontSize: 15
+  require: [node]
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  frame: window
+  background: "linear-gradient(140deg, #101a2e, #080a12 60%, #0d1424)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  zoomOutput: true
+  zoomRows: 15
+  idleMotion: drift
+  fadeIn: 420
+  fadeOut: 420
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "It came from a file", subtitle: "Twenty lines you can review", ms: 2100 }
+
+  - caption: { text: "The whole demo, in one file", ms: 1700, say: false }
+  - run: cat mini.reel.yaml
+  - expectOutput: "Ship the launch video"
+  - beat: spec
+
+  - caption: { text: "Every step is an assertion, not a hope", ms: 1900, say: false }
+  - run: grep -n "expect" mini.reel.yaml
+  - expectOutput: expect
+  - beat: assertions
+
+  - caption: { text: "So recording it is also a smoke test", ms: 1900, say: false }
+  - run: { cmd: "reel check mini.reel.yaml", expectCode: 0 }
+  - expectOutput: "Drift check passed"
+  - beat: checked
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/02-spec.mp4

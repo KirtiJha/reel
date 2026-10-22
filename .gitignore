@@ -30,6 +30,10 @@ coverage/
 scripts/out/
 scripts/authored.reel.yaml
 examples/*/out/
+promo/out/
+# Build scratch for the tour and the promo: chapter lists, filter graphs, the
+# synthesized score. All regenerated, none of it reviewable.
+.work/
 demos/out/
 # Planning notes kept alongside the code but not published with it: the
 # positioning, competitive read and roadmap are working documents, not docs.

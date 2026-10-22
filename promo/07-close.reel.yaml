@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 7 — the last mile, and the close.
+#
+# The site being driven is one `reel publish` wrote from this repository's own
+# demos, served off disk. Which makes the final shot of the film a page the
+# film's own subject generated — the shortest honest summary of what the tool
+# does that the film could end on.
+name: Reel — publish and close
+url: http://localhost:4596/
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: your-team.github.io/demos
+  background: "linear-gradient(140deg, #101a2e, #080a12 60%, #0d1424)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  fit: viewport
+  zoom: auto
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 900
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "Then hand somebody a link", subtitle: "reel publish — one folder, ready to serve", ms: 2300 }
+
+  - caption: { text: "Every rendered demo, on one page", ms: 1800, say: false }
+  - waitFor: ".card"
+  - beat: site
+
+  - scroll: { to: "footer", ms: 1500 }
+  - caption: { text: "Static files. Commit them, or serve them anywhere", ms: 2000, say: false }
+  - beat: published
+
+  - transition: { kind: fade, ms: 500, color: "#05070c" }
+  - card: { title: "Reel", subtitle: "Demos as code, for web apps and CLIs", ms: 2200 }
+  - card: { title: "npx @kirti_jha/reel init", subtitle: "MIT · github.com/KirtiJha/reel", ms: 3000 }
+  - beat: outro
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/07-close.mp4

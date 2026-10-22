@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# A spec that is wrong on purpose.
+#
+# Chapter 5 films `reel check` failing, and the failure has to be a real one —
+# a staged error message would be the one thing in the film that was acted. So
+# this spec names a button the app does not have, exactly the way a spec goes
+# stale when somebody renames one.
+name: TaskFlow — after a redesign
+url: http://localhost:4321
+
+run:
+  cmd: node server.mjs
+  cwd: ../examples/taskflow
+  readyOn: http://localhost:4321
+
+steps:
+  - type: { selector: "#task-input", text: "Ship the launch video" }
+  # The button was called "Add" when this demo was written. It is still called
+  # "Add". `reel check` is what tells you the day it isn't.
+  - click: role=button[name=Create task]
+
+output:
+  gif: out/broken.gif

@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 3 — one recording, every format.
+#
+# Filmed against Reel's own site, which is itself a real app on localhost. The
+# format switcher there is showing media Reel rendered, so this chapter is a
+# demo of the output formats made out of the output formats.
+name: Reel — every format
+url: http://localhost:4488/
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: reel.dev
+  background: "linear-gradient(140deg, #101a2e, #080a12 60%, #0d1424)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  fit: viewport # a full landing page, framed as a page — not cropped to content
+  zoom: auto
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 1
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "One recording", subtitle: "Every format you need to ship", ms: 2100 }
+
+  - caption: { text: "Scroll: the same demo, four ways", ms: 1700, say: false }
+  - scroll: { to: "#how", ms: 1400 }
+  - waitFor: "role=tab[name=GIF]"
+  - beat: formats
+
+  # The MP4 tab is skipped on purpose. Headless Chromium here paints a <video>
+  # element black — the page is fine in a real browser, but a promo cannot show
+  # an empty box and call it the video output. The caption says MP4 instead,
+  # over a panel that actually renders.
+  - click: role=tab[name=Terminal]
+  - waitFor: "#fmt-panel-terminal"
+  - caption: { text: "The same grammar films a CLI", ms: 1500, say: false }
+  - beat: terminal
+
+  - click: role=tab[name=Storyboard]
+  - waitFor: "#fmt-panel-storyboard"
+  - caption: { text: "A still per beat, for slides and PRs", ms: 1500, say: false }
+  - beat: storyboard
+
+  - click: role=tab[name=GIF]
+  - waitFor: "#fmt-panel-gif"
+  - caption: { text: "GIF, MP4, WebM, stills — no re-recording per channel", ms: 2100, say: false }
+  - beat: formats-done
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/03-formats.mp4

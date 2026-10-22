@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 6 — the local workspace.
+#
+# Studio is the same commands behind a window, so this chapter films the real
+# one on :4488 driving a real spec out of this repository. The banner it opens
+# with gets dismissed on camera rather than hidden in setup: it is what a fresh
+# install actually shows, and quietly staging it away would make the rest of
+# the shot worth less.
+name: Reel — Studio
+url: http://localhost:4488/gallery
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+  freezeClock: "2026-01-01T09:00:00Z"
+
+polish:
+  frame: browser
+  frameUrl: localhost:4488
+  background: "linear-gradient(140deg, #0f2420, #080f0d 60%, #112a24)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  fit: viewport
+  zoom: auto
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 1
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "Or don't use the terminal", subtitle: "Studio — the same commands, locally", ms: 2300 }
+
+  - caption: { text: "Every spec in the repo, and what it last rendered", ms: 2000, say: false }
+  - waitFor: text=Your demos
+  - beat: gallery
+
+  - type: { selector: "input[placeholder*='Filter']", text: "branching" }
+  - waitFor: text=TaskFlow — pick your path
+  - beat: filtered
+
+  - click: text=TaskFlow — pick your path
+  - waitForUrl: /studio
+  - waitFor: role=button[name=Record]
+  - click: role=button[name=Dismiss]
+  - beat: opened
+
+  - caption: { text: "The spec, its steps, and the last render", ms: 1900, say: false }
+  - highlight: { selector: "role=button[name=Record]", shape: box, label: "record", until: tools }
+  # The tab is labelled "Steps · 9" — matched on the word, not the count, so a
+  # spec that grows a step does not break the film.
+  - click: "text=Steps ·"
+  - beat: steps
+
+  - caption: { text: "Check it against the live app — or let it heal itself", ms: 2200, say: false }
+  - highlight: { selector: "role=button[name=Check drift]", shape: box, until: tools }
+  - highlight: { selector: "role=button[name=Heal]", shape: circle, until: tools }
+  - beat: tools
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/06-studio.mp4
