@@ -56,16 +56,18 @@ const X = 0.4;
  * are captures: `from` skips each chapter's own Reel title card, which the
  * motion cards have replaced, and `len` is how long the shot runs.
  *
- * `punch` crops in before scaling to 1080p. The terminal chapters get it
- * because 96 columns of monospace in a window frame on a 1920-wide canvas is
- * small enough to lose on a phone; the browser chapters are already composed
- * for the frame and only get hurt by cropping.
+ * There is no `punch` on the terminal chapters, though the small monospace
+ * invites one. A centred crop takes equal bites out of both sides, and
+ * terminal text is left-aligned against a window frame that is already close
+ * to the edge — at 1.2x it ate the prompt, turning "~/demos $ cat ..." into
+ * "os $ cat ..." and "# yaml-language-server:" into "l-language-server:".
+ * Slightly small and whole beats larger and truncated.
  */
 const CUT = [
   { card: "opener" },
   { clip: "01-hook.mp4", from: 3.2, len: 17.5, why: "the app being driven" },
   { card: "written" },
-  { clip: "02-spec.mp4", from: 3.4, len: 18.5, punch: 1.2, why: "the spec, and check passing" },
+  { clip: "02-spec.mp4", from: 3.4, len: 18.5, why: "the spec, and check passing" },
   { card: "formats" },
   { clip: "03-formats.mp4", from: 3.6, len: 15.0, why: "tabs: gif / terminal / storyboard" },
   { card: "sound" },
@@ -73,9 +75,9 @@ const CUT = [
   { card: "interactive" },
   { clip: "05-interactive.mp4", from: 3.6, len: 19.5, why: "stepping, then the branch" },
   { card: "ci", transition: "wiperight" },
-  { clip: "06-ci.mp4", from: 3.6, len: 17.0, punch: 1.2, why: "the real failure" },
+  { clip: "06-ci.mp4", from: 3.6, len: 17.0, why: "the real failure" },
   { card: "bytes" },
-  { clip: "07-reproducible.mp4", from: 3.4, len: 19.0, punch: 1.18, why: "two renders, one checksum" },
+  { clip: "07-reproducible.mp4", from: 3.4, len: 19.0, why: "two renders, one checksum" },
   { card: "studio" },
   { clip: "08-studio.mp4", from: 3.6, len: 17.0, why: "gallery into the spec" },
   { clip: "09-close.mp4", from: 3.6, len: 10.5, why: "the published site" },
@@ -236,7 +238,7 @@ run(ffmpegPath, [
     `[1:a]atrim=0:${cutLen.toFixed(3)},volume=-6dB,afade=t=in:st=0:d=1.2,` +
     `afade=t=out:st=${(cutLen - 4.5).toFixed(3)}:d=4.5[bed];` +
     `[sfx][bed]amix=inputs=2:normalize=0:duration=first,` +
-    `alimiter=limit=0.82:level=disabled:attack=5:release=60[aout]`,
+    `alimiter=limit=0.72:level=disabled:attack=5:release=60[aout]`,
   "-map", "0:v", "-map", "[aout]",
   "-c:v", "copy", ...A, "-movflags", "+faststart", master,
 ]);
@@ -256,7 +258,7 @@ if (Number.isFinite(lufs) && Math.abs(gain) > 0.5) {
   log(`mix is ${lufs} LUFS — applying ${gain.toFixed(2)} dB for YouTube's -14`);
   run(ffmpegPath, [
     "-y", "-hide_banner", "-loglevel", "error", "-i", master,
-    "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.82:level=disabled:attack=5:release=60`,
+    "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.72:level=disabled:attack=5:release=60`,
     "-c:v", "copy", ...A, "-movflags", "+faststart", final,
   ]);
 } else {
