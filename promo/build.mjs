@@ -207,6 +207,11 @@ try {
   // can and does go over full scale when a title card's sweep lands on top of
   // the bed. Without the limiter the master measured +2.2 dBFS true peak.
   //
+  // `level=disabled` is not optional: alimiter's `level` defaults to ON, and
+  // what it does is normalise the limited signal back up to 0 dBFS — so a
+  // limiter asked for a -1.7 dB ceiling hands back -0.3 dB and the whole
+  // point of asking is lost. It cost a master at +4.3 dBFS to notice.
+  //
   // 0.82 rather than 0.9, because the limiter bounds the samples going INTO
   // the AAC encoder and what comes back out of it overshoots: a ceiling of
   // 0.9 (-0.9 dBFS) decoded at +0.6 dBFS. Roughly 1.7 dB of headroom covers
@@ -214,7 +219,7 @@ try {
   // normalisation will do to it.
   filter.push(
     `${parts.map((_, i) => `[a${i}]`).join("")}[score]amix=inputs=${parts.length + 1}:normalize=0:duration=longest,` +
-      `alimiter=limit=0.82:attack=5:release=60[aout]`,
+      `alimiter=limit=0.82:level=disabled:attack=5:release=60[aout]`,
   );
 
   const master = join(outDir, "reel-promo.mp4");
@@ -266,7 +271,7 @@ try {
     run(ffmpegPath, [
       "-y", "-hide_banner", "-loglevel", "error",
       "-i", master,
-      "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.82`,
+      "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.82:level=disabled`,
       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
       levelled,
     ]);
