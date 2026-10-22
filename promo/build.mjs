@@ -191,10 +191,17 @@ try {
   // Audio: every chapter's sound effects pushed to its own start, the score
   // laid underneath, all summed. `amix` would duck each input by the number of
   // inputs; `amerge`/sum via `amix:normalize=0` keeps the levels as authored.
+  // -10 dB on the chapters, not the +3 dB this started at.
+  //
+  // src/encode/sfx.ts authors its clicks at -20 to -30 dBFS, but the track
+  // Reel muxes comes back peaking at -1 dBFS, so lifting it further turned
+  // every title card into a stab and left the music bed a hairline under it.
+  // At -10/-8 the bed is continuously audible and the clicks sit above it as
+  // punctuation, which is the job.
   parts.forEach((_, i) => {
-    filter.push(`[${i}:a]adelay=${Math.round(starts[i] * 1000)}|${Math.round(starts[i] * 1000)},volume=3dB[a${i}]`);
+    filter.push(`[${i}:a]adelay=${Math.round(starts[i] * 1000)}|${Math.round(starts[i] * 1000)},volume=-10dB[a${i}]`);
   });
-  filter.push(`[${parts.length}:a]atrim=0:${total.toFixed(3)},volume=-13dB,afade=t=out:st=${(total - 4).toFixed(3)}:d=4[score]`);
+  filter.push(`[${parts.length}:a]atrim=0:${total.toFixed(3)},volume=-8dB,afade=t=out:st=${(total - 4).toFixed(3)}:d=4[score]`);
   // `normalize=0` sums rather than dividing by the input count, which is what
   // keeps the sound effects where they were authored — and which means the sum
   // can and does go over full scale when a title card's sweep lands on top of
