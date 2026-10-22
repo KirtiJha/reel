@@ -23,8 +23,13 @@ polish:
   padding: 50
   radius: 14
   fit: viewport # a full landing page, framed as a page — not cropped to content
-  zoom: auto
-  idleMotion: drift
+  # No camera push on this chapter. `zoom: auto` eases toward whatever is
+  # clicked, and what is clicked here are small tabs — which crops the layout
+  # the shot exists to show and, because captions are drawn into the page
+  # before the camera transform, magnifies the caption across the panel it is
+  # captioning. The page is the subject; let it be the frame.
+  zoom: false
+  idleMotion: drift # `auto` would hold still now that the camera is fixed
   fadeIn: 1
   fadeOut: 1
 

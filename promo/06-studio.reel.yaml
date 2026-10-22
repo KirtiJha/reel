@@ -25,8 +25,12 @@ polish:
   padding: 50
   radius: 14
   fit: viewport
-  zoom: auto
-  idleMotion: drift
+  # Fixed camera, as in chapter 3: this is a dense full-width page, `zoom: auto`
+  # would push toward whatever small control is clicked, and captions are drawn
+  # into the page before the camera transform — so a push magnifies the caption
+  # across the thing it is captioning. Emphasis comes from highlights instead.
+  zoom: false
+  idleMotion: drift # `auto` would hold still now that the camera is fixed
   fadeIn: 1
   fadeOut: 1
 
