@@ -109,89 +109,140 @@ const items = CUT.map((s) => {
   return { ...s, file };
 });
 
+
 const total = items.reduce((a, s) => a + s.len, 0) - X * (items.length - 1);
 log(`${items.length} shots, ${total.toFixed(1)}s after ${items.length - 1} transitions`);
 
-const starts = [];
-let at = 0;
-for (const s of items) {
-  starts.push(at);
-  at += s.len - X;
+/* --------------------------------------------------------------- the cut */
+
+/**
+ * Cut in pieces, then concatenate.
+ *
+ * The obvious way to do this is one ffmpeg invocation with every shot as an
+ * input and a chain of `xfade` filters between them. That was the first
+ * attempt and the kernel killed it at 13 GB: `xfade` has to buffer its first
+ * input until it reaches the transition's offset, and seventeen of them nested
+ * means the back half of the film is held in memory while the front half
+ * plays.
+ *
+ * So each shot's body is cut on its own, each 0.4s transition is cut on its
+ * own from just the two clips it joins, and the lot is concatenated by stream
+ * copy. Nothing ever has more than two inputs open, and because every piece is
+ * encoded with identical parameters the join costs nothing and re-encodes
+ * nothing.
+ */
+const V = ["-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30"];
+const A = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"];
+
+/** Normalise any shot to the film's frame: optional punch, then 1080p. */
+const vchain = (s) =>
+  (s.punch ? `crop=iw/${s.punch}:ih/${s.punch}:(iw-ow)/2:(ih-oh)/2,` : "") +
+  "scale=1920:1080:flags=lanczos,setsar=1,format=yuv420p,fps=30";
+
+/**
+ * A card has no sound of its own and a capture has Reel's effects on it, but
+ * both have to leave here with the same stream layout or the concat refuses
+ * them. The silence is generated inside the filter graph rather than as a
+ * second `anullsrc` input: as an input it reached EOF before the encoder had
+ * been opened, and ffmpeg's complaint about that ("Could not open encoder
+ * before EOF") does not name the cause.
+ */
+const asrc = (s, dur, label) =>
+  s.card
+    ? `anullsrc=r=48000:cl=stereo,atrim=0:${dur.toFixed(3)},asetpts=N/SR/TB[${label}]`
+    : null;
+
+const pieces = [];
+for (let i = 0; i < items.length; i++) {
+  const s = items[i];
+  const headCut = i === 0 ? 0 : X; // consumed by the transition coming in
+  const tailCut = i === items.length - 1 ? 0 : X; // consumed by the one going out
+  const bodyFrom = s.from + headCut;
+  const bodyLen = s.len - headCut - tailCut;
+  const out = join(workDir, `seg${String(i).padStart(2, "0")}.mp4`);
+  log(`shot ${i + 1}/${items.length} — ${s.card ?? s.clip} (${bodyLen.toFixed(1)}s)`);
+  const sil = asrc(s, bodyLen, "a");
+  run(ffmpegPath, [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-ss", bodyFrom.toFixed(3), "-t", bodyLen.toFixed(3), "-i", s.file,
+    "-filter_complex", `[0:v]${vchain(s)}[v]` + (sil ? `;${sil}` : ""),
+    "-map", "[v]", "-map", sil ? "[a]" : "0:a",
+    ...V, ...A, "-t", bodyLen.toFixed(3), out,
+  ]);
+  pieces.push(out);
+
+  if (i === items.length - 1) break;
+
+  // The transition: the tail of this shot against the head of the next.
+  const next = items[i + 1];
+  const xf = join(workDir, `xf${String(i).padStart(2, "0")}.mp4`);
+  const kind = next.transition ?? "fade";
+  const aFrom = s.from + s.len - X;
+  const silA = asrc(s, X, "sa");
+  const silB = asrc(next, X, "sb");
+  run(ffmpegPath, [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-ss", aFrom.toFixed(3), "-t", X.toFixed(3), "-i", s.file,
+    "-ss", next.from.toFixed(3), "-t", X.toFixed(3), "-i", next.file,
+    "-filter_complex",
+    `[0:v]${vchain(s)}[va];[1:v]${vchain(next)}[vb];` +
+      `[va][vb]xfade=transition=${kind}:duration=${X}:offset=0[v];` +
+      (silA ? `${silA};` : "") + (silB ? `${silB};` : "") +
+      // Explicit fades and a sum, not `acrossfade`: these inputs are exactly
+      // one transition long, and acrossfade wants more runway than that —
+      // it failed with "Could not open encoder before EOF", which names the
+      // symptom and not the cause.
+      `[${silA ? "sa" : "0:a"}]afade=t=out:st=0:d=${X}[fa];` +
+      `[${silB ? "sb" : "1:a"}]afade=t=in:st=0:d=${X}[fb];` +
+      `[fa][fb]amix=inputs=2:normalize=0:duration=longest[aa]`,
+    "-map", "[v]", "-map", "[aa]",
+    ...V, ...A, "-t", X.toFixed(3), xf,
+  ]);
+  pieces.push(xf);
 }
 
-/* ------------------------------------------------------------ the filters */
+const listFile = join(workDir, "pieces.txt");
+await writeFile(listFile, pieces.map((p) => `file '${p.replace(/\\/g, "/")}'`).join("\n"));
 
-const filter = [];
-items.forEach((s, i) => {
-  // A punch is a centred crop before the scale, so the text lands bigger on
-  // the finished frame rather than being resampled smaller.
-  const crop = s.punch
-    ? `crop=iw/${s.punch}:ih/${s.punch}:(iw-ow)/2:(ih-oh)/2,`
-    : "";
-  filter.push(
-    `[${i}:v]trim=${s.from}:${(s.from + s.len).toFixed(3)},setpts=PTS-STARTPTS,` +
-      `${crop}scale=1920:1080:flags=lanczos,format=yuv420p,setsar=1,fps=30[v${i}]`,
-  );
-});
+const silent = join(workDir, "cut-silent.mp4");
+await rm(silent, { force: true });
+log(`joining ${pieces.length} pieces`);
+run(ffmpegPath, [
+  "-y", "-hide_banner", "-loglevel", "error",
+  "-f", "concat", "-safe", "0", "-i", listFile,
+  "-c", "copy", "-movflags", "+faststart", silent,
+]);
 
-let prev = "v0";
-for (let i = 1; i < items.length; i++) {
-  const label = i === items.length - 1 ? "vout" : `vx${i}`;
-  const kind = items[i].transition ?? "fade";
-  filter.push(`[${prev}][v${i}]xfade=transition=${kind}:duration=${X}:offset=${starts[i].toFixed(3)}[${label}]`);
-  prev = label;
-}
+/* ------------------------------------------------------------- the score */
 
-// Audio: the captures carry Reel's own sound effects, the cards are silent,
-// and the score runs under all of it. Levels are the ones promo/build.mjs
-// arrived at — the effects well down, because the track Reel muxes peaks near
-// full scale and will otherwise bury the bed it is supposed to sit on.
 const score = join(workDir, "score.wav");
 if (!existsSync(score)) {
   log("synthesizing the score");
   run(process.execPath, [join(promoDir, "score.mjs"), score]);
 }
-items.forEach((s, i) => {
-  const ms = Math.round(starts[i] * 1000);
-  if (s.card) {
-    filter.push(`anullsrc=r=48000:cl=stereo,atrim=0:${s.len.toFixed(3)},adelay=${ms}|${ms}[a${i}]`);
-  } else {
-    filter.push(
-      `[${i}:a]atrim=${s.from}:${(s.from + s.len).toFixed(3)},asetpts=PTS-STARTPTS,` +
-        `volume=-10dB,adelay=${ms}|${ms}[a${i}]`,
-    );
-  }
-});
-filter.push(
-  `[${items.length}:a]atrim=0:${total.toFixed(3)},volume=-6dB,` +
-    `afade=t=in:st=0:d=1.2,afade=t=out:st=${(total - 4.5).toFixed(3)}:d=4.5[score]`,
-);
-filter.push(
-  `${items.map((_, i) => `[a${i}]`).join("")}[score]amix=inputs=${items.length + 1}:normalize=0:duration=longest,` +
-    `alimiter=limit=0.82:level=disabled:attack=5:release=60[aout]`,
-);
 
-const filterFile = join(workDir, "cut.txt");
-await writeFile(filterFile, filter.join(";\n"));
-
+const cutLen = duration(silent);
 const master = join(outDir, "reel-ad.mp4");
 await rm(master, { force: true });
-log("cutting");
+log(`laying the score under ${cutLen.toFixed(1)}s`);
+// The capture audio is already at -10 dB in the segments above; the bed sits
+// at -6 dB under it. `alimiter` needs `level=disabled` or it normalises the
+// limited signal straight back up to full scale.
 run(ffmpegPath, [
   "-y", "-hide_banner", "-loglevel", "error",
-  ...items.flatMap((s) => ["-i", s.file]),
-  "-i", score,
-  "-filter_complex_script", filterFile,
-  "-map", "[vout]", "-map", "[aout]",
-  "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p",
-  "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-  "-movflags", "+faststart", "-t", total.toFixed(3),
-  master,
+  "-i", silent, "-i", score,
+  "-filter_complex",
+  `[0:a]volume=-10dB[sfx];` +
+    `[1:a]atrim=0:${cutLen.toFixed(3)},volume=-6dB,afade=t=in:st=0:d=1.2,` +
+    `afade=t=out:st=${(cutLen - 4.5).toFixed(3)}:d=4.5[bed];` +
+    `[sfx][bed]amix=inputs=2:normalize=0:duration=first,` +
+    `alimiter=limit=0.82:level=disabled:attack=5:release=60[aout]`,
+  "-map", "0:v", "-map", "[aout]",
+  "-c:v", "copy", ...A, "-movflags", "+faststart", master,
 ]);
 
-// One gain stage at the end. `alimiter` needs `level=disabled` or it
-// normalises the limited signal straight back up to full scale, which is how
-// an earlier cut of this shipped measuring +4.3 dBFS.
+/* ----------------------------------------------------------- the loudness */
+
 log("measuring loudness");
 const measured = spawnSync(ffmpegPath, ["-hide_banner", "-nostats", "-i", master, "-af", "ebur128=peak=true", "-f", "null", "-"], { encoding: "utf8" });
 // The LAST match: ebur128 prints a running `I:` on every progress line, and
@@ -206,7 +257,7 @@ if (Number.isFinite(lufs) && Math.abs(gain) > 0.5) {
   run(ffmpegPath, [
     "-y", "-hide_banner", "-loglevel", "error", "-i", master,
     "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.82:level=disabled:attack=5:release=60`,
-    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", final,
+    "-c:v", "copy", ...A, "-movflags", "+faststart", final,
   ]);
 } else {
   run(ffmpegPath, ["-y", "-hide_banner", "-loglevel", "error", "-i", master, "-c", "copy", "-movflags", "+faststart", final]);
