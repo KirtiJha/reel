@@ -1,12 +1,12 @@
 # The promo
 
-A four-minute film about Reel, filmed with Reel, against this repository.
+A three-and-a-half minute film about Reel, filmed with Reel, against this repository.
 
 ```bash
-npm run ui                           # Studio on :4488 — chapters 3 and 6 film it
-node promo/build.mjs        # render every chapter, then assemble
-node promo/build.mjs 03 06  # re-record two chapters
-node promo/build.mjs --assemble
+npm run ui                       # Studio on :4488 — chapters 3, 4 and 8 film it
+node promo/build.mjs             # render every chapter, then assemble
+node promo/build.mjs 03 08       # re-record two chapters
+node promo/build.mjs --assemble  # re-join what is already rendered
 ```
 
 Output lands in `promo/out/`:
@@ -38,21 +38,36 @@ end or do not, and a dissolve between chapters is most of the difference.
 | 01 | a demo running, before saying what it is | TaskFlow, `:4321` |
 | 02 | the spec it came from, and `reel check` passing | terminal |
 | 03 | one recording as GIF, MP4, terminal and storyboard | Reel's site, `:4488` |
-| 04 | the interactive build, branch choice and all | a real `html:` output, `:4597` |
-| 05 | `reel check` **failing** on a spec that is wrong on purpose | terminal |
-| 06 | Studio — gallery, spec, record, check, heal | Studio, `:4488` |
-| 07 | `reel publish`, then the close | a real published site, `:4596` |
+| 04 | narration, a ducked music bed, and the same cut in Spanish | Reel's site, `:4488` |
+| 05 | the interactive build, branch choice and all | a real `html:` output, `:4597` |
+| 06 | `reel check` **failing** on a spec that is wrong on purpose | terminal |
+| 07 | the same spec rendered twice, checksums compared | terminal |
+| 08 | Studio — gallery, spec, record, check, heal | Studio, `:4488` |
+| 09 | `reel publish`, then the close | a real published site, `:4596` |
 
-Every chapter shares `viewport: 1440×713`, `scale: 2` and `padding: 50`, which
-is not arbitrary: with a device frame that composites to exactly 3168×1782, so
-the film is true 16:9 before anything is scaled and nothing is ever letterboxed.
-Change one of those three in one chapter and that chapter alone will be the
-wrong shape.
+Chapter 07 renders the demo twice while the camera is running, so it is the
+slow one — and its `terminal.timeout` is raised accordingly. It was verified
+before it was filmed: two renders of `mini.reel.yaml` on this machine produce
+the same md5. Had they differed, the honest move would have been to cut the
+chapter, not to stage it.
+
+Every chapter shares `viewport: 1440x696`, `scale: 2` and `padding: 50`. That
+is not taste, and the arithmetic is worth writing down because it is easy to
+get wrong: `output.maxWidth` caps the **captured page**, not the finished
+frame, and the device frame and padding are then added on top of the capped
+width. So the page lands at 1920x928, the title bar adds 68 and the padding
+adds 96 a side, and the canvas is 2112x1188 — true 16:9, scaling to 1920x1080
+with nothing letterboxed.
+
+The first cut used `1440x713` on the theory that the viewport was what got
+capped. It came out 2112x1210, which is 1.745:1, and would have been pillar-
+boxed on every platform it was uploaded to. Change one of the three numbers in
+one chapter and that chapter alone comes out the wrong shape.
 
 ## The things it films are real
 
-Chapter 4 drives an interactive build that `examples/taskflow/branching.reel.yaml`
-wrote. Chapter 7 drives a site that `reel publish` wrote. Chapter 5's failure is
+Chapter 5 drives an interactive build that `examples/taskflow/branching.reel.yaml`
+wrote. Chapter 9 drives a site that `reel publish` wrote. Chapter 6's failure is
 a real non-zero exit from `broken.reel.yaml`, which names a button the app does
 not have. `build.mjs` renders all of that first — which is why the promo cannot
 be built without a few minutes of rendering before any of its own chapters start.
