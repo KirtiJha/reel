@@ -58,4 +58,4 @@ output:
   preset: hq
   fps: 30
   maxWidth: 1920
-  mp4: out/05-ci.mp4
+  mp4: out/06-ci.mp4

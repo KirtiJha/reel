@@ -56,4 +56,4 @@ output:
   preset: hq
   fps: 30
   maxWidth: 1920
-  mp4: out/07-close.mp4
+  mp4: out/09-close.mp4

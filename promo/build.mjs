@@ -171,7 +171,7 @@ try {
 
   // Most joins are a plain dissolve. The one into the chapter where the build
   // goes red dips through black instead, because that beat wants a breath.
-  const kindFor = (i) => (parts[i + 1].includes("05-ci") ? "fadeblack" : "fade");
+  const kindFor = (i) => (parts[i + 1].includes("06-ci") ? "fadeblack" : "fade");
 
   const filter = [];
   parts.forEach((_, i) => {
@@ -195,8 +195,13 @@ try {
     filter.push(`[${i}:a]adelay=${Math.round(starts[i] * 1000)}|${Math.round(starts[i] * 1000)},volume=3dB[a${i}]`);
   });
   filter.push(`[${parts.length}:a]atrim=0:${total.toFixed(3)},volume=-13dB,afade=t=out:st=${(total - 4).toFixed(3)}:d=4[score]`);
+  // `normalize=0` sums rather than dividing by the input count, which is what
+  // keeps the sound effects where they were authored — and which means the sum
+  // can and does go over full scale when a title card's sweep lands on top of
+  // the bed. Without the limiter the master measured +2.2 dBFS true peak.
   filter.push(
-    `${parts.map((_, i) => `[a${i}]`).join("")}[score]amix=inputs=${parts.length + 1}:normalize=0:duration=longest[aout]`,
+    `${parts.map((_, i) => `[a${i}]`).join("")}[score]amix=inputs=${parts.length + 1}:normalize=0:duration=longest,` +
+      `alimiter=limit=0.9:attack=5:release=60[aout]`,
   );
 
   const master = join(outDir, "reel-promo.mp4");
@@ -206,7 +211,7 @@ try {
 
   log("assembling");
   run(ffmpegPath, [
-    "-y", "-hide_banner", "-loglevel", "error", "-stats",
+    "-y", "-hide_banner", "-loglevel", "error",
     ...parts.flatMap((p) => ["-i", p]),
     "-i", score,
     "-filter_complex_script", filterFile,
@@ -223,24 +228,37 @@ try {
   // pump the bed up every time nothing was clicking.
   log("measuring loudness");
   const measured = spawnSync(ffmpegPath, ["-hide_banner", "-nostats", "-i", master, "-af", "ebur128=peak=true", "-f", "null", "-"], { encoding: "utf8" });
-  const lufs = Number(/I:\s+(-?\d+\.\d+) LUFS/.exec(measured.stderr ?? "")?.[1]);
-  if (Number.isFinite(lufs)) {
-    const gain = (-14 - lufs).toFixed(2);
-    log(`mix is ${lufs} LUFS — applying ${gain} dB for YouTube's -14`);
-    const levelled = join(outDir, "reel-promo-final.mp4");
-    await rm(levelled, { force: true });
+  // The LAST match, not the first. ebur128 prints a running `I:` on every
+  // progress line as well as in its summary, and the first one is the reading
+  // at 100ms into a film that opens on a fade — which is -70 LUFS. Taking it
+  // literally asked for +56 dB of gain and drove a correct -14.7 LUFS mix to
+  // -5.1 with the peaks 4.6 dB over full scale.
+  const all = [...(measured.stderr ?? "").matchAll(/I:\s+(-?\d+\.\d+) LUFS/g)];
+  const lufs = Number(all.at(-1)?.[1]);
+  const gain = -14 - lufs;
+  const levelled = join(outDir, "reel-promo-final.mp4");
+  await rm(levelled, { force: true });
+
+  // The upload always lands at the same name, whether or not it needed a
+  // trim — a deliverable whose filename depends on a measurement is a
+  // deliverable somebody will one day fail to find.
+  if (!Number.isFinite(lufs)) {
+    warn("could not measure loudness — copying the mix through untouched");
+    run(ffmpegPath, ["-y", "-hide_banner", "-loglevel", "error", "-i", master, "-c", "copy", "-movflags", "+faststart", levelled]);
+  } else if (Math.abs(gain) <= 0.5) {
+    log(`mix is ${lufs} LUFS — already within 0.5 dB of -14, copying through`);
+    run(ffmpegPath, ["-y", "-hide_banner", "-loglevel", "error", "-i", master, "-c", "copy", "-movflags", "+faststart", levelled]);
+  } else {
+    log(`mix is ${lufs} LUFS — applying ${gain.toFixed(2)} dB for YouTube's -14`);
     run(ffmpegPath, [
       "-y", "-hide_banner", "-loglevel", "error",
       "-i", master,
-      "-af", `volume=${gain}dB,alimiter=limit=0.89`,
+      "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=0.89`,
       "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
       levelled,
     ]);
-    log(`done → ${levelled}`);
-  } else {
-    warn("could not measure loudness — leaving the mix as it is");
-    log(`done → ${master}`);
   }
+  log(`done → ${levelled}`);
 } finally {
   for (const s of servers) s.kill();
 }

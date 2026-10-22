@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KirtiJha/reel/main/schema/reel.schema.json
+#
+# Chapter 7 — the same bytes, twice.
+#
+# This is the claim that is hardest to believe and easiest to fake, so it is
+# filmed the only way worth filming: the demo is really rendered twice, in
+# front of the camera, and the two checksums really are compared. Both renders
+# run during the shoot, which is why this chapter's commands get a longer
+# timeout than the default.
+#
+# It was verified before it was filmed. If `reel record` on this machine had
+# produced two different GIFs, the honest thing would have been to cut the
+# chapter rather than stage it.
+name: Reel — byte-identical
+
+terminal:
+  cols: 96
+  rows: 26
+  cwd: .
+  prompt: "~/demos $ "
+  title: "zsh — reproducible"
+  fontSize: 15
+  require: [node]
+  # Two full renders happen inside this one chapter; 120s each is not enough.
+  timeout: 420000
+
+viewport: { width: 1440, height: 696, scale: 2 }
+theme: dark
+
+deterministic:
+  disableAnimations: true
+
+polish:
+  frame: window
+  background: "linear-gradient(140deg, #0f2420, #080f0d 60%, #112a24)"
+  accent: "#7cf3c4"
+  padding: 50
+  radius: 14
+  zoomOutput: true
+  zoomRows: 14
+  idleMotion: drift
+  fadeIn: 1
+  fadeOut: 1
+
+audio:
+  sfx: full
+
+steps:
+  - card: { title: "Run it again", subtitle: "The same spec renders the same bytes", ms: 2300 }
+
+  - caption: { text: "Render it once", ms: 1600, say: false }
+  - run: { cmd: "reel record mini.reel.yaml 2>&1 | tail -3", expectCode: 0 }
+  - run: md5sum out/mini.gif
+  - expectOutput: "out/mini.gif"
+  - beat: first
+
+  - caption: { text: "Now render it again, from scratch", ms: 1900, say: false }
+  - run: { cmd: "reel record mini.reel.yaml 2>&1 | tail -3", expectCode: 0 }
+  - run: md5sum out/mini.gif
+  - expectOutput: "out/mini.gif"
+  - beat: second
+
+  - caption: { text: "Same checksum — so a diff means the app changed, not the renderer", ms: 2600, say: false }
+  - beat: identical
+
+output:
+  preset: hq
+  fps: 30
+  maxWidth: 1920
+  mp4: out/07-reproducible.mp4

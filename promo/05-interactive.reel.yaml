@@ -66,4 +66,4 @@ output:
   preset: hq
   fps: 30
   maxWidth: 1920
-  mp4: out/04-interactive.mp4
+  mp4: out/05-interactive.mp4

@@ -40,7 +40,9 @@ steps:
   - waitFor: "role=tab[name=English]"
   - beat: sound
 
-  - callout: { selector: "#sound .panel:nth-child(2)", text: "A music bed that ducks under the voice", ms: 2200 }
+  # The one <pre> in the section — the `audio:` block that produced the
+  # render playing beside it. Named by where it is, not by which child it is.
+  - callout: { selector: "#sound pre", text: "A music bed that ducks under the voice", ms: 2200 }
   - beat: audio-spec
 
   - caption: { text: "One recording, a voice per language", ms: 2000, say: false }
